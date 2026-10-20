@@ -12,8 +12,10 @@ The gateway is argo-proxy and serves `/v1/chat/completions` as well as
 needed. The spec previously claimed otherwise and Pi correctly refused to
 configure Hermes as a result. Fixed in `spec/pi-target-state.md`.
 
-What remains: `hermes -z` hangs with no output even against a working
-endpoint. Cause unknown; needs someone who knows the tool.
+~~What remains: `hermes -z` hangs with no output even against a working
+endpoint.~~ **RESOLVED on the Linux build (2026-10-20).** `hermes -z` returns
+promptly against the argo-proxy gateway; `verify.sh --models` passes it. The
+hang was specific to the earlier macOS environment and did not reproduce.
 
 ## 0b. (superseded) Hermes needs an OpenAI-compatible endpoint
 
@@ -137,10 +139,21 @@ as the blocked case. The iptables leg does need a control, and gets one: the
 same request is re-run as root and must **succeed**, which is what rules out
 "the VM simply has no network".
 
+**Update 2026-10-20 (Linux build): 27 pass, 0 fail with `--models`.** Two
+false negatives were found and fixed in the process, both worth remembering
+because each made a *correct* build look broken:
+
+- `--models` called `openclaw gateway call cli.chat.one-shot`, a method
+  removed in OpenClaw 2026.10.5. It now uses `openclaw agent --model ...
+  --message ...` and reads the model id out of the provider config.
+- The Gateways section required `hermes-gateway.service` unconditionally.
+  Hermes' gateway serves *messaging channels* only, so a spec-compliant
+  channels-off build never installs it. The check now requires it only when
+  `~/.hermes/channel_directory.json` exists. Same fix in the `--reboot` leg.
+
 Remaining:
 
-- Exercise `--models` and `--reboot` at least once (deferred: `--models`
-  spends Argo quota shared with the live coding session).
+- Exercise `--reboot` at least once.
 - Fold in `openclaw doctor` / `hermes doctor`. Not included yet because both
   report a confusing false negative — they probe `api.anthropic.com`, which
   is deliberately not on the allowlist, rather than the configured endpoint.
@@ -181,7 +194,40 @@ Also needed: moving the same spec to the DGX Spark or a VPS.
 
 ## 7. Telegram channels
 
-**Status:** plumbed, never exercised. No tokens have been supplied.
+**Status: NOT plumbed. This item was previously overstated.**
+
+On the 2026-10-20 Linux build, tokens *were* supplied in `config/agents.env`
+and Pi reported "Telegram channels: configured but DISABLED". That claim was
+false. Its `setup.sh` contains two functions,
+`configure_openclaw_telegram` and `configure_hermes_telegram`, whose active
+branch logs `"Telegram configuration syntax needs to be determined from
+OpenClaw docs"` and does nothing. Verified after the fact: `openclaw.json`
+has no `channels` key at all, and `~/.hermes/channel_directory.json` does not
+exist. The human noticed only because neither bot answered.
+
+`spec/pi-target-state.md` has since been hardened — a new hard rule 6 forbids
+leaving a placeholder and reporting it as done, and the channels section now
+requires reading back the created state.
+
+**The syntax is now known and written into the spec.** Three things blocked
+this, all found by hand afterwards:
+
+1. **The command is `openclaw channels`, plural.** Pi tried `openclaw
+   channel`, which does not exist, and gave up. `openclaw channels add
+   --channel telegram --token <tok> --agent <name>` is the documented
+   non-interactive form.
+2. **`api.telegram.org` ships commented out of the runtime allowlist**, so
+   every Telegram call failed `403 CONNECT tunnel failed` at squid. Enabling
+   it is a deliberate human act (it is what lets the agents talk to the
+   outside world) and is correctly not Pi's to do.
+3. **One of the two supplied bot tokens was invalid** — `getMe` returned
+   `Unauthorized`. The spec now tells Pi to validate each token with `getMe`
+   and report, which separates "wrong config" from "wrong credential" in one
+   call.
+
+Also worth recording: **this network can reach `api.telegram.org`** (302 from
+both host and VM). The note above about Telegram being blocked was true of
+the macOS build network only.
 
 **Telegram is blocked on the build network**, so the channel path cannot be
 exercised here even once tokens exist. Tokens for Pat and Trav plus the
@@ -194,6 +240,39 @@ tested that path, including whether `api.telegram.org` needs adding to the
 runtime allowlist (it is present but commented out).
 
 ---
+
+## 7b. Secrets hygiene — fixed, but the lesson generalizes
+
+`openclaw onboard` writes the gateway token and the provider apiKey into
+`openclaw.json` **as plaintext**, and the 2026-10-20 run left them there while
+reporting compliance with rule 4. `openclaw secrets audit` caught it:
+`plaintext=2`.
+
+Fixed on that build and written into the spec: a systemd drop-in supplies the
+env vars to the service, `openclaw secrets apply --from <plan>` rewrites both
+fields as `{source: "env"}` SecretRefs, and `install-config.sh` now exports
+`CREDENTIAL` and `OPENCLAW_GATEWAY_TOKEN` into `~/.profile` so the CLI works
+in an interactive shell. `openclaw secrets audit --check` now reports
+`plaintext=0`.
+
+The generalizable point: **a rule stated without a mechanism and a check gets
+reported as satisfied without being satisfied.** Rule 4 had said "use env
+SecretRefs" since the beginning. Any future provider added to this repo needs
+the same treatment — the concrete command, plus an audit whose output must be
+quoted.
+
+Two follow-ons from the same root, both now fixed in `install-config.sh`:
+
+- **Every SecretRef key must be exported in `~/.profile`, not just the
+  gateway token.** Missing the channel tokens gave `unresolved=1`, which is
+  invisible from the service side — the gateway resolves refs from its own
+  `EnvironmentFile` and stays perfectly healthy while the CLI refuses to run.
+  `verify.sh` now asserts `plaintext=0` *and* `unresolved=0`, deliberately
+  from a plain login shell, since sourcing `agents.env` first masks it.
+- **The `.profile` block is now delimited and rewritten in place.** It used
+  to be appended once behind a `grep -q ARGO_CREDENTIAL` guard, so any later
+  addition never reached an already-provisioned VM. Upgrades matter here:
+  `install-config.sh` is re-run whenever config changes.
 
 ## 8. Smaller items
 

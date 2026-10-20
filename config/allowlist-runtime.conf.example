@@ -16,6 +16,9 @@ apps.inside.anl.gov
 spark-ts
 
 # --- Chat channels ----------------------------------------------------------
-# Keep commented out until verification passes. Uncommenting this is the
-# deliberate act of letting the agents talk to the outside world.
-# api.telegram.org
+# Telegram is part of the base system, so the domain is allowed here. Note
+# what this does and does not mean: the agents can *reach* Telegram, but no
+# channel is enabled until a human turns one on. spec/pi-target-state.md
+# requires Pi to configure channels disabled and stop, and verify.sh asserts
+# zero live channels. Reachability and being switched on are separate things.
+api.telegram.org

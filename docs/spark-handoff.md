@@ -21,9 +21,16 @@ Lima with the `vz` backend. The full chain worked there:
 | Pi builds OpenClaw + Hermes from `spec/pi-target-state.md` | verified, both answered a real completion |
 | `setup.sh` idempotent over two runs | verified |
 
-**Nothing in the list above has ever been run on Linux.** Treat every step as
-unproven on your host. The portability changes described below were made
-statically and validated with `limactl validate` only — no Linux boot.
+**Update — 2026-10-20: the full chain has now been run on a DGX Spark.**
+(aarch64, Ubuntu 24.04, DGX OS, Lima 2.2.1, QEMU 8.2.2 with KVM.) The VM
+provisioned in about two minutes, `192.168.5.2` carried over to QEMU slirp
+unchanged, egress lockdown held including the negative tests, and Pi built
+both agents. `verify/verify.sh --models` reports **27 passed, 0 failed**.
+Tailscale installed cleanly here, unlike on the macOS build network.
+
+What is still unproven on Linux: `--reboot` persistence, and the Telegram
+channel path (nothing has configured a channel yet on any host). The traps
+that cost time on this run are in sections 1 and 5 below — read them.
 
 ---
 
@@ -55,6 +62,25 @@ If `/dev/kvm` exists but is not readable/writable by you:
 ```sh
 sudo usermod -aG kvm "$USER"         # then log out and back in, or: newgrp kvm
 ```
+
+**Do not rely on `setfacl` for this.** Granting yourself an ACL
+(`sudo setfacl -m u:$USER:rw /dev/kvm`) looks like the way to avoid logging
+out, and it works — until udev recreates the device node, which installing
+the qemu packages does. The ACL is silently dropped, including any
+pre-existing entries, and QEMU starts failing with `Could not access KVM
+kernel module: Permission denied` some minutes after you confirmed it
+working. Group membership is the durable fix.
+
+For an **already-running shell** that cannot log out — a coding agent's
+session, for instance — prefix the commands instead:
+
+```sh
+sg kvm -c 'limactl start --name=agents lima/agents.yaml'
+sg kvm -c 'limactl shell agents -- ...'
+```
+
+`sg` grants the group immediately and needs no password. Verified on the
+Spark: this is how the whole build was driven.
 
 If `/dev/kvm` does not exist at all, stop and tell the user. Do not proceed
 into TCG emulation and do not quietly reduce `cpus`/`memory` to compensate.
@@ -207,6 +233,7 @@ so "blocked" would prove nothing.
 | Tailscale install fails (network blocks `tailscale.com`) | Non-fatal by design; a skip marker is written. Only affects the vLLM fallback. |
 | Provisioning slower or faster than ~10 min | Fine either way **if KVM is active**. If it looks hung, re-check `/dev/kvm` before anything else. |
 | `apt-get` mirrors differ on DGX OS | Should be transparent; the bootstrap allowlist covers Ubuntu/Debian/nodesource/npm. |
+| `apt-get update` fails the NVIDIA repos with "Certificate verification failed" | Seen on the Spark: NextDNS resolves `repo.download.nvidia.com` and friends to a blockpage, so the TLS name does not match. Harmless **for this build** — qemu and everything else come from `ports.ubuntu.com`, which succeeds. Confirm with `apt-cache policy qemu-system-arm` before dismissing it. It will block CUDA/driver updates, which is a real but separate problem. |
 | The host gateway is not `192.168.5.2` | Section 2 above. |
 | `limactl copy` behaves differently | It is the only host→guest channel (`mounts: []` is the isolation boundary). If it fails, do not add a mount — fix the copy. |
 

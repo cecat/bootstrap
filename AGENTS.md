@@ -27,13 +27,13 @@ This repo is mid-build. Implemented and checked:
 
 | Path | State |
 |---|---|
-| `lima/agents.yaml` | Implemented and booted on macOS/vz. Linux/qemu UNVERIFIED — see `docs/spark-handoff.md`. |
+| `lima/agents.yaml` | Implemented and booted on macOS/vz **and Linux/qemu** (DGX Spark, 2026-10-20). See `docs/spark-handoff.md` for the Linux traps. |
 | `scripts/detect-model-access.sh` | Implemented, tested against a live Argo env. |
 | `scripts/install-config.sh` | Implemented and run against a real VM. |
 | `config/*.example` | Implemented. |
 | `spec/pi-target-state.md` | Implemented. |
 | `scripts/run-bootstrap.sh` | Implemented and run; Pi built both agents from it. |
-| `verify/verify.sh` | Implemented. 25 checks pass against the macOS build. |
+| `verify/verify.sh` | Implemented. **27 pass, 0 fail** with `--models` on the Linux build. |
 | `docs/personality.md`, `docs/failover.md` | Implemented. |
 | `docs/spark-handoff.md` | Implemented (Linux/DGX Spark porting notes). |
 | `docs/snapshots.md` | **Not written.** |
@@ -50,10 +50,14 @@ command -v limactl || brew install lima    # macOS host
 command -v jq                              # required by detection
 ```
 
-**On a Linux host, stop and read `docs/spark-handoff.md` first.** The build
-was verified on macOS only. Linux needs QEMU with working KVM, a different
-package set, and a check that Lima's host gateway is still `192.168.5.2`;
-that file is the delta and it lists the traps the macOS run already hit.
+**On a Linux host, stop and read `docs/spark-handoff.md` first.** Linux needs
+QEMU with working KVM, a different package set, and a check that Lima's host
+gateway is still `192.168.5.2`. That file is the delta, and it now records a
+completed Linux run — including two traps that cost time: a `setfacl` grant on
+`/dev/kvm` does **not** survive the udev event that installing qemu triggers
+(use the `kvm` group, and `sg kvm -c '...'` for an already-running shell), and
+NextDNS may fail the NVIDIA apt repos in a way that looks alarming and is
+irrelevant here.
 
 Confirm the host is on the network its model endpoint needs. For Argo that
 means the Argonne internal network or its VPN; the VM inherits host NAT, so if

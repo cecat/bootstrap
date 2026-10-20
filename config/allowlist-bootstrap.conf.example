@@ -41,3 +41,18 @@ files.pythonhosted.org
 # --- Agent installers -------------------------------------------------------
 .openclaw.ai
 .nousresearch.com
+
+# --- Chat channels ----------------------------------------------------------
+# Telegram is part of the base system. Allowing it during bootstrap too lets
+# Pi validate each bot token with getMe and confirm the channel actually
+# connects, instead of configuring blind.
+#
+# This is not a loosening of the channels-stay-off rule: reachability is not
+# the same as being enabled. Pi still configures channels disabled, and
+# verify.sh still fails the build if one is live.
+#
+# It was added because the opposite cost a full day. With Telegram blocked at
+# bootstrap, Pi wrote a channel config it could not test, reported success,
+# and the failure only surfaced later as a silent bot -- by which time the
+# cause (a missing proxy env on the gateway unit) was several layers away.
+api.telegram.org

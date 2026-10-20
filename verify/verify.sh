@@ -188,16 +188,41 @@ fi
 # ---------------------------------------------------------------------------
 section "Gateways"
 
-for unit in openclaw-gateway hermes-gateway; do
-  active="$(g "systemctl --user is-active $unit.service" | tr -d '\r')"
-  enabled="$(g "systemctl --user is-enabled $unit.service" | tr -d '\r')"
-  if [ "$active" = "active" ] && [ "$enabled" = "enabled" ]; then
-    since="$(g "systemctl --user show -p ActiveEnterTimestamp --value $unit.service" | tr -d '\r')"
-    pass "$unit" "active, enabled at boot (since $since)"
+active="$(g "systemctl --user is-active openclaw-gateway.service" | tr -d '\r')"
+enabled="$(g "systemctl --user is-enabled openclaw-gateway.service" | tr -d '\r')"
+if [ "$active" = "active" ] && [ "$enabled" = "enabled" ]; then
+  since="$(g "systemctl --user show -p ActiveEnterTimestamp --value openclaw-gateway.service" | tr -d '\r')"
+  pass "openclaw-gateway" "active, enabled at boot (since $since)"
+else
+  fail "openclaw-gateway" "active=$active enabled=$enabled"
+fi
+
+# A systemd user service does not read ~/.profile, so the gateway can end up
+# with no proxy env -- at which point every allowlisted destination fails
+# EHOSTUNREACH while the model path stays green (the model gateway is in
+# NO_PROXY and allowed by uid). That combination passes --models and still
+# cannot reach a single chat channel, so check the unit directly.
+gwproxy="$(g "systemctl --user show openclaw-gateway.service -p Environment --value" | tr ' ' '\n' | grep -c -iE '^(https?_proxy|NODE_USE_ENV_PROXY)=')"
+if [ -n "$gwproxy" ] && [ "$gwproxy" -ge 3 ]; then
+  pass "gateway has proxy env" "$gwproxy proxy vars in the unit (channels can reach the allowlist)"
+else
+  fail "gateway has proxy env" "only $gwproxy proxy vars in openclaw-gateway.service -- channels will fail EHOSTUNREACH even though the model path works"
+fi
+
+# Hermes' gateway exists only to serve messaging channels. Until a channel is
+# enabled there is nothing for it to serve, and `hermes -z` answers without it
+# -- so requiring the unit here would fail a build that followed the spec,
+# which mandates channels stay off. Require it only once a channel is live.
+hactive="$(g "systemctl --user is-active hermes-gateway.service" | tr -d '\r')"
+if g 'ls ~/.hermes/channel_directory.json' >/dev/null 2>&1; then
+  if [ "$hactive" = "active" ]; then
+    pass "hermes-gateway" "active (a channel is configured)"
   else
-    fail "$unit" "active=$active enabled=$enabled"
+    fail "hermes-gateway" "a channel is configured but the gateway is $hactive"
   fi
-done
+else
+  pass "hermes-gateway" "not installed, and not needed: no channel is configured"
+fi
 
 ocport="$(g 'ss -lnt 2>/dev/null | grep -c "127.0.0.1:18789"' | tr -dc '0-9')"
 if [ -n "$ocport" ] && [ "$ocport" -ge 1 ]; then
@@ -210,6 +235,22 @@ if g 'ss -lnt 2>/dev/null' | grep -qE '0\.0\.0\.0:(18789|3128)|\*:(18789|3128)';
   fail "no gateway bound to a wildcard address" "a gateway or the proxy is listening on 0.0.0.0 -- it should be loopback only"
 else
   pass "no gateway bound to a wildcard address" "only sshd listens beyond loopback"
+fi
+
+# No plaintext secrets, and no SecretRef the CLI cannot resolve. Deliberately
+# run in a plain login shell: sourcing agents.env first would hide a missing
+# export, which is the exact failure this catches. The gateway resolves refs
+# from its own EnvironmentFile, so an unresolved ref leaves the service
+# healthy and only breaks the CLI -- invisible without this check.
+sec="$(g 'openclaw secrets audit --json 2>/dev/null' | tr -d '\r')"
+plain="$(printf '%s' "$sec" | jq -r '.summary.plaintextCount // empty' 2>/dev/null)"
+unres="$(printf '%s' "$sec" | jq -r '.summary.unresolvedRefCount // empty' 2>/dev/null)"
+if [ "$plain" = "0" ] && [ "$unres" = "0" ]; then
+  pass "no plaintext or unresolved secrets" "openclaw secrets audit: plaintext=0 unresolved=0"
+elif [ -z "$plain" ]; then
+  skip "no plaintext or unresolved secrets" "could not parse openclaw secrets audit --json"
+else
+  fail "no plaintext or unresolved secrets" "plaintext=$plain unresolved=$unres (see: openclaw secrets audit)"
 fi
 
 for f in .openclaw/agents/*/SOUL.md .hermes/SOUL.md; do
@@ -250,7 +291,12 @@ if [ "$DO_MODELS" -eq 0 ]; then
 else
   echo "        (these send real requests through your model endpoint)"
 
-  out="$(g "timeout 180 openclaw gateway call cli.chat.one-shot --params '{\"message\":\"Reply with exactly: OC_OK\"}' 2>&1")"
+  # `openclaw agent --message` is the one-shot path. The older
+  # `gateway call cli.chat.one-shot` method was removed in OpenClaw 2026.10.5
+  # and now answers "unknown method", which reads as a dead model path.
+  ocid="$(g 'openclaw config get models.providers.argo-gateway.models 2>/dev/null | jq -r ".[0].id // empty" 2>/dev/null' | tr -dc 'a-zA-Z0-9.:_-')"
+  ocmodel="argo-gateway/${ocid:-claude-sonnet-5}"
+  out="$(g "timeout 180 openclaw agent --model '$ocmodel' --message 'Reply with exactly: OC_OK' 2>&1")"
   if grep -q 'OC_OK' <<<"$out"; then
     pass "OpenClaw answers a completion" "model path verified end to end"
   else
@@ -280,9 +326,16 @@ else
     rphase="$(groot 'cat /etc/agent-sandbox/phase 2>/dev/null' | tr -d '\r')"
     rlock="$(groot 'agent-egress status 2>&1' | grep '^lockdown:' | awk '{print $2}')"
     roc="$(g 'systemctl --user is-active openclaw-gateway.service' | tr -d '\r')"
-    rhe="$(g 'systemctl --user is-active hermes-gateway.service' | tr -d '\r')"
-    if [ "$rphase" = "$phase" ] && [ "$rlock" = "active" ] && [ "$roc" = "active" ] && [ "$rhe" = "active" ]; then
-      pass "survives a reboot" "phase=$rphase lockdown=$rlock gateways=up"
+    # Same reasoning as the Gateways section: only require hermes-gateway back
+    # if a channel is configured, since otherwise it is never installed.
+    if g 'ls ~/.hermes/channel_directory.json' >/dev/null 2>&1; then
+      rhe="$(g 'systemctl --user is-active hermes-gateway.service' | tr -d '\r')"
+    else
+      rhe="n/a"
+    fi
+    if [ "$rphase" = "$phase" ] && [ "$rlock" = "active" ] && [ "$roc" = "active" ] \
+       && { [ "$rhe" = "active" ] || [ "$rhe" = "n/a" ]; }; then
+      pass "survives a reboot" "phase=$rphase lockdown=$rlock openclaw=up hermes=$rhe"
     else
       fail "survives a reboot" "phase=$rphase lockdown=$rlock openclaw=$roc hermes=$rhe"
     fi

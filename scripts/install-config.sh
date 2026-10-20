@@ -48,8 +48,22 @@ Bring up your SSH tunnel first (the one behind 'claude-argo-home'), then re-run.
 fi
 
 # --- 2. Generate what is derivable ----------------------------------------
+# The live allowlists are gitignored copies of the committed templates. Seed
+# them when absent -- but if a local copy has drifted from its template, say
+# so rather than silently using the stale one. An edit made to the template
+# after the copy exists would otherwise never take effect, and an edit made
+# only to the copy would vanish on a fresh clone. Both have happened.
 for phase in bootstrap runtime; do
-  [ -f "$CFG/allowlist-$phase.conf" ] || cp "$CFG/allowlist-$phase.conf.example" "$CFG/allowlist-$phase.conf"
+  live="$CFG/allowlist-$phase.conf"
+  tmpl="$live.example"
+  if [ ! -f "$live" ]; then
+    cp "$tmpl" "$live"
+  elif ! diff -q "$live" "$tmpl" >/dev/null 2>&1; then
+    printf '\033[33mnote:\033[0m %s differs from its template.\n' "$live" >&2
+    printf '      Using your local copy. If you meant to pick up a template\n' >&2
+    printf '      change, diff them and delete the local copy to reseed:\n' >&2
+    printf '        diff %s %s\n' "$live" "$tmpl" >&2
+  fi
 done
 
 # Pi needs a provider before it can run at all; it cannot configure itself.
@@ -98,10 +112,32 @@ limactl shell "$INSTANCE" -- bash -eo pipefail -c '
   install -d -m 0700 "$HOME/.pi/agent" "$HOME/.pi/agent/sessions"
   install -m 0600 /tmp/agent-config/pi-models.json "$HOME/.pi/agent/models.json"
 
-  # Export the credential that the apiKey reference above resolves against.
-  if ! grep -q ARGO_CREDENTIAL "$HOME/.profile" 2>/dev/null; then
-    {
-      echo ""
+  # Export the credentials that the SecretRefs above resolve against.
+  #
+  # Delimited and rewritten in place rather than appended-once. The previous
+  # form guarded on "is ARGO_CREDENTIAL already present", which meant any
+  # later addition to this block -- a new channel token, say -- silently
+  # never reached a VM that had already been provisioned. Upgrades matter:
+  # install-config.sh is re-run whenever config changes.
+  PROFILE_BEGIN="# >>> agent-sandbox env >>>"
+  PROFILE_END="# <<< agent-sandbox env <<<"
+  touch "$HOME/.profile"
+  if grep -qF "$PROFILE_BEGIN" "$HOME/.profile"; then
+    sed -i "/$PROFILE_BEGIN/,/$PROFILE_END/d" "$HOME/.profile"
+  fi
+  # Retire the pre-delimiter version of this block if it is still there.
+  if grep -q "ARGO_CREDENTIAL" "$HOME/.profile"; then
+    python3 - "$HOME/.profile" <<-PYEOF
+		import re, sys
+		p = sys.argv[1]
+		s = open(p).read()
+		s = re.sub(r"\n# Model credential, read from the 0600 profile.*?\nfi\n(if \[ -r \"\$HOME/\.config/agent-sandbox/agents\.env\" \]; then.*?\nfi\n)?",
+		           "\n", s, flags=re.S)
+		open(p, "w").write(s)
+	PYEOF
+  fi
+  {
+      echo "$PROFILE_BEGIN"
       echo "# Model credential, read from the 0600 profile rather than inlined."
       echo "if [ -r \"\$HOME/.config/agent-sandbox/model-access.env\" ]; then"
       echo "  . \"\$HOME/.config/agent-sandbox/model-access.env\""
@@ -111,9 +147,29 @@ limactl shell "$INSTANCE" -- bash -eo pipefail -c '
       echo "  # and the gateway rejects an empty key with"
       echo "  # \"the username is not registered in ARGO\"."
       echo "  export HERMES_API_KEY=\"\$CREDENTIAL\""
+      echo "  # OpenClaw resolves gateway.auth.token and its provider apiKey"
+      echo "  # from env SecretRefs, so openclaw.json holds no plaintext."
+      echo "  # Without these, every openclaw CLI call fails with"
+      echo "  # \"configured as a secret reference but is unavailable in"
+      echo "  # this command path\". The service gets them from a systemd"
+      echo "  # drop-in; this is what makes an interactive shell work."
+      echo "  export CREDENTIAL"
       echo "fi"
-    } >> "$HOME/.profile"
-  fi
+      echo "if [ -r \"\$HOME/.config/agent-sandbox/agents.env\" ]; then"
+      echo "  . \"\$HOME/.config/agent-sandbox/agents.env\""
+      echo "  # Every secret an agent config may hold as an env SecretRef must"
+      echo "  # be exported here, not just the gateway token: openclaw secrets"
+      echo "  # audit reports unresolved=N for any ref it cannot see, and the"
+      echo "  # CLI refuses the command path. Channel tokens are easy to miss"
+      echo "  # because the gateway itself resolves them from its EnvironmentFile"
+      echo "  # and keeps working, so only the CLI looks broken."
+      echo "  export OPENCLAW_GATEWAY_TOKEN"
+      echo "  export OPENCLAW_TELEGRAM_BOT_TOKEN"
+      echo "  export HERMES_TELEGRAM_BOT_TOKEN"
+      echo "  export TELEGRAM_ALLOWED_USER_ID"
+      echo "fi"
+      echo "$PROFILE_END"
+  } >> "$HOME/.profile"
 
   sudo install -d -m 0755 /etc/agent-sandbox/allowlists
   sudo install -m 0644 /tmp/agent-config/allowlist-bootstrap.conf /etc/agent-sandbox/allowlists/
@@ -144,6 +200,29 @@ else
   printf 'Endpoint tried: %s\n%s\n' "$MODEL_URL" "$(printf '%s' "$RESP" | head -c 300)" >&2
   exit 1
 fi
+
+# --- 6. Gate on a PROXIED destination too ----------------------------------
+# The completion above uses --noproxy, because the model gateway is reached
+# directly and is exempt from squid by uid. That means it proves nothing
+# about the proxy path -- a VM with a broken proxy still passes it, and then
+# every channel fails later with EHOSTUNREACH while the model path stays
+# green. Check an allowlisted host that must traverse squid.
+say "checking the proxy path (not just the direct model path)"
+PROXY_CODE="$(limactl shell "$INSTANCE" -- bash -lc "
+  curl -s -o /dev/null -w '%{http_code}' --max-time 30 https://pi.dev/ 2>/dev/null
+" 2>/dev/null | tr -dc '0-9')"
+
+case "$PROXY_CODE" in
+  2??|3??) say "proxy path works (pi.dev -> HTTP $PROXY_CODE)" ;;
+  *)
+    printf '\033[31merror:\033[0m the proxy path is broken (pi.dev -> %s).\n' "${PROXY_CODE:-no response}" >&2
+    printf 'The model path works, so this is easy to miss -- but every\n' >&2
+    printf 'allowlisted destination, including chat channels, will fail\n' >&2
+    printf 'EHOSTUNREACH until it is fixed. Check http_proxy/https_proxy and\n' >&2
+    printf 'NODE_USE_ENV_PROXY in the guest, and squid: agent-egress status.\n' >&2
+    exit 1
+    ;;
+esac
 
 echo
 say "done. egress status:"

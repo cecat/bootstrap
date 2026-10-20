@@ -26,3 +26,10 @@ auth.json
 
 # Artifacts pulled out of the VM (contain local detail)
 dist/
+
+# Anything local to this machine and deliberately not shared. local/souls/
+# holds hand-written SOUL.md content migrated from another deployment -- a
+# one-time exception to "the repo ships a seed, never a managed file" (see
+# the Agent personality section of AGENTS.md). It is personal, it names
+# people, and it must not be mistaken for something this repo installs.
+local/
