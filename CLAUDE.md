@@ -1,8 +1,10 @@
 # Build instructions for a coding agent
 
 You are being asked to build a sandboxed environment of persistent agents.
-Read this file fully before running anything. `README.md` holds the design
-rationale; this file is the procedure.
+Read this file fully before running anything. `README.md` is the user-facing
+guide and says what the person who cloned this expects to happen;
+`docs/original-brief.md` holds the design reasoning. **This file is the
+procedure.**
 
 **What you are building:** a Lima VM on the host, containing a translation
 proxy for model access, Pi, and then — built *by Pi* — an OpenClaw gateway
@@ -294,12 +296,13 @@ provisioning, and template its config in `config/`.
 
 ```
 CLAUDE.md, AGENTS.md    this file (AGENTS.md is a symlink, for Pi)
-README.md               design rationale and decisions
+README.md               user-facing guide -- what a human does after cloning
 lima/agents.yaml        the VM
 scripts/                host-side: detection, config push, bootstrap
 spec/pi-target-state.md          target-state spec Pi builds from
 config/                 local config; only *.example is committed
 verify/verify.sh        automated checks (see Step 8)
-docs/                   snapshot/restore, porting, failover
+docs/                   porting, personality, failover
   spark-handoff.md      read this FIRST on a Linux host (DGX Spark)
+  original-brief.md     the pre-build design brief and its reasoning
 ```
