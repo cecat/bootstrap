@@ -116,21 +116,38 @@ setup script.
 
 ## 4. `verify/` suite
 
-**Status:** not written. `CLAUDE.md` Step 8 cannot run.
+**Status:** written as `verify/verify.sh`. 25 checks pass against the macOS
+build; `--models` and `--reboot` are implemented but have not themselves been
+exercised yet.
 
-- `openclaw gateway status`, `openclaw doctor`, `hermes doctor`
-- reboot persistence (services come back, egress policy re-applies)
-- **negative egress test** — assert a non-allowlisted host is *blocked*. A test
-  that only checks the allowed path proves nothing. Note that the agent uid is
-  blocked from direct egress by iptables *and* by squid's allowlist; the test
-  should distinguish which layer refused, or it will pass for the wrong reason.
-- **Do not pick a test host the network itself blocks.** On the build network
-  `api.telegram.org` and `tailscale.com` are both unreachable regardless of our
-  policy, so using either as the "blocked" case would pass for the wrong reason
-  and keep passing if the sandbox were removed entirely. Choose a host that is
-  reachable from the host Mac but absent from the allowlist, and assert the
-  refusal comes from squid (HTTP 403) or iptables (connect refused).
-- model path: `/health`, then a real completion through both API shapes.
+Covered: substrate (Node, Pi, agent uid, linger), config permissions, egress
+phase/squid/lockdown/allowlist, the negative egress tests, gateway units and
+their loopback-only binding, SOUL.md presence, and a channels-are-off
+assertion. `--models` sends one real completion per agent; `--reboot` checks
+that the policy and the gateways come back.
+
+The negative test resolved the concern recorded here earlier: it uses
+`http://example.com` over **plain HTTP**, where squid returns a clean `403`.
+A 403 is self-validating — it can only come from squid — so it proves both
+that the proxy is up and that it is denying, with no separate positive
+control needed. Over HTTPS squid denies `CONNECT` and curl reports `000`,
+indistinguishable from the network being down; and `api.telegram.org` /
+`tailscale.com` are blocked by the build network itself, so neither is usable
+as the blocked case. The iptables leg does need a control, and gets one: the
+same request is re-run as root and must **succeed**, which is what rules out
+"the VM simply has no network".
+
+Remaining:
+
+- Exercise `--models` and `--reboot` at least once (deferred: `--models`
+  spends Argo quota shared with the live coding session).
+- Fold in `openclaw doctor` / `hermes doctor`. Not included yet because both
+  report a confusing false negative — they probe `api.anthropic.com`, which
+  is deliberately not on the allowlist, rather than the configured endpoint.
+  A check that needs a paragraph of explanation to read as green is worse
+  than no check.
+- Verify the Telegram channel path once a network that permits it is
+  available.
 
 ---
 

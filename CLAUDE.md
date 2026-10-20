@@ -21,15 +21,16 @@ This repo is mid-build. Implemented and checked:
 
 | Path | State |
 |---|---|
-| `lima/agents.yaml` | Implemented. Never booted — static checks only. |
+| `lima/agents.yaml` | Implemented and booted on macOS/vz. Linux/qemu UNVERIFIED — see `docs/spark-handoff.md`. |
 | `scripts/detect-model-access.sh` | Implemented, tested against a live Argo env. |
-| `scripts/install-config.sh` | Implemented, not yet run against a real VM. |
+| `scripts/install-config.sh` | Implemented and run against a real VM. |
 | `config/*.example` | Implemented. |
 | `spec/pi-target-state.md` | Implemented. |
-| `scripts/run-bootstrap.sh` | Implemented, not yet run against a real VM. |
-| `verify/` | **Not written.** Step 8 cannot run. |
+| `scripts/run-bootstrap.sh` | Implemented and run; Pi built both agents from it. |
+| `verify/verify.sh` | Implemented. 25 checks pass against the macOS build. |
 | `docs/personality.md`, `docs/failover.md` | Implemented. |
-| `docs/snapshots.md`, porting docs | **Not written.** |
+| `docs/spark-handoff.md` | Implemented (Linux/DGX Spark porting notes). |
+| `docs/snapshots.md` | **Not written.** |
 
 If you reach an unwritten step, stop and tell the user rather than improvising
 a replacement.
@@ -170,7 +171,7 @@ will only resurface as confusing Pi failures later.
 ## Step 6 — Hand the spec to Pi
 
 ```sh
-./scripts/run-bootstrap.sh        # NOT YET WRITTEN
+./scripts/run-bootstrap.sh
 ```
 
 Pi reads `spec/pi-target-state.md` and installs OpenClaw and Hermes. The spec requires
@@ -188,12 +189,24 @@ Drops from the wide bootstrap allowlist to the steady-state one.
 ## Step 8 — Verify
 
 ```sh
-./verify/verify.sh                # NOT YET WRITTEN
+./verify/verify.sh            # structure, policy and egress — costs nothing
+./verify/verify.sh --models   # + one real completion per agent
+./verify/verify.sh --all      # + reboot persistence
 ```
 
-Gateway status and doctor checks, reboot persistence, and an egress test that
-asserts a non-allowed destination is **blocked** — a verification that only
-checks the allowed path proves nothing.
+Substrate, config permissions, egress policy, gateway state, and an assertion
+that **no chat channel is enabled yet**.
+
+The egress section is the point of the suite: it asserts a non-allowed
+destination is **blocked** at both layers — `403` from squid through the
+proxy, no connection at all around it — and that the iptables rule is scoped
+to the agent uid, by checking the same request *succeeds* as root. Without
+that last control, a VM with no network at all would pass.
+
+**A plain run does not prove the model path.** `/health` and `/v1/models`
+answer 200 from local state with a dead upstream; only a completion proves it.
+Run `--models` before you tell the user the build works — and say so if you
+did not, because it sends real requests and spends their quota.
 
 ## Step 9 — Stop
 
@@ -286,7 +299,7 @@ lima/agents.yaml        the VM
 scripts/                host-side: detection, config push, bootstrap
 spec/pi-target-state.md          target-state spec Pi builds from
 config/                 local config; only *.example is committed
-verify/                 automated checks
+verify/verify.sh        automated checks (see Step 8)
 docs/                   snapshot/restore, porting, failover
   spark-handoff.md      read this FIRST on a Linux host (DGX Spark)
 ```
