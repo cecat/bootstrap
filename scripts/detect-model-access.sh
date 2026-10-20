@@ -65,7 +65,7 @@ shopt -u nullglob
 
 [ -n "$BASE_URL" ] || fail "could not determine a model endpoint.
 Run this from inside the coding agent that already has model access, or set
-ANTHROPIC_BASE_URL. See CLAUDE.md -> 'Model access'."
+ANTHROPIC_BASE_URL. See AGENTS.md -> 'Model access'."
 
 MODEL_OPUS="${ANTHROPIC_DEFAULT_OPUS_MODEL:-}"
 MODEL_SONNET="${ANTHROPIC_DEFAULT_SONNET_MODEL:-}"
@@ -196,7 +196,7 @@ if [ "$PROVIDER_STATUS" = "unimplemented" ]; then
   wired up. Hermes in particular needs an OpenAI-compatible surface
   that $BASE_HOST does not provide on its own.
 
-  See CLAUDE.md -> 'Adding a provider'.
+  See AGENTS.md -> 'Adding a provider'.
   ------------------------------------------------------------------
 UNIMPL
   [ "$DRY_RUN" -eq 1 ] || fail "refusing to write a profile for an unimplemented provider."

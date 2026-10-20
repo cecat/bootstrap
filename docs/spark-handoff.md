@@ -1,6 +1,7 @@
 # Handoff: running this on a DGX Spark (or any Linux host)
 
-**Audience: the coding agent running on the Spark.** Read `CLAUDE.md` first —
+**Audience: the coding agent running on the Spark.** Read `AGENTS.md` first
+(`CLAUDE.md` is a symlink to it) —
 it is the build procedure and it still applies. This file is only the delta
 between the host it was built on and the host you are on.
 
@@ -150,7 +151,7 @@ will legitimately differ:
   resolved via `apiKeyHelper` and never printed.
 
 Run `./scripts/detect-model-access.sh --dry-run`, show the user the summary,
-and get confirmation before writing it. This is Step 1 of `CLAUDE.md` and it
+and get confirmation before writing it. This is Step 1 of `AGENTS.md` and it
 is the step everything downstream depends on.
 
 ---
@@ -210,7 +211,7 @@ so "blocked" would prove nothing.
 | `limactl copy` behaves differently | It is the only host→guest channel (`mounts: []` is the isolation boundary). If it fails, do not add a mount — fix the copy. |
 
 If you hit something not in this table, **stop and tell the user** rather than
-improvising. `CLAUDE.md` says the same thing about unwritten steps, and it is
+improvising. `AGENTS.md` says the same thing about unwritten steps, and it is
 the house rule: this repo prefers a halt with a clear message over a plausible
 workaround.
 
@@ -218,7 +219,7 @@ workaround.
 
 ## 6. Order of work
 
-Follow `CLAUDE.md` Steps 0–9 unchanged, with these insertions:
+Follow `AGENTS.md` Steps 0–9 unchanged, with these insertions:
 
 1. **Before Step 0** — the KVM and packages checks in Section 1 above.
 2. **Step 1** — fresh detection (Section 3). Do not reuse the Mac's config.
@@ -228,7 +229,7 @@ Follow `CLAUDE.md` Steps 0–9 unchanged, with these insertions:
    or any other channel before the user says so, and never before verification
    passes.
 
-The safety rules in `CLAUDE.md` are not advisory and they are not relaxed by
+The safety rules in `AGENTS.md` are not advisory and they are not relaxed by
 being on a different host: never ask for a secret in conversation, never pipe
 an installer into a shell, never commit anything from `config/`, never leave
 `agent-egress unlock` in effect at the end of a session.

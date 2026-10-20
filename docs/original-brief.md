@@ -10,7 +10,7 @@
 > | You are | Read |
 > |---|---|
 > | a person who just cloned this | `README.md` |
-> | a coding agent asked to build it | `CLAUDE.md` (= `AGENTS.md`) |
+> | a coding agent asked to build it | `AGENTS.md` (= `CLAUDE.md`) |
 > | a coding agent on Linux / a DGX Spark | `docs/spark-handoff.md` first |
 >
 > Parts of it are now out of date. Its task list is done except items 5

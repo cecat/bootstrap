@@ -107,7 +107,7 @@ variance without adding judgment, and already caused one real problem
 (improvised questions and an invented secret-handling policy).
 
 Target: `git clone && ./bootstrap.sh`. No Claude Code, no Codex, no Pi on the
-host. `CLAUDE.md` shrinks to "if you are an agent reading this, run
+host. `AGENTS.md` shrinks to "if you are an agent reading this, run
 `./bootstrap.sh`." Pi stays inside the VM, where the work *is* open-ended:
 installing two third-party tools whose docs drift, and writing the idempotent
 setup script.

@@ -30,7 +30,7 @@ PROFILE="$CFG/model-access.env"
 [ -f "$PROFILE" ] || fail "config/model-access.env missing. Run ./scripts/detect-model-access.sh"
 # shellcheck disable=SC1090
 set -a; . "$PROFILE"; set +a
-[ -f "$CFG/agents.env" ] || fail "config/agents.env missing. See CLAUDE.md Step 4."
+[ -f "$CFG/agents.env" ] || fail "config/agents.env missing. See AGENTS.md Step 4."
 
 case "${PROVIDER_KIND:-}" in
   gateway) MODEL_URL="$VM_BASE_URL"; GATEWAY="$VM_GATEWAY" ;;

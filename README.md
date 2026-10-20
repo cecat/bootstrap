@@ -28,13 +28,18 @@ Disk and memory: the VM takes 8 GiB of RAM and up to 60 GiB of disk.
 
 ## How to build it
 
-Open your coding agent in this directory and tell it:
+Open your coding agent in this directory and give it this instruction:
 
-> Build this repo.
+> Read AGENTS.md and build the system it describes.
 
-It reads `AGENTS.md` / `CLAUDE.md` and works through the procedure. **You are
-not expected to run the scripts yourself** — but if you want to, they're in
-`scripts/` and `CLAUDE.md` lists them in order.
+Say it explicitly like that. Don't assume the tool picked the file up on its
+own: `AGENTS.md` is the cross-tool convention and most agents read it, but
+Claude Code looks for `CLAUDE.md` instead. Both names exist here and are the
+same file, so naming either one works — what matters is that you name one.
+
+The agent then works through the procedure in that file. **You are not
+expected to run the scripts yourself** — but if you want to, they are in
+`scripts/` and `AGENTS.md` lists them in order.
 
 ### What it will ask you
 
@@ -175,7 +180,8 @@ offers one.
 
 ```
 README.md               this file
-CLAUDE.md / AGENTS.md   the build procedure, written for a coding agent
+AGENTS.md               the build procedure, written for a coding agent
+CLAUDE.md               symlink to AGENTS.md, for Claude Code
 lima/agents.yaml        the VM definition
 scripts/                detection, config push, bootstrap
 spec/pi-target-state.md what Pi is told to build
@@ -201,7 +207,7 @@ Known gaps, with detail in `todo.md`:
   and should select QEMU on Linux, but it has never been booted there. Read
   `docs/spark-handoff.md` before trying.
 - **Only Argo** is implemented as a model provider. Adding one means extending
-  a classifier in `scripts/detect-model-access.sh`; `CLAUDE.md` describes how.
+  a classifier in `scripts/detect-model-access.sh`; `AGENTS.md` describes how.
 - **The vLLM fallback is unverified** and currently untestable.
 - **Telegram has not been exercised** — it was blocked on the build network.
 - **No snapshot or restore documentation** yet, which is the intended recovery

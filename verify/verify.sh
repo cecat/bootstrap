@@ -220,14 +220,14 @@ done
 # ---------------------------------------------------------------------------
 section "Channels are off"
 
-# Safety assertion, not a feature test. CLAUDE.md forbids enabling any chat
+# Safety assertion, not a feature test. AGENTS.md forbids enabling any chat
 # channel before this suite passes, so finding one enabled here is a failure
 # regardless of whether it works.
 oc_ch="$(g 'jq -r "(.channels // {}) | to_entries | map(select(.value.enabled != false)) | length" ~/.openclaw/openclaw.json 2>/dev/null' | tr -dc '0-9')"
 if [ "${oc_ch:-0}" = "0" ]; then
   pass "OpenClaw has no channel enabled" "no Telegram or other channel is live"
 else
-  fail "OpenClaw has no channel enabled" "$oc_ch channel(s) enabled -- CLAUDE.md Step 9 says a channel must not be on before verification passes"
+  fail "OpenClaw has no channel enabled" "$oc_ch channel(s) enabled -- AGENTS.md Step 9 says a channel must not be on before verification passes"
 fi
 
 if g 'ls ~/.hermes/channel_directory.json' >/dev/null 2>&1; then
