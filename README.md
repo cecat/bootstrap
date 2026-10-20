@@ -18,13 +18,17 @@ and propagates that inward.
 
 | | |
 |---|---|
-| **Lima** | `brew install lima` on macOS. On Linux see `docs/spark-handoff.md` — that path is **unverified**. |
-| **jq** | `brew install jq` |
+| **Lima** | macOS: `brew install lima`. Linux: the release binary from [lima-vm/lima](https://github.com/lima-vm/lima/releases) — distro packages are often older than the required 1.0.0 — plus QEMU and a usable `/dev/kvm`. |
+| **jq, openssl** | macOS: `brew install jq`. Linux: `sudo apt-get install jq openssl` |
 | **A working model endpoint** | Whatever your coding agent is using right now. For Argo that means being on the Argonne network or its VPN — the VM inherits your network, so if you can't reach it, neither can the VM. |
 | **A coding agent** | Claude Code, Codex, or similar, opened in this directory. |
-| **~10 minutes** | Plus however long the agent installation takes. |
 
-Disk and memory: the VM takes 8 GiB of RAM and up to 60 GiB of disk.
+**On Linux, read `docs/spark-handoff.md` before you start.** It covers the
+QEMU and KVM requirements, the exact package list, and which parts of this
+build are unverified — the whole thing has only ever been run on macOS.
+
+Provisioning the VM takes about ten minutes, plus however long the agent
+installation runs. The VM uses 8 GiB of RAM and up to 60 GiB of disk.
 
 ## How to build it
 
