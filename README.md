@@ -38,8 +38,8 @@ Claude Code looks for `CLAUDE.md` instead. Both names exist here and are the
 same file, so naming either one works — what matters is that you name one.
 
 The agent then works through the procedure in that file. **You are not
-expected to run the scripts yourself** — but if you want to, they are in
-`scripts/` and `AGENTS.md` lists them in order.
+expected to run the scripts yourself** — but you can, and the section below
+says what changes if you do.
 
 ### What it will ask you
 
@@ -76,6 +76,33 @@ The coding agent will not ask you for these in conversation, by design. Typing
 a token into a chat puts it in the transcript and in the session log. If you
 paste one anyway it will still work, but rotate it via @BotFather afterwards —
 that costs nothing.
+
+### If you run the scripts yourself
+
+You can skip the coding agent and run `scripts/` by hand — `AGENTS.md` lists
+them in order. One thing to know before you do: **the scripts never prompt for
+anything.** They are deliberately non-interactive, so nothing will ask you for
+the agent names the way the coding agent does. Every value is read from
+`config/agents.env`, and the template arrives with `claw-one` and `hermes-one`
+already in it — leave them and those are the names you get.
+
+So set that file up first:
+
+```sh
+cp config/agents.env.example config/agents.env
+chmod 600 config/agents.env
+```
+
+Edit it and set the two agent names, then generate the gateway token rather
+than making one up:
+
+```sh
+openssl rand -hex 32        # paste into OPENCLAW_GATEWAY_TOKEN
+```
+
+Leave the Telegram and vLLM values blank unless you want them. If something
+required is missing, `install-config.sh` stops and tells you which value it
+is — it will not guess.
 
 ## What happens, in order
 
