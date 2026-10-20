@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# Local, machine-specific configuration. This repo is intended to go public:
+# nothing in config/ is committed except the *.example templates.
+# ---------------------------------------------------------------------------
+config/*
+!config/*.example
+!config/README.md
+
+# Secrets, in case anything lands outside config/
+*.env
+!*.env.example
+*.key
+*.pem
+*.token
+secrets/
+auth.json
+
+# Agent + VM state that must never be committed
+.pi/
+.hermes/
+.openclaw/
+*.log
+
+# macOS
+.DS_Store
+
+# Artifacts pulled out of the VM (contain local detail)
+dist/

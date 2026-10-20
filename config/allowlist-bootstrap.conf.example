@@ -1,0 +1,43 @@
+# Squid dstdomain allowlist -- BOOTSTRAP phase (wide).
+#
+# Active only while Pi is installing OpenClaw and Hermes. Switch to the
+# runtime allowlist before enabling any chat channel:
+#     sudo agent-egress runtime
+#
+# A leading dot matches the domain AND all its subdomains. Do NOT also list a
+# specific host that a dotted entry already covers -- squid treats that as a
+# FATAL config error ("'x.y.com' is a subdomain of '.y.com'") and refuses to
+# start, which takes the whole egress policy down with it.
+#
+# One entry per line.
+
+# --- Models -----------------------------------------------------------------
+apps.inside.anl.gov
+
+# --- OS packages ------------------------------------------------------------
+.ubuntu.com
+.debian.org
+deb.nodesource.com
+pkgs.tailscale.com
+
+# --- Node / npm -------------------------------------------------------------
+.npmjs.org
+pi.dev
+# Hermes ships its own Node runtime and fetches it from nodejs.org.
+# Dotted form covers nodejs.org and its subdomains; do not also list the bare
+# host or squid refuses to start.
+.nodejs.org
+
+# --- Python / pipx ----------------------------------------------------------
+pypi.org
+files.pythonhosted.org
+
+# --- Source hosts (installers, release tarballs) ----------------------------
+# .github.com covers github.com and codeload.github.com;
+# githubusercontent.com is a separate domain and needs its own entry.
+.github.com
+.githubusercontent.com
+
+# --- Agent installers -------------------------------------------------------
+.openclaw.ai
+.nousresearch.com

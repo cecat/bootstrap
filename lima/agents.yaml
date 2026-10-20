@@ -1,0 +1,400 @@
+# ===========================================================================
+# Sandboxed agent VM -- Ubuntu 24.04, arch and hypervisor follow the host.
+#
+#   limactl start --name=agents lima/agents.yaml
+#
+# Host support: macOS (vz) is tested. Linux (qemu + KVM) is the intended
+# target but is UNVERIFIED -- read docs/spark-handoff.md before running this
+# on a DGX Spark or any other Linux box.
+#
+# Design notes:
+#   * No mounts at all. The guest cannot see the host filesystem. Config is
+#     pushed in afterwards with `limactl copy` (scripts/install-config.sh).
+#   * User-mode NAT networking only. No host port forwards are declared, so
+#     nothing in the guest is reachable from the host or the LAN.
+#   * Egress for the agent user is forced through a loopback squid proxy that
+#     allowlists destinations by domain. Enforcement is an iptables OUTPUT
+#     rule matched on the agent user's uid -- see /usr/local/sbin/agent-egress.
+#   * Provision scripts run on every boot, so all of them are idempotent.
+#
+# This file installs the *substrate* only: Node, Python, Tailscale, squid and
+# Pi. Pi then builds the agents from spec/pi-target-state.md.
+# ===========================================================================
+
+minimumLimaVersion: "1.0.0"
+
+# vmType is deliberately NOT set. Lima picks the right backend per host:
+#   macOS -> vz    (Apple Virtualization.framework)
+#   Linux -> qemu  (with KVM acceleration; see docs/spark-handoff.md)
+# Pinning "vz" would make this file macOS-only.
+os: "Linux"
+# arch is deliberately NOT set either: it follows the host, so the same file
+# works on an arm64 Mac, an arm64 DGX Spark and an x86_64 Linux box.
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+
+cpus: 4
+memory: "8GiB"
+disk: "60GiB"
+
+# No host filesystem access. This is the main isolation boundary.
+mounts: []
+
+# User-mode NAT. No vmnet, no bridged interface, no inbound reachability.
+networks: []
+
+# Nothing listens on the host side.
+portForwards:
+  - ignore: true
+    guestPortRange: [1, 65535]
+
+ssh:
+  # Only the Lima-managed key gets in; your personal keys are not injected.
+  loadDotSSHPubKeys: false
+
+containerd:
+  system: false
+  user: false
+
+provision:
+  # -------------------------------------------------------------------------
+  # 1. Base packages and Node 22.x
+  # -------------------------------------------------------------------------
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      mkdir -p /etc/agent-sandbox
+      # Remember which account the agents run as; the egress rules key off it.
+      #
+      # Do NOT infer this from the uid range. Lima gives the guest user the
+      # HOST's uid -- 502 on macOS -- so the usual ">= 1000" test matches
+      # nothing, and the next-best guess picks up a systemd system account.
+      # Getting this wrong applies the egress lockdown to the wrong uid, which
+      # fails silently and leaves the agents unconfined. Fail loudly instead.
+      if [ ! -s /etc/agent-sandbox/agent-user ]; then
+        # {{.User}} is Lima's own template variable for the guest user.
+        agent_user='{{.User}}'
+        if [ -z "$agent_user" ] || ! id -u "$agent_user" >/dev/null 2>&1; then
+          echo "FATAL: cannot determine the agent user (got '$agent_user')." >&2
+          echo "Refusing to guess: a wrong uid here silently disables the sandbox." >&2
+          exit 1
+        fi
+        printf '%s\n' "$agent_user" > /etc/agent-sandbox/agent-user
+      fi
+      echo "agent user: $(cat /etc/agent-sandbox/agent-user) (uid $(id -u "$(cat /etc/agent-sandbox/agent-user)"))"
+
+      apt-get update -qq
+      apt-get install -y -qq --no-install-recommends \
+        ca-certificates curl gnupg git jq openssl \
+        squid iptables \
+        python3 python3-venv pipx
+
+      # Node 22.19+ is a hard requirement for Pi.
+      need_node=1
+      if command -v node >/dev/null 2>&1; then
+        if [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 22 ]; then
+          need_node=0
+        fi
+      fi
+      if [ "$need_node" -eq 1 ]; then
+        curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+        apt-get install -y -qq nodejs
+      fi
+      node --version
+
+  # -------------------------------------------------------------------------
+  # 2. Tailscale -- installed, deliberately NOT logged in.
+  #    Needed later to reach the DGX Spark's vLLM endpoint. UNVERIFIED: the
+  #    tailnet was unreachable when this repo was written. See docs/failover.md.
+  # -------------------------------------------------------------------------
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -uo pipefail   # deliberately not -e: Tailscale is best-effort.
+      #
+      # Tailscale only matters for reaching the Spark's vLLM fallback, which is
+      # already marked unverified. Some networks block tailscale.com outright
+      # (observed: SSL_ERROR_SYSCALL on the ANL network), and that must not
+      # take the whole VM down with it.
+      #
+      # Download then execute -- never pipe an installer into a shell. The same
+      # rule is imposed on Pi in spec/pi-target-state.md.
+      SKIPMARK=/etc/agent-sandbox/tailscale-skipped
+      rm -f "$SKIPMARK"
+      if command -v tailscale >/dev/null 2>&1; then
+        echo "tailscale already installed: $(tailscale version | head -1)"
+      else
+        mkdir -p /opt/agent-sandbox/installers
+        if curl -fsSL --max-time 60 https://tailscale.com/install.sh \
+             -o /opt/agent-sandbox/installers/tailscale-install.sh; then
+          sha256sum /opt/agent-sandbox/installers/tailscale-install.sh
+          if sh /opt/agent-sandbox/installers/tailscale-install.sh; then
+            systemctl enable --now tailscaled || true
+            tailscale version | head -1
+          else
+            echo "tailscale installer failed" > "$SKIPMARK"
+          fi
+        else
+          echo "cannot reach tailscale.com (network blocks it?)" > "$SKIPMARK"
+        fi
+      fi
+      if [ -f "$SKIPMARK" ]; then
+        echo "WARNING: Tailscale unavailable -- $(cat "$SKIPMARK")"
+        echo "         The vLLM fallback over Tailscale will not work."
+        echo "         This is not fatal. See docs/failover.md."
+      fi
+      exit 0
+
+  # -------------------------------------------------------------------------
+  # 3. Egress control: squid allowlist proxy + the agent-egress helper.
+  #    squid stays stopped until allowlists are pushed in by
+  #    scripts/install-config.sh.
+  # -------------------------------------------------------------------------
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      install -d -m 0755 /etc/agent-sandbox/allowlists
+
+      cat > /etc/squid/squid.conf <<'SQUID'
+      # Allowlisting forward proxy for the sandboxed agents.
+      # No TLS interception: HTTPS is allowlisted on the CONNECT hostname.
+      http_port 127.0.0.1:3128
+
+      acl allowed_domains dstdomain "/etc/agent-sandbox/allowlist.active"
+      acl SSL_ports  port 443
+      acl Safe_ports port 80
+      acl Safe_ports port 443
+      acl Safe_ports port 8000      # vLLM on the Spark
+      acl CONNECT method CONNECT
+
+      http_access deny !Safe_ports
+      http_access deny CONNECT !SSL_ports
+      http_access allow allowed_domains
+      http_access deny all
+
+      # A proxy, not a cache.
+      cache deny all
+      cache_store_log none
+      access_log stdio:/var/log/squid/access.log
+      forwarded_for delete
+      via off
+      httpd_suppress_version_string on
+      dns_v4_first on
+      shutdown_lifetime 3 seconds
+      SQUID
+
+      # ---- agent-egress: switch phase, apply/remove the uid lockdown --------
+      cat > /usr/local/sbin/agent-egress <<'EGRESS'
+      #!/bin/bash
+      # Control egress for the sandboxed agent user.
+      #   agent-egress bootstrap   wide allowlist (installing OpenClaw/Hermes)
+      #   agent-egress runtime     narrow allowlist (steady state)
+      #   agent-egress status      show phase, rules and active allowlist
+      #   agent-egress unlock      remove the iptables lockdown (debugging)
+      set -euo pipefail
+
+      LISTS=/etc/agent-sandbox/allowlists
+      ACTIVE=/etc/agent-sandbox/allowlist.active
+      PHASE=/etc/agent-sandbox/phase
+      AGENT_USER="$(cat /etc/agent-sandbox/agent-user)"
+      AGENT_UID="$(id -u "$AGENT_USER")"
+      CHAIN=AGENT_EGRESS
+
+      apply_rules() {
+        # Rebuild from scratch so repeated runs converge on the same state.
+        iptables -D OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN" 2>/dev/null || true
+        iptables -F "$CHAIN" 2>/dev/null || iptables -N "$CHAIN"
+
+        # The agent user may talk to loopback (squid, argo-proxy) and resolve
+        # DNS. Everything else must go through the proxy, which allowlists it.
+        iptables -A "$CHAIN" -o lo -j ACCEPT
+        iptables -A "$CHAIN" -p udp --dport 53 -j ACCEPT
+        iptables -A "$CHAIN" -p tcp --dport 53 -j ACCEPT
+
+        # The model gateway, when one is configured outside loopback. Off-site
+        # this is the host side of an SSH tunnel to an argo-proxy on an ANL
+        # machine, reached via Lima's host gateway. It bypasses squid because
+        # it is a single fixed host:port, not open egress -- squid would add
+        # nothing but a second hop. Written by scripts/install-config.sh.
+        if [ -s /etc/agent-sandbox/model-gateway ]; then
+          gw="$(cat /etc/agent-sandbox/model-gateway)"
+          gw_host="${gw%%:*}"; gw_port="${gw##*:}"
+          iptables -A "$CHAIN" -d "$gw_host" -p tcp --dport "$gw_port" -j ACCEPT
+          echo "model gateway allowed: $gw_host:$gw_port"
+        fi
+
+        iptables -A "$CHAIN" -j REJECT --reject-with icmp-admin-prohibited
+
+        iptables -A OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN"
+      }
+
+      remove_rules() {
+        iptables -D OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN" 2>/dev/null || true
+        iptables -F "$CHAIN" 2>/dev/null || true
+        iptables -X "$CHAIN" 2>/dev/null || true
+      }
+
+      set_phase() {
+        local phase="$1"
+        local src="$LISTS/allowlist-$phase.conf"
+        [ -f "$src" ] || { echo "missing allowlist: $src" >&2; exit 1; }
+
+        # Validate BEFORE touching the running proxy. A rejected allowlist
+        # makes squid refuse to start, which would leave the agents with no
+        # proxy at all -- the opposite of what this command is for. Keep the
+        # previous list and restore it if the new one does not parse.
+        cp -f "$ACTIVE" "$ACTIVE.prev" 2>/dev/null || true
+        install -m 0644 "$src" "$ACTIVE"
+        if ! squid -k parse >/tmp/squid-parse.log 2>&1; then
+          echo "squid rejected '$phase'; egress policy left unchanged." >&2
+          grep -E "ERROR|FATAL" /tmp/squid-parse.log | head -5 >&2
+          echo "Common cause: listing host.example.com when .example.com is" >&2
+          echo "also listed -- the dotted form already covers subdomains." >&2
+          if [ -f "$ACTIVE.prev" ]; then mv -f "$ACTIVE.prev" "$ACTIVE"; else rm -f "$ACTIVE"; fi
+          exit 1
+        fi
+        rm -f "$ACTIVE.prev"
+        echo "$phase" > "$PHASE"
+        systemctl enable squid >/dev/null 2>&1 || true
+        systemctl restart squid
+        apply_rules
+        echo "egress phase: $phase ($(grep -cvE '^\s*(#|$)' "$ACTIVE") domains allowed)"
+      }
+
+      case "${1:-status}" in
+        bootstrap|runtime) set_phase "$1" ;;
+        unlock)
+          remove_rules
+          echo "LOCKDOWN REMOVED -- agent user has unrestricted egress." >&2
+          ;;
+        status)
+          echo "phase:      $(cat "$PHASE" 2>/dev/null || echo '<none>')"
+          echo "agent user: $AGENT_USER (uid $AGENT_UID)"
+          echo "squid:      $(systemctl is-active squid 2>/dev/null || true)"
+          echo "lockdown:   $(iptables -C OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN" 2>/dev/null && echo active || echo INACTIVE)"
+          echo "--- allowed domains ---"
+          grep -vE '^\s*(#|$)' "$ACTIVE" 2>/dev/null || echo "<no active allowlist>"
+          ;;
+        *) echo "usage: agent-egress {bootstrap|runtime|status|unlock}" >&2; exit 2 ;;
+      esac
+      EGRESS
+      chmod 0755 /usr/local/sbin/agent-egress
+
+      # Re-apply the lockdown on every boot (iptables rules are not persistent).
+      cat > /etc/systemd/system/agent-egress.service <<'UNIT'
+      [Unit]
+      Description=Re-apply sandboxed agent egress policy
+      After=network-online.target squid.service
+      Wants=network-online.target
+      ConditionPathExists=/etc/agent-sandbox/phase
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/bin/sh -c '/usr/local/sbin/agent-egress "$(cat /etc/agent-sandbox/phase)"'
+
+      [Install]
+      WantedBy=multi-user.target
+      UNIT
+      systemctl daemon-reload
+      systemctl enable agent-egress.service
+
+      # squid must not come up before an allowlist exists.
+      systemctl disable --now squid >/dev/null 2>&1 || true
+
+  # -------------------------------------------------------------------------
+  # 4. Agent toolchain, as the agent user: Pi only.
+  # -------------------------------------------------------------------------
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+
+      # User-local npm prefix so Pi installs without root.
+      npm config set prefix "$HOME/.local"
+      mkdir -p "$HOME/.local/bin"
+      if ! grep -q 'agent-sandbox PATH' "$HOME/.profile" 2>/dev/null; then
+        {
+          echo ''
+          echo '# agent-sandbox PATH'
+          echo 'export PATH="$HOME/.local/bin:$PATH"'
+          echo '# All agent egress goes through the allowlisting proxy.'
+          echo 'export HTTP_PROXY=http://127.0.0.1:3128'
+          echo 'export HTTPS_PROXY=http://127.0.0.1:3128'
+          echo 'export http_proxy=http://127.0.0.1:3128'
+          echo 'export https_proxy=http://127.0.0.1:3128'
+          echo 'export NO_PROXY=127.0.0.1,localhost,192.168.5.2,host.lima.internal,spark-ts'
+          echo 'export no_proxy=127.0.0.1,localhost,192.168.5.2,host.lima.internal,spark-ts'
+          echo '# Node ignores HTTP_PROXY by default -- its fetch/undici stack'
+          echo '# needs this or every request dies EHOSTUNREACH against the'
+          echo '# egress lockdown. Pi and OpenClaw are Node apps. Experimental'
+          echo '# in Node 22 (UNDICI-EHPA warning), stable in 24+.'
+          echo 'export NODE_USE_ENV_PROXY=1'
+        } >> "$HOME/.profile"
+      fi
+      export PATH="$HOME/.local/bin:$PATH"
+
+      # Pi -- the @earendil-works scope; @mariozechner is stale.
+      if ! command -v pi >/dev/null 2>&1; then
+        npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+      fi
+      pi --version || true
+
+      # npm itself must use the proxy once the lockdown is on.
+      npm config set proxy http://127.0.0.1:3128
+      npm config set https-proxy http://127.0.0.1:3128
+      npm config set noproxy 127.0.0.1,localhost
+
+  # -------------------------------------------------------------------------
+  # 5. Linger, so the agents' user services survive logout and reboot.
+  # -------------------------------------------------------------------------
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      loginctl enable-linger "$(cat /etc/agent-sandbox/agent-user)"
+
+# A clean `limactl start` should end with these passing.
+probes:
+  - description: "Node 22+ and Pi are installed"
+    script: |
+      #!/bin/bash
+      set -eu -o pipefail
+      timeout 300s bash -c 'until command -v node >/dev/null 2>&1 && \
+        [ "$(node -p "process.versions.node.split(\".\")[0]")" -ge 22 ]; do sleep 3; done'
+      AGENT_USER="$(cat /etc/agent-sandbox/agent-user 2>/dev/null || true)"
+      if [ -z "$AGENT_USER" ]; then
+        echo "FATAL: /etc/agent-sandbox/agent-user is empty; provisioning step 1 failed." >&2
+        exit 1
+      fi
+      AGENT_HOME="$(getent passwd "$AGENT_USER" | cut -d: -f6)"
+      timeout 300s bash -c "until [ -x \"$AGENT_HOME/.local/bin/pi\" ]; do sleep 3; done"
+    hint: |
+      Provisioning did not finish. Check: limactl shell agents -- sudo journalctl -u cloud-final
+
+  - description: "egress tooling is in place"
+    script: |
+      #!/bin/bash
+      set -eu -o pipefail
+      timeout 120s bash -c 'until [ -x /usr/local/sbin/agent-egress ]; do sleep 3; done'
+      timeout 120s bash -c 'until [ -f /etc/squid/squid.conf ]; do sleep 3; done'
+    hint: |
+      The egress provisioning step failed; squid or the agent-egress helper is missing.
+
+message: |
+  VM is up. Nothing is locked down yet and no agents exist.
+
+  Next:
+    1. ./scripts/install-config.sh      push config, start argo-proxy, lock egress down
+    2. ./scripts/run-bootstrap.sh       hand spec/pi-target-state.md to Pi
+    3. ./verify/verify.sh               check the result
+
+  Shell in with:  limactl shell {{.Name}}

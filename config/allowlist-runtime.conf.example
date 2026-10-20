@@ -1,0 +1,21 @@
+# Squid dstdomain allowlist -- RUNTIME phase (narrow).
+#
+# This is the steady state the agents run under. Everything not listed here is
+# refused by the proxy, and the agent user has no route to the internet except
+# through the proxy. verify/test-egress.sh asserts both halves of that.
+#
+# Activate with:  sudo agent-egress runtime
+# A leading dot matches subdomains. One entry per line.
+
+# --- Models -----------------------------------------------------------------
+# Argo, via argo-proxy on 127.0.0.1:44497.
+apps.inside.anl.gov
+
+# --- Local fallback model ---------------------------------------------------
+# DGX Spark vLLM endpoint over Tailscale. UNVERIFIED -- see docs/failover.md.
+spark-ts
+
+# --- Chat channels ----------------------------------------------------------
+# Keep commented out until verification passes. Uncommenting this is the
+# deliberate act of letting the agents talk to the outside world.
+# api.telegram.org
