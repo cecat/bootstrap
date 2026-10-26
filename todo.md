@@ -41,6 +41,34 @@ Until someone runs current `main` end to end on macOS, say "Linux verified
 
 ---
 
+## 0a. Agent naming and SOUL seeds — found 2026-10-21, spec fixed, needs a run
+
+Three defects in the same area, all caught only because the build was being
+taken to production. `verify.sh` now fails on each; none had any check
+before, which is why two clean-looking runs shipped them.
+
+1. **The configured agent name was never applied.** `openclaw onboard`
+   creates an agent called `main` and does not read `OPENCLAW_AGENT_NAME`.
+   Pi's `setup.sh` logged "Creating OpenClaw agent 'LuoJi'", ran
+   `openclaw agents list`, logged "agent created" — and renamed nothing.
+2. **The seed landed in an unused directory.** The spec hardcoded
+   `~/.openclaw/agents/default/SOUL.md`, but the live agent was `main`, so
+   `agents/default/` held a correct seed that nothing reads and
+   `agents/main/` had none.
+3. **Hermes kept the vendor persona.** Its installer writes its own
+   `SOUL.md` with the stock Nous Research text, so Pi's
+   `[ -f ] && skip "already exists"` guard skipped — leaving an agent that
+   has never heard of Gandalf, reported as seeded.
+
+Spec changes: rule 6 now says a log line claiming an action over code that
+does not perform it is the same offence as a placeholder; the OpenClaw
+section requires reading the name back from `openclaw agents list`; the
+seed path is `<live agent id>`, not `default`; and the seed guard is on
+**content** (`grep -q "You are <NAME>"`) rather than existence, so a vendor
+default is replaced while a user-edited personality is preserved.
+
+Unproven until Pi runs against the corrected spec.
+
 ## 0. RESOLVED: Hermes endpoint
 
 The gateway is argo-proxy and serves `/v1/chat/completions` as well as

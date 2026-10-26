@@ -66,6 +66,22 @@ Violating any of these means stopping and reporting, not working around it.
    when nothing had been written at all. An honest "I could not do this, and
    here is what I tried" is always the better answer.
 
+   **A log line that claims an action, over code that does not perform it, is
+   the same offence.** A later run wrote this and shipped it:
+
+   ```sh
+   log "Creating OpenClaw agent '$OPENCLAW_AGENT_NAME'..."
+   # The onboard process should have created a default agent already
+   openclaw agents list
+   log "OpenClaw agent created"
+   ```
+
+   Nothing was created. The agent kept its default name, the user's chosen
+   name was never applied, and `setup.sh` printed two lines saying otherwise.
+   If a function logs that it did something, the code between those lines
+   must do it — or the log must say what actually happened
+   ("agent already exists as 'main'; not renamed").
+
 ---
 
 ## Preconditions
@@ -243,7 +259,18 @@ Any agent you configure that runs under systemd needs this same treatment.
   it must survive logout and reboot.
 - Model provider points at `VM_BASE_URL` (Anthropic shape), with
   `CREDENTIAL` supplied as the API key.
-- Exactly one agent. Its name comes from `OPENCLAW_AGENT_NAME`.
+- **Exactly one agent, named from `OPENCLAW_AGENT_NAME`.** `openclaw onboard`
+  creates an agent called `main`; it does not read your env. Renaming it is
+  work you have to do, and then **read it back**: `openclaw agents list` must
+  show the configured name before you call this done. A previous run logged
+  "Creating OpenClaw agent 'LuoJi'", ran `openclaw agents list`, logged
+  "agent created", and left the agent called `main` — see rule 6.
+
+  Watch for a second failure mode that follows from this: if you write
+  `SOUL.md` into `~/.openclaw/agents/<name>/` for a name that is not the
+  live agent id, you get two directories and the seed sits in the unused
+  one. Confirm the path you wrote matches the `Agent dir` that
+  `openclaw agents list` reports.
 - Verified with `openclaw gateway status` and `openclaw doctor`.
 
 ### 2. Hermes
@@ -294,13 +321,27 @@ regardless.
 
 ### 5. Agent personality seeds
 
-Write each file **only if it does not already exist**. These are seeds. After
-the first write the file belongs to the agent and its user, and your setup
-script must never touch it again — re-running setup must not revert a
-personality the user has since edited by talking to their agent.
+These are seeds. Once written, the file belongs to the agent and its user,
+and your setup script must never touch it again — re-running setup must not
+revert a personality the user has since edited by talking to their agent.
 
-- `~/.openclaw/agents/default/SOUL.md`
+- `~/.openclaw/agents/<agent-id>/SOUL.md` — the **live** agent id, the one in
+  the `Agent dir` line of `openclaw agents list`. Do not assume `default`:
+  that directory can exist while the running agent uses another, and a seed
+  written to the wrong one is simply never read.
 - `~/.hermes/SOUL.md`
+
+**"Only if absent" is not a sufficient guard.** The Hermes installer writes
+its own `SOUL.md` carrying the stock Nous Research persona, so a bare
+`[ -f "$f" ] || write` skips and leaves the agent with a vendor default that
+never mentions the name the user chose. A previous run did exactly that, and
+reported the seed as written.
+
+Guard on **content**, not existence: write the seed unless the file already
+names the configured agent (`grep -q "You are <NAME>"`). That protects a
+personality the user has edited — their file still names their agent — while
+replacing a vendor default. State in your summary which of the two happened
+for each agent.
 
 Use this content, substituting the agent's name. Keep it this short.
 

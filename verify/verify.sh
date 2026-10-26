@@ -253,10 +253,37 @@ else
   fail "no plaintext or unresolved secrets" "plaintext=$plain unresolved=$unres (see: openclaw secrets audit)"
 fi
 
-for f in .openclaw/agents/*/SOUL.md .hermes/SOUL.md; do
-  found="$(g "ls $f 2>/dev/null | head -1" | tr -d '\r')"
-  [ -n "$found" ] && pass "SOUL.md present" "$found" || fail "SOUL.md present" "$f missing -- the agent has no personality seed"
-done
+# The agent must carry the name the user chose, and its SOUL.md must be the
+# seed rather than a vendor default. Checking only that some SOUL.md exists
+# passes a build where `openclaw onboard` left the agent called "main", the
+# seed landed in an unused agents/<other>/ directory, and Hermes kept the
+# stock Nous persona -- all three happened on one run.
+want_oc="$(g 'set -a; . $HOME/.config/agent-sandbox/agents.env 2>/dev/null; set +a; printf %s "$OPENCLAW_AGENT_NAME"' | tr -d '\r')"
+want_he="$(g 'set -a; . $HOME/.config/agent-sandbox/agents.env 2>/dev/null; set +a; printf %s "$HERMES_AGENT_NAME"' | tr -d '\r')"
+
+live_dir="$(g 'openclaw agents list 2>/dev/null' | grep -m1 'Agent dir:' | sed 's/.*Agent dir: *//' | sed 's#/agent/*$##' | tr -d '\r')"
+if [ -n "$want_oc" ] && [ -n "$live_dir" ]; then
+  case "$live_dir" in
+    */"$want_oc") pass "OpenClaw agent is named as configured" "$live_dir" ;;
+    *)            fail "OpenClaw agent is named as configured" "live agent dir is $live_dir, expected .../$want_oc -- the configured name was not applied" ;;
+  esac
+else
+  skip "OpenClaw agent is named as configured" "could not read the agent name or the live agent dir"
+fi
+
+check_soul() {
+  local label="$1" path="$2" want="$3"
+  local body; body="$(g "cat $path 2>/dev/null" | tr -d '\r')"
+  if [ -z "$body" ]; then
+    fail "$label SOUL.md" "$path missing or empty -- the agent has no personality"
+  elif [ -n "$want" ] && ! printf '%s' "$body" | grep -qi "$want"; then
+    fail "$label SOUL.md" "$path does not mention '$want' -- looks like a vendor default, not the seed"
+  else
+    pass "$label SOUL.md" "present and names $want"
+  fi
+}
+[ -n "$live_dir" ] && check_soul "OpenClaw" "$live_dir/SOUL.md" "$want_oc"
+check_soul "Hermes" '$HOME/.hermes/SOUL.md' "$want_he"
 
 # ---------------------------------------------------------------------------
 section "Channels are off"
