@@ -23,6 +23,11 @@ Do not ask the user to retype an endpoint you can discover.
 
 ## Current status
 
+**Working on this repo? Read `docs/handoff-2026-10-26.md` first.** It records
+where the work stands, the next three steps, and the one rule that matters:
+**the deliverable is the repo, not the VM** — when something breaks, fix the
+script or the spec and rerun, never reach into the VM by hand.
+
 This repo is mid-build. Implemented and checked:
 
 | Path | State |
