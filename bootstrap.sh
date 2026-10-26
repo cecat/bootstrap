@@ -31,6 +31,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO"
 
 INSTANCE="${AGENTS_VM:-agents}"
+ORIG_ARGS="$*"
 REBUILD=0
 DRY_RUN=0
 for a in "$@"; do
@@ -48,11 +49,29 @@ fi
 if [ -t 1 ]; then B=$'\033[1m'; R=$'\033[31m'; Y=$'\033[33m'; G=$'\033[32m'; Z=$'\033[0m'
 else B=''; R=''; Y=''; G=''; Z=''; fi
 
-step() { printf '\n%s=== %s ===%s\n' "$B" "$*" "$Z"; }
+step() { printf '\n%s=== %s ===%s\n' "$B" "$*" "$Z"; CURRENT_STEP="$*"; }
 say()  { printf '%s==>%s %s\n' "$B" "$Z" "$*"; }
 warn() { printf '%swarning:%s %s\n' "$Y" "$Z" "$*" >&2; }
-fail() { printf '%serror:%s %s\n' "$R" "$Z" "$*" >&2; exit 1; }
+fail() { printf '%serror:%s %s\n' "$R" "$Z" "$*" >&2; FINISHED=1; exit 1; }
 ok()   { printf '%s  ok%s  %s\n' "$G" "$Z" "$*"; }
+
+# A bare `set -e` death prints nothing at all. That happened on the first
+# real run: limactl exits 1 when an instance does not exist, which is the
+# normal case right after --rebuild, and the script vanished mid-step with
+# no message and no VM. Anything that exits without reaching the end says
+# so, and says where.
+CURRENT_STEP="startup"
+FINISHED=0
+on_exit() {
+  local rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  [ "$FINISHED" = "1" ] && return 0
+  printf '\n%serror:%s bootstrap.sh exited (status %d) during: %s\n' \
+    "$R" "$Z" "$rc" "$CURRENT_STEP" >&2
+  printf 'If no message explains why, a command failed under set -e.\n' >&2
+  printf 'Re-run with:  bash -x ./bootstrap.sh %s\n' "$ORIG_ARGS" >&2
+}
+trap on_exit EXIT
 
 # Two separate requirements, and both are real.
 #
@@ -66,13 +85,17 @@ ok()   { printf '%s  ok%s  %s\n' "$G" "$Z" "$*"; }
 [ -r /dev/tty ] || fail "bootstrap.sh needs a terminal and there is no /dev/tty."
 [ -t 0 ] || fail "bootstrap.sh needs an interactive terminal.
 
-Its stdin is not a tty, so it cannot ask you anything and step 6 could not
-hand you an interactive Pi session.
+Its stdin is not a tty, so it cannot ask you anything, and step 6 could not
+hand over the interactive Pi session that does the actual build.
 
-If you are a coding agent: do not run this through your bash tool. Tell the
-user to run it themselves. In Claude Code they can type:
+Open a terminal window and run it there:
 
-    ! ./bootstrap.sh"
+    cd $REPO && ./bootstrap.sh${*:+ $*}
+
+This also rules out a coding agent's bash tool and shell escapes like Claude
+Code's '!' prefix -- both run a non-interactive shell. Paste the output back
+to your agent instead; it can read a transcript, it just must not drive the
+build."
 
 # --- /dev/kvm: group membership, not an ACL --------------------------------
 # On Linux a setfacl grant on /dev/kvm does not survive the udev event that
@@ -207,6 +230,7 @@ AGENTS.md -> 'Adding a provider'."
 if [ "$DRY_RUN" = "1" ]; then
   echo
   say "dry run: stopping before anything is written or started."
+  FINISHED=1
   exit 0
 fi
 
@@ -223,7 +247,11 @@ step "Step 2 -- start the VM"
 
 # Start it now and keep going. Provisioning is about ten minutes and the next
 # step is questions, so there is no reason to make the user watch a bar.
-vm_status="$(limactl list --format '{{.Status}}' "$INSTANCE" 2>/dev/null | head -1)"
+# limactl exits 1 and prints "unmatched instances" when the instance does not
+# exist, which under `set -e` kills the script dead the moment it is reached
+# -- immediately after --rebuild, every time. The || true is load-bearing:
+# "no such instance" is the normal case here, not an error.
+vm_status="$(limactl list --format '{{.Status}}' "$INSTANCE" 2>/dev/null | head -1 || true)"
 VM_LOG="$REPO/.vm-start.log"
 VM_PID=""
 
@@ -405,6 +433,7 @@ confirm "Did Pi report that it finished building the target state?" || {
   that is the deliverable.
 
 EOF
+  FINISHED=1
   exit 1
 }
 
@@ -474,4 +503,5 @@ if [ "$VERIFY_RC" != "0" ] || [ "$IDEM_RC" != "0" ]; then
 Fix the script or the spec that caused each failure and re-run -- not the VM."
 fi
 
+FINISHED=1
 say "verification passed."

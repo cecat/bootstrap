@@ -6,18 +6,17 @@ Claude Code looks for `CLAUDE.md`. Same content either way.)*
 
 ## If you were asked to build this
 
-**Tell the user to run `./bootstrap.sh` themselves.** Do not run it through
-your own bash tool — it will refuse, because step 6 hands over an interactive
-Pi session that cannot run against a pipe.
+**Tell the user to run `./bootstrap.sh` in a real terminal window.** Not
+through your bash tool, and not through an escape hatch like Claude Code's
+`!` prefix — both run a non-interactive shell, and the script refuses to
+start in one.
 
-In Claude Code, they can type:
+That refusal is deliberate. Step 6 hands over an interactive Pi session: a
+TUI that needs a real terminal to render and to take keystrokes. A build
+driven through a pipe would hang there with no useful error.
 
-```
-! ./bootstrap.sh
-```
-
-so the output lands in your conversation and you can help read it. Otherwise
-any terminal will do.
+So the user runs it in their own terminal and pastes output back to you when
+they want help reading it.
 
 Your job is before and after, not during:
 
