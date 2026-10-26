@@ -28,9 +28,18 @@ unchanged, egress lockdown held including the negative tests, and Pi built
 both agents. `verify/verify.sh --models` reports **27 passed, 0 failed**.
 Tailscale installed cleanly here, unlike on the macOS build network.
 
-What is still unproven on Linux: `--reboot` persistence, and the Telegram
-channel path (nothing has configured a channel yet on any host). The traps
-that cost time on this run are in sections 1 and 5 below — read them.
+**2026-10-21: repeated from scratch**, deleting the VM and every generated
+file in `config/`, to check the repo and not the surviving machine. Pi built
+both agents unaided from the committed spec and `verify.sh --models` reported
+**29 passed, 0 failed**. The rebuild earned its keep immediately: Pi halted on
+a precondition the two earlier runs had masked, because the spec told it to
+curl `UPSTREAM_BASE_URL` — the *host's* `127.0.0.1:<port>` — which from inside
+the VM is nothing. Use `VM_BASE_URL`.
+
+What is still unproven on Linux: `--reboot` persistence, and a Telegram
+channel actually carrying a message after being enabled (they are configured
+and deliberately left disabled). The traps that cost time are in sections 1
+and 5 below — read them.
 
 ---
 

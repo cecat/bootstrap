@@ -32,8 +32,8 @@ This repo is mid-build. Implemented and checked:
 | `scripts/install-config.sh` | Implemented and run against a real VM. |
 | `config/*.example` | Implemented. |
 | `spec/pi-target-state.md` | Implemented. |
-| `scripts/run-bootstrap.sh` | Implemented and run; Pi built both agents from it. |
-| `verify/verify.sh` | Implemented. **27 pass, 0 fail** with `--models` on the Linux build. |
+| `scripts/run-bootstrap.sh` | Implemented. Pi built both agents from it unaided on a clean rebuild (2026-10-21). |
+| `verify/verify.sh` | Implemented. **29 pass, 0 fail** with `--models` on a clean Linux rebuild. |
 | `docs/personality.md`, `docs/failover.md` | Implemented. |
 | `docs/spark-handoff.md` | Implemented (Linux/DGX Spark porting notes). |
 | `docs/snapshots.md` | **Not written.** |

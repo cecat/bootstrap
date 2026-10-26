@@ -39,8 +39,22 @@ Violating any of these means stopping and reporting, not working around it.
    audit. See *Secrets: the required mechanism* below — it is mandatory, not
    advisory, and you must quote the audit output that proves it.
 
-5. **Never report success you have not verified.** "Installed" means a doctor
-   or status command exited zero and you are quoting its output.
+5. **Never report anything you have not verified — including failures.**
+   "Installed" means a doctor or status command exited zero and you are
+   quoting its output.
+
+   This cuts both ways, and the second direction is easier to miss. A
+   previous run reported "api.telegram.org is blocked by the egress
+   allowlist" without ever sending a request. It was not blocked; the domain
+   was in the active allowlist and reachable. An unverified *failure* is just
+   as false as an unverified success, and worse in one way: it sends someone
+   to fix a problem that does not exist, and it quietly abandons work you
+   could have finished.
+
+   So before you write "blocked", "unavailable", "not supported" or "could
+   not", run the command that shows it and quote what came back. "I did not
+   check" is an acceptable thing to write. A diagnosis you did not make is
+   not.
 
 6. **Never leave a placeholder and describe it as done.** If you cannot
    determine how to configure something, the only acceptable outcomes are to
@@ -62,7 +76,7 @@ yours to fix:
 | Check | Expected |
 |---|---|
 | `sudo agent-egress status` | phase `bootstrap`, lockdown `active` |
-| `curl -s --proxy http://127.0.0.1:3128 "$UPSTREAM_BASE_URL/v1/models"` | HTTP 200 |
+| `curl -s --noproxy '*' "$VM_BASE_URL/v1/models"` | HTTP 200 |
 | `ls ~/.config/agent-sandbox/agents.env` | exists, mode 0600 |
 
 ### Model access
@@ -74,13 +88,23 @@ Read `~/.config/agent-sandbox/model-access.env` (mode 0600). It gives you:
 
 | Variable | Meaning |
 |---|---|
-| `UPSTREAM_BASE_URL` | the endpoint, e.g. `https://apps.inside.anl.gov/argoapi` |
+| `VM_BASE_URL` | **the endpoint to configure agents with.** Always use this one. |
+| `UPSTREAM_BASE_URL` | what the *host* uses. Often `127.0.0.1:<port>`, which from inside this VM is nothing at all. |
 | `CREDENTIAL` | the API credential. For Argo this is an ANL username, not a key. |
 | `MODEL_OPUS` / `MODEL_SONNET` / `MODEL_HAIKU` | model names |
 
-The endpoint speaks the **Anthropic** shape (`/v1/messages`). It is reached
-through the egress proxy at `127.0.0.1:3128`, which is already in your
-environment — do not override it.
+**Use `VM_BASE_URL` everywhere.** When the host reaches its models through a
+local tunnel, `UPSTREAM_BASE_URL` is a host-side loopback address and
+connecting to it from here gives "connection refused" — which looks exactly
+like the model gateway being down, and will send you to report a precondition
+failure that does not exist. `VM_BASE_URL` is the same endpoint rewritten to
+an address this VM can actually reach.
+
+That address is reached **directly, not through the proxy** — it is the one
+destination the egress rules allow by uid, because it is a single fixed
+host:port rather than open egress. Use `--noproxy '*'` when you curl it.
+Everything else must go through `127.0.0.1:3128`, which is already in your
+environment; do not override it.
 
 **The endpoint serves both API shapes.** It is an argo-proxy instance, which
 translates between formats:
@@ -217,7 +241,7 @@ Any agent you configure that runs under systemd needs this same treatment.
   as an env SecretRef. It must not appear in any OpenClaw config file.
 - Running as a systemd **user** service, enabled. Lingering is already on, so
   it must survive logout and reboot.
-- Model provider points at `UPSTREAM_BASE_URL` (Anthropic shape), with
+- Model provider points at `VM_BASE_URL` (Anthropic shape), with
   `CREDENTIAL` supplied as the API key.
 - Exactly one agent. Its name comes from `OPENCLAW_AGENT_NAME`.
 - Verified with `openclaw gateway status` and `openclaw doctor`.
@@ -230,7 +254,7 @@ Any agent you configure that runs under systemd needs this same treatment.
   non-interactive path, **say so and stop** — do not drive it with `expect` or
   simulated keystrokes.
 - Model provider: the same gateway, OpenAI-compatible path. Set its base URL
-  to `UPSTREAM_BASE_URL` (or `VM_BASE_URL`), api key to the ANL username, and
+  to `VM_BASE_URL`, api key to the ANL username, and
   a model id the gateway lists. Verify with a real completion, not `doctor`:
   `hermes doctor` checks `api.anthropic.com`, which is irrelevant here and
   will report a 403 that means nothing.
@@ -247,7 +271,7 @@ Any agent you configure that runs under systemd needs this same treatment.
 ### 3. Pi's own provider
 
 Write `~/.pi/agent/models.json` with a custom provider whose `baseUrl` is
-`UPSTREAM_BASE_URL`, with `CREDENTIAL` as the apiKey. Credentials in
+`VM_BASE_URL`, with `CREDENTIAL` as the apiKey. Credentials in
 `~/.pi/agent/auth.json` are a secret;
 mode 0600, never printed.
 
@@ -359,23 +383,26 @@ point at which `hermes gateway install` becomes appropriate — see section 2.
 That service needs the same proxy environment as OpenClaw's; see *The gateway
 needs the proxy*.
 
-**Two things that will stop you, and are not yours to fix:**
+**Validate every token, and quote the result. This is mandatory.**
 
-- `api.telegram.org` is **not** in the runtime allowlist by default; it ships
-  commented out. Any Telegram call from inside the VM will fail with
-  `403 CONNECT tunnel failed` until a human uncomments it. That is rule 1
-  territory: report the blocked domain, do not edit the allowlist yourself.
-- A bot token can be present and still be **invalid**. Check each one before
-  using it and report the result -- this costs one call and immediately
-  distinguishes "misconfigured" from "wrong credential":
+`api.telegram.org` is allowed in **both** egress phases, bootstrap included,
+specifically so you can test rather than configure blind. Do not assume it is
+blocked — a previous run said so without sending a single request, and was
+wrong. If a call does fail, quote the actual error (rule 5).
 
-  ```sh
-  curl -sS "https://api.telegram.org/bot$TOKEN/getMe"   # ok:true + username
-  ```
+A bot token can be present and still be **invalid**. One call separates
+"misconfigured" from "wrong credential", and a previous run shipped a token
+that Telegram rejected with `Unauthorized`, which no amount of correct
+configuration would have fixed:
 
-  On the last run one of the two supplied tokens returned
-  `Unauthorized`, so that agent could never have answered no matter how
-  correctly it was configured.
+```sh
+curl -sS "https://api.telegram.org/bot$TOKEN/getMe"   # expect ok:true + username
+```
+
+Do this for **each** token you were given, and put the bot usernames (or the
+rejection) in your summary — `@name_bot` is not a secret, the token is. If a
+token is rejected, configure nothing for that agent and say so: only a human
+can issue a new one from @BotFather.
 
 Then:
 
@@ -427,7 +454,10 @@ Write a summary covering:
   would do to enable one. If you configured nothing, say that instead; do not
   list a feature here that you did not actually write.
 - **Secrets** — the `openclaw secrets audit --check` line showing
-  `plaintext=0`, quoted.
+  `plaintext=0` and `unresolved=0`, quoted, from a clean login shell.
+- **Channels** — the `getMe` result for every token you were given: the bot
+  username, or the rejection. If you claim a domain was blocked, the command
+  and its output.
 - **Anything that surprised you**, including blocked domains, documentation
   that disagreed with this spec, and steps you were unsure about.
 

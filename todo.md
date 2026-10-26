@@ -209,6 +209,15 @@ exist. The human noticed only because neither bot answered.
 leaving a placeholder and reporting it as done, and the channels section now
 requires reading back the created state.
 
+**Update 2026-10-21 (clean rebuild):** Pi configured both channels from the
+spec unaided — OpenClaw via `channels add` with the token migrated to a
+SecretRef, `dmPolicy: allowlist` and `allowFrom` set; Hermes via its
+`~/.hermes/.env`. Both left **disabled**, correctly. What it did *not* do is
+validate the tokens: no `getMe` call anywhere in `setup.sh`, and it reported
+`api.telegram.org` as blocked when the domain was in the active allowlist and
+reachable (302). Rule 5 now covers unverified *negative* claims, and the
+channels section requires quoting `getMe` output per token.
+
 **The syntax is now known and written into the spec.** Three things blocked
 this, all found by hand afterwards:
 
