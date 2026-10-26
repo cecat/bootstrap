@@ -116,10 +116,21 @@ done
 # ---------------------------------------------------------------------------
 section "Egress policy"
 
+# --idempotence requires the bootstrap allowlist: Pi's setup.sh fetches from
+# pypi.org, which runtime does not permit. So a run that asks for it is
+# deliberately mid-build and 'bootstrap' is the correct phase -- failing on
+# it would make --all unsatisfiable in either phase, which is what used to
+# happen. A plain run still fails: a finished build must be on runtime.
 phase="$(groot 'cat /etc/agent-sandbox/phase 2>/dev/null' | tr -d '\r')"
 case "$phase" in
   runtime)   pass "egress phase" "runtime (steady state)" ;;
-  bootstrap) fail "egress phase" "still 'bootstrap' (wide allowlist). Run: limactl shell $VM -- sudo agent-egress runtime" ;;
+  bootstrap)
+    if [ "$DO_IDEM" -eq 1 ]; then
+      pass "egress phase" "bootstrap (wide) -- expected during --idempotence; narrow to runtime when done"
+    else
+      fail "egress phase" "still 'bootstrap' (wide allowlist). Run: limactl shell $VM -- sudo agent-egress runtime"
+    fi
+    ;;
   *)         fail "egress phase" "'${phase:-none}' -- no policy has been applied" ;;
 esac
 
