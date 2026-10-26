@@ -342,13 +342,21 @@ else
     skip "setup.sh is idempotent" "needs the bootstrap allowlist; currently '$phase'"
   else
     idem="$(g 'cd ~/agent-bootstrap && ./setup.sh 2>&1')"
-    # Count lines that announce an action rather than a skip. Pi's logger
-    # prefixes both with a timestamp, so match the verbs it actually uses.
-    changed="$(printf '%s' "$idem" | grep -icE '(Creating|Setting|Installing|Migrating|Writing|Enabling|Adding) ' || true)"
+    # Count announced actions that are NOT immediately retracted by an
+    # "already ..." line. Two refinements, both learned from false positives:
+    # anchor on the script's own [HH:MM:SS] prefix, because installer banners
+    # are full of prose and box-drawing characters; and drop any announcement
+    # whose very next line reports the work was skipped, because a function
+    # that logs "Installing X..." before testing for X is noisy, not
+    # non-idempotent. What matters is whether state changed.
+    changed="$(printf '%s' "$idem" | awk '
+      /^\[[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\] +(Creating|Setting|Installing|Migrating|Writing|Enabling|Adding) / { pending++; last=NR; next }
+      /already|up to date|unchanged|Skipping|skip/ { if (last == NR-1 && pending) pending-- }
+      END { print pending+0 }')"
     if [ "${changed:-0}" = "0" ]; then
       pass "setup.sh is idempotent" "second run reported no changes"
     else
-      fail "setup.sh is idempotent" "$changed step(s) acted on a second run -- look for a guard that never matches: $(printf '%s' "$idem" | grep -iE '(Creating|Setting|Installing|Migrating|Writing|Enabling|Adding) ' | head -3 | sed 's/^[^]]*] *//' | paste -sd' | ' -)"
+      fail "setup.sh is idempotent" "$changed step(s) acted on a second run -- look for a guard that never matches: $(printf '%s' "$idem" | grep -E '^\[[0-9]{2}:[0-9]{2}:[0-9]{2}\] +(Creating|Setting|Installing|Migrating|Writing|Enabling|Adding) ' | head -3 | sed 's/^\[[0-9:]*\] *//' | paste -sd' | ' -)"
     fi
   fi
 fi
