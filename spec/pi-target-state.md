@@ -259,18 +259,26 @@ Any agent you configure that runs under systemd needs this same treatment.
   it must survive logout and reboot.
 - Model provider points at `VM_BASE_URL` (Anthropic shape), with
   `CREDENTIAL` supplied as the API key.
-- **Exactly one agent, named from `OPENCLAW_AGENT_NAME`.** `openclaw onboard`
-  creates an agent called `main`; it does not read your env. Renaming it is
-  work you have to do, and then **read it back**: `openclaw agents list` must
-  show the configured name before you call this done. A previous run logged
-  "Creating OpenClaw agent 'LuoJi'", ran `openclaw agents list`, logged
-  "agent created", and left the agent called `main` — see rule 6.
+- **Exactly one agent, carrying the name in `OPENCLAW_AGENT_NAME`.**
+  `openclaw onboard` creates an agent whose **id** is `main` and does not
+  read your env. That id is immutable — `openclaw agents` offers
+  `add`/`delete`/`set-identity`, no rename — so do not try to change it, and
+  do not create a second agent to get the name you want.
 
-  Watch for a second failure mode that follows from this: if you write
-  `SOUL.md` into `~/.openclaw/agents/<name>/` for a name that is not the
-  live agent id, you get two directories and the seed sits in the unused
-  one. Confirm the path you wrote matches the `Agent dir` that
-  `openclaw agents list` reports.
+  What you set is the **identity**:
+
+  ```sh
+  openclaw agents set-identity --agent <id> --name "$OPENCLAW_AGENT_NAME"
+  ```
+
+  Then **read it back** — `openclaw agents list` must print
+  `Identity: <name>` before you call this done. A previous run logged
+  "Creating OpenClaw agent 'LuoJi'", ran `openclaw agents list`, logged
+  "agent created", and set nothing at all; see rule 6.
+
+  Expect `- main (default) (LuoJi)` afterwards. The id stays `main`, and the
+  state directory stays `~/.openclaw/agents/main/`. That is correct and not
+  something to work around.
 - Verified with `openclaw gateway status` and `openclaw doctor`.
 
 ### 2. Hermes
@@ -325,10 +333,22 @@ These are seeds. Once written, the file belongs to the agent and its user,
 and your setup script must never touch it again — re-running setup must not
 revert a personality the user has since edited by talking to their agent.
 
-- `~/.openclaw/agents/<agent-id>/SOUL.md` — the **live** agent id, the one in
-  the `Agent dir` line of `openclaw agents list`. Do not assume `default`:
-  that directory can exist while the running agent uses another, and a seed
-  written to the wrong one is simply never read.
+- `~/.openclaw/agents/<agent-id>/SOUL.md` — the **live** agent id. Do not
+  assume `default`: that directory can exist while the running agent uses
+  another, and a seed written to the wrong one is simply never read.
+
+  Derive it from `openclaw agents list`, but mind two traps in that output,
+  both of which a previous run hit while looking correct:
+
+  ```
+    Agent dir: ~/.openclaw/agents/main/agent
+  ```
+
+  It has a trailing **`/agent`** — SOUL.md belongs one level *above* it, so
+  `"$agent_dir/SOUL.md"` silently writes to the wrong place. And the `~` is
+  literal text, which no shell expands when it arrives as data. Strip the
+  suffix and expand the tilde, then confirm the file you wrote is the one
+  the agent reads by listing the directory afterwards.
 - `~/.hermes/SOUL.md`
 
 **"Only if absent" is not a sufficient guard.** The Hermes installer writes
@@ -464,6 +484,30 @@ already holds, otherwise make the change and say what changed. Concretely —
 `install -m` rather than `cp` then `chmod`; `systemctl enable --now` rather
 than `start` plus a separate enable; append to a file only after `grep -q`;
 create a config only after testing for it.
+
+**Do not grep multi-line JSON with a single-line pattern.** This guard looks
+right and never matches, because the file is pretty-printed:
+
+```sh
+# WRONG -- botToken and source are on different lines
+grep -q '"botToken".*"source":"env"' openclaw.json
+```
+
+Query the structure instead:
+
+```sh
+jq -e '.channels.telegram.botToken.source == "env"' openclaw.json >/dev/null
+```
+
+A guard that never matches turns its step into an unconditional action, and
+the whole script stops being idempotent while still *looking* guarded. On a
+previous run three steps behaved this way — two with broken guards, one with
+none — and the second run kept reporting changes, which sent Pi into nine
+rounds of edit-and-retry before it gave up and shipped them.
+
+**When the second run still changes something, find the guard — do not
+re-run and hope.** If you cannot make a step idempotent, say which step and
+why, per rule 6.
 
 **You must prove it.** Run `setup.sh` twice:
 

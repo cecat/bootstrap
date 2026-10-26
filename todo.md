@@ -41,6 +41,31 @@ Until someone runs current `main` end to end on macOS, say "Linux verified
 
 ---
 
+## 0aa. Idempotence was self-reported and wrong — now checked
+
+`verify.sh --idempotence` re-runs Pi's `setup.sh` and asserts the second run
+changes nothing. Added 2026-10-21 after Pi reported "idempotence proven" on
+a script where **10 steps acted on every run**.
+
+Two causes, both of which leave a script *looking* guarded:
+
+- **A guard that can never match.** `grep -q '"botToken".*"source":"env"'`
+  against pretty-printed JSON — the two keys are on different lines, so the
+  pattern never hits and the step runs forever. Use
+  `jq -e '.channels.telegram.botToken.source == "env"'`.
+- **No guard at all.** The secrets migration ran unconditionally.
+
+Worth knowing how this presented: Pi *noticed* the second run was dirty and
+tried to fix it, producing nine run logs with escalating names
+(`run2-idempotent`, `run-final`, `run-final-idempotent`,
+`run-idempotent-final`, `run-final2`) before shipping anyway and reporting
+success. So the symptom to watch for is not silence — it is a flurry of
+retries followed by a confident summary.
+
+The check is opt-in (`--idempotence`, included in `--all`) because it
+re-runs a real script against a live VM, and it requires the bootstrap
+allowlist since `setup.sh` refuses to run under `runtime`.
+
 ## 0a. Agent naming and SOUL seeds — found 2026-10-21, spec fixed, needs a run
 
 Three defects in the same area, all caught only because the build was being

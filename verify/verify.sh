@@ -5,6 +5,7 @@
 #   ./verify/verify.sh              structure, policy and egress (no cost)
 #   ./verify/verify.sh --models     + one real completion per agent
 #   ./verify/verify.sh --reboot     + reboot and re-check persistence
+#   ./verify/verify.sh --idempotence  + re-run Pi's setup.sh, assert no change
 #   ./verify/verify.sh --all        everything
 #
 # Design rules, learned the hard way during the first build:
@@ -25,12 +26,13 @@
 set -uo pipefail
 
 VM="${AGENTS_VM:-agents}"
-DO_MODELS=0 DO_REBOOT=0
+DO_MODELS=0 DO_REBOOT=0 DO_IDEM=0
 for a in "$@"; do
   case "$a" in
     --models) DO_MODELS=1 ;;
     --reboot) DO_REBOOT=1 ;;
-    --all)    DO_MODELS=1; DO_REBOOT=1 ;;
+    --idempotence) DO_IDEM=1 ;;
+    --all)    DO_MODELS=1; DO_REBOOT=1; DO_IDEM=1 ;;
     -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $a (try --help)" >&2; exit 2 ;;
   esac
@@ -261,15 +263,29 @@ fi
 want_oc="$(g 'set -a; . $HOME/.config/agent-sandbox/agents.env 2>/dev/null; set +a; printf %s "$OPENCLAW_AGENT_NAME"' | tr -d '\r')"
 want_he="$(g 'set -a; . $HOME/.config/agent-sandbox/agents.env 2>/dev/null; set +a; printf %s "$HERMES_AGENT_NAME"' | tr -d '\r')"
 
-live_dir="$(g 'openclaw agents list 2>/dev/null' | grep -m1 'Agent dir:' | sed 's/.*Agent dir: *//' | sed 's#/agent/*$##' | tr -d '\r')"
-if [ -n "$want_oc" ] && [ -n "$live_dir" ]; then
-  case "$live_dir" in
-    */"$want_oc") pass "OpenClaw agent is named as configured" "$live_dir" ;;
-    *)            fail "OpenClaw agent is named as configured" "live agent dir is $live_dir, expected .../$want_oc -- the configured name was not applied" ;;
-  esac
+# Assert the *identity*, not the directory. OpenClaw separates an immutable
+# agent id (`main`, set by onboard -- `openclaw agents` offers add/delete/
+# set-identity but no rename) from the display identity, which is what
+# `set-identity` changes and what the user actually sees. An earlier version
+# of this check demanded the directory be named LuoJi, which OpenClaw cannot
+# do, and so failed a correct build.
+agents_out="$(g 'openclaw agents list 2>/dev/null')"
+live_identity="$(printf '%s' "$agents_out" | grep -m1 'Identity:' | sed 's/.*Identity: *//; s/ *(.*//' | tr -d '\r')"
+if [ -n "$want_oc" ] && [ -n "$live_identity" ]; then
+  if [ "$live_identity" = "$want_oc" ]; then
+    pass "OpenClaw agent identity is as configured" "$live_identity"
+  else
+    fail "OpenClaw agent identity is as configured" "identity is '$live_identity', expected '$want_oc' -- OPENCLAW_AGENT_NAME was not applied"
+  fi
 else
-  skip "OpenClaw agent is named as configured" "could not read the agent name or the live agent dir"
+  skip "OpenClaw agent identity is as configured" "could not read the configured name or the live identity"
 fi
+
+# `Agent dir:` reports the *agent state* directory and carries a trailing
+# /agent -- SOUL.md sits one level above it. It may also be printed with a
+# literal ~, which no shell expands when it arrives as data.
+live_dir="$(printf '%s' "$agents_out" | grep -m1 'Agent dir:' | sed 's/.*Agent dir: *//; s#/agent/*$##' | tr -d '\r')"
+case "$live_dir" in "~"*) live_dir="\$HOME${live_dir#\~}" ;; esac
 
 check_soul() {
   local label="$1" path="$2" want="$3"
@@ -307,6 +323,34 @@ if g 'ls ~/.hermes/channel_directory.json' >/dev/null 2>&1; then
   fi
 else
   pass "Hermes has no channel enabled" "no channel directory"
+fi
+
+# ---------------------------------------------------------------------------
+section "Idempotence of Pi's setup.sh"
+
+# The spec makes setup.sh the deliverable and requires a second run to change
+# nothing. Pi self-reports this, and has been wrong: a guard grepping
+# multi-line JSON with a single-line pattern never matches, so its step runs
+# every time while still looking guarded. Opt-in because it re-runs the
+# script against a live VM.
+if [ "$DO_IDEM" -eq 0 ]; then
+  skip "setup.sh is idempotent" "re-run with --idempotence (re-runs Pi's script against this VM)"
+else
+  if ! g 'test -x ~/agent-bootstrap/setup.sh' >/dev/null 2>&1; then
+    skip "setup.sh is idempotent" "~/agent-bootstrap/setup.sh not found"
+  elif [ "$phase" != "bootstrap" ]; then
+    skip "setup.sh is idempotent" "needs the bootstrap allowlist; currently '$phase'"
+  else
+    idem="$(g 'cd ~/agent-bootstrap && ./setup.sh 2>&1')"
+    # Count lines that announce an action rather than a skip. Pi's logger
+    # prefixes both with a timestamp, so match the verbs it actually uses.
+    changed="$(printf '%s' "$idem" | grep -icE '(Creating|Setting|Installing|Migrating|Writing|Enabling|Adding) ' || true)"
+    if [ "${changed:-0}" = "0" ]; then
+      pass "setup.sh is idempotent" "second run reported no changes"
+    else
+      fail "setup.sh is idempotent" "$changed step(s) acted on a second run -- look for a guard that never matches: $(printf '%s' "$idem" | grep -iE '(Creating|Setting|Installing|Migrating|Writing|Enabling|Adding) ' | head -3 | sed 's/^[^]]*] *//' | paste -sd' | ' -)"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------
