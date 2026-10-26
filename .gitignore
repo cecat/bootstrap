@@ -12,6 +12,8 @@ config/*
 *.key
 *.pem
 *.token
+tokens
+secrets
 secrets/
 auth.json
 
@@ -20,6 +22,10 @@ auth.json
 .hermes/
 .openclaw/
 *.log
+
+# Pi transcripts from scripts/pi-session.sh. Worth reading, not worth
+# committing: they are long, machine-specific, and quote config paths.
+logs/
 
 # macOS
 .DS_Store

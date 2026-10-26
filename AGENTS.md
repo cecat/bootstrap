@@ -6,26 +6,67 @@ Claude Code looks for `CLAUDE.md`. Same content either way.)*
 
 ## If you were asked to build this
 
-**Tell the user to run `./bootstrap.sh` in a real terminal window.** Not
-through your bash tool, and not through an escape hatch like Claude Code's
-`!` prefix — both run a non-interactive shell, and the script refuses to
-start in one.
+You drive the whole thing. The user answers two questions and edits one file.
 
-That refusal is deliberate. Step 6 hands over an interactive Pi session: a
-TUI that needs a real terminal to render and to take keystrokes. A build
-driven through a pipe would hang there with no useful error.
+```sh
+./bootstrap.sh                      # deterministic steps; stops before Pi
+./scripts/pi-session.sh build       # Pi builds, headless
+./scripts/pi-session.sh transcript  # read what it ACTUALLY did
+./scripts/pi-session.sh say "..."   # push back, same session
+./scripts/finish-build.sh           # idempotence, narrow egress, verify
+```
 
-So the user runs it in their own terminal and pastes output back to you when
-they want help reading it.
+`bootstrap.sh` detects that it has no terminal and takes the headless path:
+agent names come from `OPENCLAW_AGENT_NAME` / `HERMES_AGENT_NAME` (or
+defaults), and it stops cleanly before Pi rather than running it blind.
 
-Your job is before and after, not during:
+Two things still need the user, and you must not do either for them:
 
-- **Before** — on Linux, check `docs/spark-handoff.md` section 1 (qemu, KVM,
-  packages). The script verifies `/dev/kvm` but does not install anything.
-- **During** — stay out of the VM. If the user pastes a failure, work out
-  which script or spec caused it.
-- **After** — read the verification output honestly. Do not enable a chat
-  channel.
+- **Confirming the detected model access.** Show them the summary from
+  `./scripts/detect-model-access.sh --dry-run` and get an answer.
+- **The bot tokens.** They edit `config/agents.env` themselves. Never ask
+  for a secret in conversation — see *Safety rules*.
+
+### Your actual job is supervising Pi
+
+**Pi over-claims.** That is this repo's documented failure mode, not a
+hypothetical: it has reported success over a `setup.sh` whose guards could
+never match, over channel functions whose active branch logged
+`"syntax needs to be determined"` and did nothing, and over an agent it
+never renamed. Four builds shipped that way because nobody read the
+transcript.
+
+So read it. What to look for:
+
+- **A flurry of retries followed by a confident summary.** The documented
+  tell. One run produced nine logs named `run2-idempotent`, `run-final`,
+  `run-final-idempotent`, `run-final2` — and then reported success.
+- **Log lines that announce work the code below them does not do.** Rule 6
+  of the spec forbids this; check it rather than trusting it.
+- **Guards that cannot match.** `grep -q '"botToken".*"source":"env"'`
+  against pretty-printed JSON never fires, so its step runs every time while
+  looking guarded.
+- **Negative claims with no evidence.** "api.telegram.org is blocked" was
+  reported for a domain that was allowlisted and returning 302.
+
+When Pi is wrong, push back in the same session with
+`pi-session.sh say "..."`. When the *spec* is wrong, fix
+`spec/pi-target-state.md` and re-run — that is the deliverable.
+
+**And when Pi reports something surprising, verify it before assuming Pi is
+wrong.** Three times in one session a `verify.sh` check was wrong and Pi was
+right.
+
+### What you must not do
+
+**Never shell into the VM to fix something by hand.** Not `limactl shell`,
+not a one-off `sed` through `pi-session.sh`. A VM repaired by hand looks
+like success while the repo still produces failure for the next person who
+clones it. This was violated twice on 2026-10-26 and both times destroyed
+the evidence.
+
+None of the scripts hand you a VM shell. That is deliberate, and reaching
+around it defeats the point of the project.
 
 Everything below is background. Read it before you change anything; you do
 not need it to run a build.
@@ -66,21 +107,22 @@ The corollary: the only measure of progress is **does Pi, reading only the
 committed spec, produce a working result unaided?** Nothing typed into the VM
 counts.
 
-## Why there is a script and not a procedure for you
+## Why the deterministic steps are a script
 
 Steps 0–9 of this file used to be prose, and a coding agent walked through
 them. Every one of those steps is deterministic — detect model access, start
 the VM, generate config, push it, hand the spec to Pi, narrow egress, verify.
-Driving them with an agent added variance without adding judgment, and every
-contaminating hand-fix happened because an agent was driving those steps and
-could reach past them. A script cannot improvise.
+Prose let an agent improvise; a script cannot.
 
-Two things stay interactive, because a script cannot do them honestly:
-confirming the detected model access, and the user editing `config/agents.env`
-with their own bot tokens.
+The point was never to keep agents out. **You should drive these scripts.**
+The point is that the steps are *fixed*, so what gets built does not depend
+on which model ran the build. The contamination came from agents reaching
+*past* the steps into the VM — which is why no script here hands you a VM
+shell.
 
-Pi stays inside the VM, where the work genuinely is open-ended: installing
-third-party tools whose docs drift, and writing the idempotent `setup.sh`.
+Pi is where judgment is genuinely needed, and where supervision is genuinely
+needed: installing third-party tools whose docs drift, and writing an
+idempotent `setup.sh`. That is your job, not the user's.
 
 ---
 
@@ -94,18 +136,30 @@ third-party tools whose docs drift, and writing the idempotent `setup.sh`.
 | **3. Agent names** | Two names, defaults `claw-one` / `hermes-one`. Generates `OPENCLAW_GATEWAY_TOKEN` with `openssl rand -hex 32`. |
 | **4. Secrets** | Hands `config/agents.env` to the user to edit. **Never asks for a secret.** |
 | **5. Push config** | `scripts/install-config.sh` — copies config over SSH, applies the **bootstrap** allowlist, and gates on a real completion plus a proxied request. |
-| **6. Pi** | `scripts/run-bootstrap.sh` — hands `spec/pi-target-state.md` to Pi as its `AGENTS.md` and drops the user into an interactive session. |
+| **6. Pi** | Headless: stops and tells you to use `scripts/pi-session.sh`. Interactive: `scripts/run-bootstrap.sh` drops the user into a Pi TUI. |
+
+Then `scripts/finish-build.sh`, which `bootstrap.sh` execs at the end of an
+interactive run and you call directly after a supervised one:
+
+| | |
+|---|---|
 | **6b. Idempotence** | `verify/verify.sh --idempotence`, here and not later: Pi's `setup.sh` fetches from pypi.org, which is allowlisted in **bootstrap only**, so the check silently skips under `runtime` — and a skip reads like a pass in a long run. |
 | **7. Narrow egress** | `agent-egress runtime`. |
 | **8. Verify** | `verify/verify.sh --models`. |
-| **9. Stop** | Summarizes. **No chat channel is enabled**, even when tokens were supplied. |
+| **9. Stop** | Summarizes. **No chat channel is enabled**, even when tokens were supplied. Exits non-zero if anything failed. |
 
-Useful flags:
+Useful flags and variables:
 
 ```sh
 ./bootstrap.sh --dry-run    # preflight and detection only, writes nothing
 ./bootstrap.sh --rebuild    # destroy the VM and generated config, then build
 ./bootstrap.sh              # resumes; safe to re-run after fixing a failure
+
+OPENCLAW_AGENT_NAME=…       # headless: agent names, else the defaults
+HERMES_AGENT_NAME=…
+BOOTSTRAP_ASSUME_YES=1      # headless: answer yes to confirmations.
+                            # Required for --rebuild without a terminal,
+                            # because that destroys a VM.
 ```
 
 `--rebuild` deletes `config/agents.env` too, deliberately. Re-entering the
@@ -282,11 +336,17 @@ SecretRef mechanism *and the same audit check* as Argo's.
 ## Repo map
 
 ```
-bootstrap.sh            run this. The whole host-side build.
+bootstrap.sh            the deterministic host-side build, steps 0-6
 AGENTS.md               this file. CLAUDE.md is a symlink to it.
 README.md               user-facing guide -- what a human does after cloning
 lima/agents.yaml        the VM
-scripts/                detection, config push, Pi handoff -- called by bootstrap.sh
+scripts/
+  detect-model-access.sh   find the endpoint the caller already uses
+  install-config.sh        push config over SSH, lock egress down
+  pi-session.sh            drive and supervise Pi headlessly  <-- your job
+  run-bootstrap.sh         interactive Pi, for a human at a terminal
+  finish-build.sh          steps 6b-9: idempotence, narrow egress, verify
+  check-telegram-tokens.sh validate bot tokens with getMe
 spec/pi-target-state.md target-state spec Pi builds from
 config/                 local config; only *.example is committed
 verify/verify.sh        automated checks
@@ -304,7 +364,9 @@ todo.md                 what is unfinished
 
 | Path | State |
 |---|---|
-| `bootstrap.sh` | **Written 2026-10-26, never run end to end.** |
+| `bootstrap.sh` | Steps 0-5 ran clean on Linux 2026-10-26. Step 6 onward unproven. |
+| `scripts/pi-session.sh` | **Written 2026-10-26, never run.** |
+| `scripts/finish-build.sh` | **Written 2026-10-26, never run.** |
 | `lima/agents.yaml` | Linux/qemu verified from scratch 2026-10-21 (DGX Spark). macOS/vz passed earlier, **not re-run since**; see `todo.md` item 00. |
 | `scripts/*` | Implemented, run against a real VM. |
 | `spec/pi-target-state.md` | Implemented. Hermes Telegram corrections (`63a2897`) are **unproven by Pi.** |

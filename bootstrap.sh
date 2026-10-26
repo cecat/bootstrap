@@ -73,29 +73,22 @@ on_exit() {
 }
 trap on_exit EXIT
 
-# Two separate requirements, and both are real.
+# Interactive or not, decided once here rather than guessed per step.
 #
-# /dev/tty: the prompts read from it directly, so they survive a step having
-# consumed stdin.
+# A coding agent driving this script is the intended case, not something to
+# defend against: a script is a script, and it cannot improvise whoever
+# started it. What must not happen is an agent reaching PAST the script into
+# the VM to fix things by hand -- and that is prevented by never handing one
+# a VM shell, not by refusing to run.
 #
-# stdin being a tty: step 6 hands the terminal to an interactive Pi session.
-# Pi cannot run against a pipe. This is also what stops a coding agent from
-# running this script inside its own bash tool -- which it should not do, for
-# the reasons in AGENTS.md. Hand it to the user instead.
-[ -r /dev/tty ] || fail "bootstrap.sh needs a terminal and there is no /dev/tty."
-[ -t 0 ] || fail "bootstrap.sh needs an interactive terminal.
-
-Its stdin is not a tty, so it cannot ask you anything, and step 6 could not
-hand over the interactive Pi session that does the actual build.
-
-Open a terminal window and run it there:
-
-    cd $REPO && ./bootstrap.sh${*:+ $*}
-
-This also rules out a coding agent's bash tool and shell escapes like Claude
-Code's '!' prefix -- both run a non-interactive shell. Paste the output back
-to your agent instead; it can read a transcript, it just must not drive the
-build."
+# With a terminal: prompts, and Pi runs interactively.
+# Without one: values come from the environment, and Pi runs headless under
+# scripts/pi-session.sh so its output can be reviewed and pushed back on.
+if [ -t 0 ] && [ -r /dev/tty ]; then
+  INTERACTIVE=1
+else
+  INTERACTIVE=0
+fi
 
 # --- /dev/kvm: group membership, not an ACL --------------------------------
 # On Linux a setfacl grant on /dev/kvm does not survive the udev event that
@@ -112,12 +105,24 @@ fi
 
 pause() {
   # Read from the terminal, not stdin: a step may have consumed it.
+  if [ "$INTERACTIVE" = "0" ]; then return 0; fi
   printf '\n%s%s%s ' "$B" "$1" "$Z"
   read -r _ignored </dev/tty || true
 }
 
+# Non-interactive answers come from BOOTSTRAP_ASSUME_YES, which the caller
+# must set deliberately. Defaulting to yes would mean an unattended run could
+# destroy a VM nobody meant to destroy.
 confirm() {
   local prompt="$1" ans
+  if [ "$INTERACTIVE" = "0" ]; then
+    if [ "${BOOTSTRAP_ASSUME_YES:-0}" = "1" ]; then
+      printf '%s%s%s [y/n] y (BOOTSTRAP_ASSUME_YES)\n' "$B" "$prompt" "$Z"
+      return 0
+    fi
+    fail "no terminal, and this run needs an answer to: $prompt
+Set BOOTSTRAP_ASSUME_YES=1 to answer yes to every such question."
+  fi
   while :; do
     printf '%s%s%s [y/n] ' "$B" "$prompt" "$Z"
     read -r ans </dev/tty || ans=n
@@ -129,8 +134,18 @@ confirm() {
 }
 
 ask() {
-  # ask VAR "prompt" "default"   -- non-secret values only.
-  local __var="$1" __prompt="$2" __default="$3" __in
+  # ask VAR "prompt" "default" [ENV_OVERRIDE]  -- non-secret values only.
+  local __var="$1" __prompt="$2" __default="$3" __envvar="${4:-}" __in
+  if [ -n "$__envvar" ] && [ -n "${!__envvar:-}" ]; then
+    printf -v "$__var" '%s' "${!__envvar}"
+    printf '  %s: %s (from %s)\n' "$__prompt" "${!__envvar}" "$__envvar"
+    return 0
+  fi
+  if [ "$INTERACTIVE" = "0" ]; then
+    printf -v "$__var" '%s' "$__default"
+    printf '  %s: %s (default)\n' "$__prompt" "$__default"
+    return 0
+  fi
   printf '%s%s%s [%s] ' "$B" "$__prompt" "$Z" "$__default"
   read -r __in </dev/tty || __in=""
   printf -v "$__var" '%s' "${__in:-$__default}"
@@ -179,6 +194,22 @@ and if one is already tracked, 'git rm --cached' it and rotate whatever it
 holds."
 fi
 ok "config/ is fully ignored by git"
+
+# The check above only looked at config/, and a user saving their tokens
+# before a rebuild naturally puts the file wherever is convenient -- which
+# on 2026-10-26 was a plain file named 'secrets' in the repo root, matching
+# the 'secrets/' rule not at all. Warn on anything secret-shaped that git
+# can still see, anywhere in the tree.
+loose="$(git -C "$REPO" status --porcelain -uall 2>/dev/null | cut -c4- \
+         | grep -iE '(^|/)(secrets?|tokens?|credentials?)(\.[a-z]+)?$|\.(env|key|pem|token)$' \
+         | grep -vE '\.example$' || true)"
+if [ -n "$loose" ]; then
+  printf '%s\n' "$loose" >&2
+  warn "the files above look like secrets and are NOT ignored by git.
+Move them outside the repo, or add them to .gitignore, before you commit
+anything. This is a warning rather than a halt because the guess is
+name-based and may be wrong."
+fi
 
 # ===========================================================================
 if [ "$REBUILD" = "1" ]; then
@@ -307,8 +338,8 @@ if [ "$KEEP_ENV" = "0" ]; then
   echo "  Just names. An agent's character lives in its own SOUL.md inside the"
   echo "  VM, which you change by talking to the agent -- see docs/personality.md."
   echo
-  ask OPENCLAW_NAME "Name for the OpenClaw agent" "claw-one"
-  ask HERMES_NAME   "Name for the Hermes agent"   "hermes-one"
+  ask OPENCLAW_NAME "Name for the OpenClaw agent" "claw-one"   OPENCLAW_AGENT_NAME
+  ask HERMES_NAME   "Name for the Hermes agent"   "hermes-one" HERMES_AGENT_NAME
 
   # agents.env is sourced by shells on both sides and the names reach agent
   # CLIs as arguments. Keep them boring rather than quoting defensively in
@@ -395,6 +426,38 @@ failures. Fix what it reported, then re-run ./bootstrap.sh."
 # ===========================================================================
 step "Step 6 -- hand the spec to Pi"
 
+if [ "$INTERACTIVE" = "0" ]; then
+  # Headless: a supervising agent drives Pi and reads the transcript. Stop
+  # here rather than run it blind -- Pi over-claiming is this repo's
+  # documented failure mode, and an unread transcript is how it survived
+  # four builds.
+  cat <<EOF
+
+  Everything deterministic is done. What remains is Pi, and Pi needs
+  supervision: it has over-claimed success on every previous build.
+
+  Drive it with:
+
+      ./scripts/pi-session.sh build            start the build
+      ./scripts/pi-session.sh transcript       read what it actually did
+      ./scripts/pi-session.sh say "<message>"  push back, same session
+
+  Read the transcript before believing the summary. Specifically: a flurry
+  of retries followed by a confident report, guards that cannot match, and
+  log lines that announce work the code below them does not do.
+
+  When Pi is genuinely done, finish the build:
+
+      ./scripts/finish-build.sh
+
+  If Pi got something wrong, fix spec/pi-target-state.md and re-run. Do not
+  repair the VM by hand -- the repo is the deliverable.
+
+EOF
+  FINISHED=1
+  exit 0
+fi
+
 cat <<'EOF'
 
   Pi now reads spec/pi-target-state.md and installs OpenClaw and Hermes.
@@ -438,70 +501,8 @@ EOF
 }
 
 # ===========================================================================
-step "Step 6b -- idempotence, before egress narrows"
+step "Steps 6b-9 -- idempotence, narrow egress, verify"
 
-# This has to happen here. Pi's setup.sh fetches from pypi.org, which is
-# allowlisted in bootstrap only, so verify.sh skips the check outright under
-# the runtime allowlist -- and a skip reads like a pass in a long run.
-#
-# Re-running setup.sh is the whole point of the check, so it is also the
-# riskiest thing this script does to a working VM. It is run before egress
-# narrows and before --models, so a failure here is visible as itself rather
-# than as a confusing model failure later.
-IDEM_RC=0
-AGENTS_VM="$INSTANCE" ./verify/verify.sh --idempotence || IDEM_RC=$?
-if [ "$IDEM_RC" != "0" ]; then
-  warn "idempotence failed (above). Pi's setup.sh changes state on a second
-run, so re-running it is not safe and the script is not the repeatable
-artifact the spec asks for. Continuing to the rest of the verification so you
-can see everything at once, but this needs fixing in spec/pi-target-state.md
--- usually a guard that can never match. The build will not be reported as
-passing."
-fi
-
-# ===========================================================================
-step "Step 7 -- narrow egress to the runtime allowlist"
-
-limactl shell "$INSTANCE" -- sudo /usr/local/sbin/agent-egress runtime \
-  || fail "could not switch to the runtime allowlist."
-ok "egress phase: runtime"
-
-# ===========================================================================
-step "Step 8 -- verify"
-
-# --models costs real quota, and a plain run cannot prove the model path:
-# /health and /v1/models answer 200 from local state with a dead upstream.
-VERIFY_RC=0
-AGENTS_VM="$INSTANCE" ./verify/verify.sh --models || VERIFY_RC=$?
-
-# ===========================================================================
-step "Step 9 -- stop"
-
-cat <<EOF
-
-  The build is finished. Nothing further happens automatically, and no chat
-  channel is enabled -- even if you supplied bot tokens. Turning one on is a
-  separate decision you make now, deliberately.
-
-  What is still worth checking:
-
-      ./verify/verify.sh --reboot        policy and gateways come back
-
-  Talk to the agents:
-
-      limactl shell $INSTANCE
-      openclaw chat
-      hermes chat
-
-  Change a personality by asking the agent, not by editing this repo:
-  "show me your SOUL.md". See docs/personality.md.
-
-EOF
-
-if [ "$VERIFY_RC" != "0" ] || [ "$IDEM_RC" != "0" ]; then
-  fail "verification reported failures (above). The build is NOT proven.
-Fix the script or the spec that caused each failure and re-run -- not the VM."
-fi
-
+# One implementation, shared with the headless path, so the two cannot drift.
 FINISHED=1
-say "verification passed."
+exec ./scripts/finish-build.sh "$INSTANCE"
