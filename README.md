@@ -4,9 +4,8 @@ Two persistent AI agents — an **OpenClaw** gateway and a **Hermes** gateway,
 one agent each — running in a VM that cannot see your filesystem and cannot
 reach the internet except through a domain allowlist you control.
 
-You do not install them yourself. You point a coding agent at this repo and it
-builds the VM, then **Pi** — a small coding agent living *inside* the VM —
-installs the two agents from a written specification.
+You run one script to build the VM. Then **Pi** — a small coding agent living
+*inside* the VM — installs the two agents from a written specification.
 
 The agents get the same model access you already have. Nothing to look up: the
 build reads your live `ANTHROPIC_BASE_URL` and your `~/.claude/settings*.json`
@@ -21,7 +20,10 @@ and propagates that inward.
 | **Lima** | macOS: `brew install lima`. Linux: the release binary from [lima-vm/lima](https://github.com/lima-vm/lima/releases) — distro packages are often older than the required 1.0.0 — plus QEMU and a usable `/dev/kvm`. |
 | **jq, openssl** | macOS: `brew install jq`. Linux: `sudo apt-get install jq openssl` |
 | **A working model endpoint** | Whatever your coding agent is using right now. For Argo that means being on the Argonne network or its VPN — the VM inherits your network, so if you can't reach it, neither can the VM. |
-| **A coding agent** | Claude Code, Codex, or similar, opened in this directory. |
+
+You do **not** need a coding agent on the host. The build reads the model
+access your agent already has from its settings and environment, but it runs
+as a plain shell script.
 
 **On Linux, read `docs/spark-handoff.md` before you start.** It covers the
 QEMU and KVM requirements, the exact package list, and the two traps that
@@ -32,36 +34,25 @@ installation runs. The VM uses 8 GiB of RAM and up to 60 GiB of disk.
 
 ## How to build it
 
-Open your coding agent in this directory and give it this instruction:
+```sh
+./bootstrap.sh
+```
 
-> Read AGENTS.md and build the system it describes.
-
-Say it explicitly like that. Don't assume the tool picked the file up on its
-own: `AGENTS.md` is the cross-tool convention and most agents read it, but
-Claude Code looks for `CLAUDE.md` instead. Both names exist here and are the
-same file, so naming either one works — what matters is that you name one.
-
-The agent then works through the procedure in that file. **You are not
-expected to run the scripts yourself** — but you can, and the section below
-says what changes if you do.
+Run it in a terminal you can type into. It stops three times and otherwise
+runs on its own.
 
 ### What it will ask you
 
-Three things, no secrets among them:
+**Is the detected model access correct?** Look at this one properly —
+everything downstream depends on it, and a wrong endpoint doesn't fail here.
+It surfaces much later as confusing failures deep inside Pi.
 
-1. **A name for the OpenClaw agent.** Default `claw-one`.
-2. **A name for the Hermes agent.** Default `hermes-one`.
-3. **Whether you have a local vLLM endpoint** for model fallback. Usually no.
+**A name for each agent.** Defaults `claw-one` and `hermes-one`. Just names:
+an agent's character lives in its own `SOUL.md` inside the VM, which you
+change by talking to the agent.
 
-It will also show you the model access it detected and ask you to confirm it.
-**Look at that one properly** — everything downstream depends on it, and a
-wrong endpoint surfaces later as confusing failures deep inside Pi.
-
-### The one thing you do by hand
-
-If you want the agents reachable over **Telegram**, the build will stop and
-hand you a file. Open `config/agents.env` in an editor and fill in three
-values:
+**Your Telegram tokens, if you want them.** The build stops and hands you a
+file rather than asking. Open `config/agents.env` and fill in:
 
 ```
 OPENCLAW_TELEGRAM_BOT_TOKEN=
@@ -71,42 +62,25 @@ TELEGRAM_ALLOWED_USER_ID=
 
 Get a **separate bot** per agent from Telegram's @BotFather — never a personal
 account — and your own numeric user id, which is the only account the bots
-will answer.
-
-Then tell the agent to continue. Leave them blank to build without Telegram;
+will answer. Then press Enter. Leave them blank to build without Telegram;
 you can add it later.
 
-The coding agent will not ask you for these in conversation, by design. Typing
-a token into a chat puts it in the transcript and in the session log. If you
-paste one anyway it will still work, but rotate it via @BotFather afterwards —
-that costs nothing.
+Nothing asks you to type a secret, by design: a token typed at a prompt or
+into a chat ends up in the shell history, the transcript and the session log.
+A token you put in a 0600 file does not.
 
-### If you run the scripts yourself
+### If something fails
 
-You can skip the coding agent and run `scripts/` by hand — `AGENTS.md` lists
-them in order. One thing to know before you do: **the scripts never prompt for
-anything.** They are deliberately non-interactive, so nothing will ask you for
-the agent names the way the coding agent does. Every value is read from
-`config/agents.env`, and the template arrives with `claw-one` and `hermes-one`
-already in it — leave them and those are the names you get.
+Fix what it reported and run `./bootstrap.sh` again — it resumes. **Don't go
+into the VM and fix things by hand.** A VM repaired by hand looks like success
+while the repo still produces failure for the next person who clones it.
 
-So set that file up first:
+To start completely over:
 
 ```sh
-cp config/agents.env.example config/agents.env
-chmod 600 config/agents.env
+./bootstrap.sh --rebuild      # destroys the VM and the generated config
+./bootstrap.sh --dry-run      # preflight and detection only, writes nothing
 ```
-
-Edit it and set the two agent names, then generate the gateway token rather
-than making one up:
-
-```sh
-openssl rand -hex 32        # paste into OPENCLAW_GATEWAY_TOKEN
-```
-
-Leave the Telegram and vLLM values blank unless you want them. If something
-required is missing, `install-config.sh` stops and tells you which value it
-is — it will not guess.
 
 ## What happens, in order
 
@@ -115,31 +89,37 @@ is — it will not guess.
    About ten minutes. It asks you the questions above while this runs.
 3. Copies your config in over SSH and locks egress down to a wide
    installation-time allowlist.
-4. Hands `spec/pi-target-state.md` to Pi. Pi installs OpenClaw and Hermes,
-   writes their service units, seeds each agent's personality file, and
-   produces a setup script it must run twice to prove it is repeatable.
-5. Narrows egress to the steady-state allowlist — two domains.
-6. Runs verification.
+4. Hands `spec/pi-target-state.md` to Pi and drops you into an interactive Pi
+   session. Tell it: *Build the target state described in AGENTS.md.* Pi
+   installs OpenClaw and Hermes, writes their service units, seeds each
+   agent's personality file, and produces a setup script it must run twice to
+   prove it is repeatable. Watch this part — it is the only step that is not
+   deterministic.
+5. Narrows egress to the steady-state allowlist.
+6. Runs verification, including real completions.
 7. **Stops and summarizes.** No chat channel is enabled at this point, even if
    you supplied Telegram tokens. Turning one on is a separate decision you make
    afterwards.
 
 ## Checking it worked
 
+`bootstrap.sh` runs `--models` for you at the end. To re-check later:
+
 ```sh
-./verify/verify.sh            # structure, policy and egress — costs nothing
-./verify/verify.sh --models   # + one real completion per agent
-./verify/verify.sh --all      # + reboot persistence
+./verify/verify.sh                 # structure, policy and egress — costs nothing
+./verify/verify.sh --models        # + one real completion per agent
+./verify/verify.sh --idempotence   # + re-runs Pi's setup.sh, asserts no change
+./verify/verify.sh --all           # + reboot persistence
 ```
 
-A plain run checks 25 things, including that a **non-allowed destination is
-actually blocked** — a check that only confirms the allowed path proves
-nothing.
+A plain run checks about thirty things, including that a **non-allowed
+destination is actually blocked** — a check that only confirms the allowed
+path proves nothing.
 
 It does **not** prove the model path, and it says so in its own summary. A
 gateway can be up and running with a dead endpoint behind it; only a real
-completion settles it. Run `--models` before you believe the build works.
-That sends real requests and spends whatever quota your endpoint is on.
+completion settles it. `--models` sends real requests and spends whatever
+quota your endpoint is on.
 
 ## Using the agents
 
@@ -210,8 +190,9 @@ offers one.
 ## Where things are
 
 ```
+bootstrap.sh            run this
 README.md               this file
-AGENTS.md               the build procedure, written for a coding agent
+AGENTS.md               background for a coding agent working on the repo
 CLAUDE.md               symlink to AGENTS.md, for Claude Code
 lima/agents.yaml        the VM definition
 scripts/                detection, config push, bootstrap
@@ -239,6 +220,9 @@ Virtualization.framework), where it passed 25 checks.
 
 Known gaps, with detail in `todo.md`:
 
+- **`bootstrap.sh` itself is new.** The steps it runs are all proven, but the
+  script that chains them was written on 2026-10-26 and has not yet driven a
+  build from nothing.
 - **The macOS run is stale.** Everything that took verification from 25
   checks to 29 — including a fix to a `verify.sh` call that no longer exists
   in current OpenClaw — landed after it. The repo should still work there,

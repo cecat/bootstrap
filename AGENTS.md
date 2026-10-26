@@ -4,213 +4,160 @@
 convention — Codex, Cursor, Warp, Gemini CLI, Aider and others look for it;
 Claude Code looks for `CLAUDE.md`. Same content either way.)*
 
-You are being asked to build a sandboxed environment of persistent agents.
-Read this file fully before running anything. `README.md` is the user-facing
-guide and says what the person who cloned this expects to happen;
-`docs/original-brief.md` holds the design reasoning. **This file is the
-procedure.**
+## If you were asked to build this
 
-**What you are building:** a Lima VM on the host, containing a translation
-proxy for model access, Pi, and then — built *by Pi* — an OpenClaw gateway
-with one agent and a Hermes gateway with one agent, both optionally reachable
-over Telegram.
+**Tell the user to run `./bootstrap.sh` themselves.** Do not run it through
+your own bash tool — it will refuse, because step 6 hands over an interactive
+Pi session that cannot run against a pipe.
+
+In Claude Code, they can type:
+
+```
+! ./bootstrap.sh
+```
+
+so the output lands in your conversation and you can help read it. Otherwise
+any terminal will do.
+
+Your job is before and after, not during:
+
+- **Before** — on Linux, check `docs/spark-handoff.md` section 1 (qemu, KVM,
+  packages). The script verifies `/dev/kvm` but does not install anything.
+- **During** — stay out of the VM. If the user pastes a failure, work out
+  which script or spec caused it.
+- **After** — read the verification output honestly. Do not enable a chat
+  channel.
+
+Everything below is background. Read it before you change anything; you do
+not need it to run a build.
+
+---
+
+## What you are building
+
+A Lima VM on the host, containing a translation proxy for model access, Pi,
+and then — built *by Pi* — an OpenClaw gateway with one agent and a Hermes
+gateway with one agent, both optionally reachable over Telegram.
 
 **The central idea:** the agents in the VM reach the *same models you are
-using right now*. You detect your own model access and propagate it inward.
-Do not ask the user to retype an endpoint you can discover.
+using right now*. `bootstrap.sh` detects your own model access and propagates
+it inward. Nobody retypes an endpoint that can be discovered.
+
+`README.md` is the user-facing guide. `docs/original-brief.md` holds the
+design reasoning. **`docs/handoff-2026-10-26.md` is where the work stands** —
+read it before you touch this repo.
+
+## The rule that matters
+
+**The deliverable is the repo, not the VM.**
+
+This project exists so that *another* coding agent can clone it, stand up Pi
+inside a VM, and have **Pi** build the two agents from the committed spec. The
+VM on this machine is a test fixture — its only purpose is to tell us whether
+the writing works.
+
+> **When something breaks, fix the script or the spec, then re-run. Never
+> reach into the VM to fix it by hand.**
+
+A VM made to work by hand is worse than a broken one: it looks like success
+while the repo still produces failure for the next person. This was violated
+twice on 2026-10-26 and both times destroyed the evidence.
+
+The corollary: the only measure of progress is **does Pi, reading only the
+committed spec, produce a working result unaided?** Nothing typed into the VM
+counts.
+
+## Why there is a script and not a procedure for you
+
+Steps 0–9 of this file used to be prose, and a coding agent walked through
+them. Every one of those steps is deterministic — detect model access, start
+the VM, generate config, push it, hand the spec to Pi, narrow egress, verify.
+Driving them with an agent added variance without adding judgment, and every
+contaminating hand-fix happened because an agent was driving those steps and
+could reach past them. A script cannot improvise.
+
+Two things stay interactive, because a script cannot do them honestly:
+confirming the detected model access, and the user editing `config/agents.env`
+with their own bot tokens.
+
+Pi stays inside the VM, where the work genuinely is open-ended: installing
+third-party tools whose docs drift, and writing the idempotent `setup.sh`.
 
 ---
 
-## Current status
+## What `bootstrap.sh` does
 
-**Working on this repo? Read `docs/handoff-2026-10-26.md` first.** It records
-where the work stands, the next three steps, and the one rule that matters:
-**the deliverable is the repo, not the VM** — when something breaks, fix the
-script or the spec and rerun, never reach into the VM by hand.
-
-This repo is mid-build. Implemented and checked:
-
-| Path | State |
+| | |
 |---|---|
-| `lima/agents.yaml` | Linux/qemu verified from scratch 2026-10-21 (DGX Spark). macOS/vz passed earlier, but **not re-run since**; see `todo.md` item 00. |
-| `scripts/detect-model-access.sh` | Implemented, tested against a live Argo env. |
-| `scripts/install-config.sh` | Implemented and run against a real VM. |
-| `config/*.example` | Implemented. |
-| `spec/pi-target-state.md` | Implemented. |
-| `scripts/run-bootstrap.sh` | Implemented. Pi built both agents from it unaided on a clean rebuild (2026-10-21). |
-| `verify/verify.sh` | Implemented. **29 pass, 0 fail** with `--models` on a clean Linux rebuild. |
-| `docs/personality.md`, `docs/failover.md` | Implemented. |
-| `docs/spark-handoff.md` | Implemented (Linux/DGX Spark porting notes). |
-| `docs/snapshots.md` | **Not written.** |
+| **0. Preflight** | `jq`, `curl`, `openssl`, `limactl`, and on Linux a usable `/dev/kvm`. Also asserts nothing under `config/` is visible to git. |
+| **1. Detect model access** | `scripts/detect-model-access.sh --dry-run`, shown to the user for confirmation. Then written to `config/model-access.env` (0600, gitignored). |
+| **2. Start the VM** | `limactl start` in the background — provisioning is ~10 minutes and steps 3 and 4 are questions, so the user is not left watching a bar. |
+| **3. Agent names** | Two names, defaults `claw-one` / `hermes-one`. Generates `OPENCLAW_GATEWAY_TOKEN` with `openssl rand -hex 32`. |
+| **4. Secrets** | Hands `config/agents.env` to the user to edit. **Never asks for a secret.** |
+| **5. Push config** | `scripts/install-config.sh` — copies config over SSH, applies the **bootstrap** allowlist, and gates on a real completion plus a proxied request. |
+| **6. Pi** | `scripts/run-bootstrap.sh` — hands `spec/pi-target-state.md` to Pi as its `AGENTS.md` and drops the user into an interactive session. |
+| **6b. Idempotence** | `verify/verify.sh --idempotence`, here and not later: Pi's `setup.sh` fetches from pypi.org, which is allowlisted in **bootstrap only**, so the check silently skips under `runtime` — and a skip reads like a pass in a long run. |
+| **7. Narrow egress** | `agent-egress runtime`. |
+| **8. Verify** | `verify/verify.sh --models`. |
+| **9. Stop** | Summarizes. **No chat channel is enabled**, even when tokens were supplied. |
 
-If you reach an unwritten step, stop and tell the user rather than improvising
-a replacement.
-
----
-
-## Step 0 — Preflight
+Useful flags:
 
 ```sh
-command -v limactl || brew install lima    # macOS host
-command -v jq                              # required by detection
+./bootstrap.sh --dry-run    # preflight and detection only, writes nothing
+./bootstrap.sh --rebuild    # destroy the VM and generated config, then build
+./bootstrap.sh              # resumes; safe to re-run after fixing a failure
 ```
 
-**On a Linux host, stop and read `docs/spark-handoff.md` first.** Linux needs
-QEMU with working KVM, a different package set, and a check that Lima's host
-gateway is still `192.168.5.2`. That file is the delta, and it now records a
-completed Linux run — including two traps that cost time: a `setfacl` grant on
-`/dev/kvm` does **not** survive the udev event that installing qemu triggers
-(use the `kvm` group, and `sg kvm -c '...'` for an already-running shell), and
-NextDNS may fail the NVIDIA apt repos in a way that looks alarming and is
-irrelevant here.
+`--rebuild` deletes `config/agents.env` too, deliberately. Re-entering the
+tokens is part of the test: pre-populating that file gives Pi an artificially
+easier task and risks a false pass.
 
-Confirm the host is on the network its model endpoint needs. For Argo that
-means the Argonne internal network or its VPN; the VM inherits host NAT, so if
-the host cannot reach the endpoint, neither can the VM.
-
-## Step 1 — Detect model access
-
-```sh
-./scripts/detect-model-access.sh --dry-run
-```
-
-Reads your live `ANTHROPIC_BASE_URL` and model names, finds the matching
-`~/.claude/settings*.json` for its `apiKeyHelper`, resolves the credential
-without printing it, and classifies the provider.
-
-**Show the user the summary and get confirmation before continuing.** This is
-the one thing worth confirming, because everything downstream depends on it.
-Then re-run without `--dry-run` to write `config/model-access.env` (0600,
-gitignored).
-
-Two failure modes it handles, which you should not work around by hand:
-- **A loopback endpoint** (`127.0.0.1:…`) is the *host's* tunnel and is
-  unreachable from the VM. The script recovers the real upstream.
-- **An unimplemented provider** fails deliberately. See *Adding a provider*.
-
-## Step 2 — Start the VM now
-
-```sh
-limactl start --name=agents lima/agents.yaml
-```
-
-Do this **before** asking the user anything. Provisioning takes roughly ten
-minutes, and Steps 3 and 4 are questions you can ask while it runs. Do not
-leave the user watching a progress bar when you could be collecting what you
-need from them.
-
-No mounts, user-mode NAT, no host port forwards. First boot installs Node 22+,
-squid, Pi and argo-proxy, and attempts Tailscale (best-effort; some networks
-block `tailscale.com`, which is not fatal).
+## Things that will bite you
 
 **Editing `lima/agents.yaml` does not change a VM that already exists.** Lima
-copies the config into the instance at creation time, and `limactl start`
-re-reads *that* copy from `~/.lima/<name>/lima.yaml`. Provision scripts do
-re-run on every boot — but from the frozen copy, so your edit is silently
-ignored and you debug the old code. To pick up a change, recreate:
+copies the config into the instance at creation time and re-reads *that* copy
+on every start. Provision scripts do re-run on boot — but from the frozen
+copy, so your edit is silently ignored and you debug the old code. Use
+`--rebuild`. Cheap before Pi has built anything; destroys the agents
+afterwards, so snapshot first once they exist.
+
+**On a Linux host, read `docs/spark-handoff.md`.** It records a completed
+Linux run and two traps that cost time: a `setfacl` grant on `/dev/kvm` does
+**not** survive the udev event that installing qemu triggers (use the `kvm`
+group, and `sg kvm -c '...'` for an already-running shell), and NextDNS may
+fail the NVIDIA apt repos in a way that looks alarming and is irrelevant.
+
+**The host must be on the network its model endpoint needs.** For Argo that
+means the Argonne network or its VPN. The VM inherits host NAT: if the host
+cannot reach the endpoint, neither can the VM.
+
+**`VM_BASE_URL`, never `UPSTREAM_BASE_URL`.** The latter is the *host's*
+address, often `127.0.0.1:<port>`, which from inside the VM is nothing.
+
+**`/health` and `/v1/models` are false greens.** They answer 200 from local
+state with a dead upstream. Only a completion proves the model path, which is
+why `bootstrap.sh` always runs `verify.sh --models` and why `install-config.sh`
+gates on a completion rather than a health check.
+
+**A systemd user service does not read `~/.profile`.** Without a proxy drop-in
+the gateway reaches the model fine (direct, uid-allowed) and fails every
+allowlisted destination with `EHOSTUNREACH`. That combination passes
+`--models` 30/30 and cannot reach a single chat channel.
+
+**Guards that grep multi-line JSON never match.** `grep -q '"botToken".*"source":"env"'`
+against pretty-printed JSON silently makes its step unconditional. Use `jq -e`.
+
+---
+
+## Verification
 
 ```sh
-limactl delete -f agents && limactl start --name=agents lima/agents.yaml
+./verify/verify.sh                 # structure, policy and egress — costs nothing
+./verify/verify.sh --models        # + one real completion per agent
+./verify/verify.sh --idempotence   # + re-run Pi's setup.sh, assert no change
+./verify/verify.sh --all           # + reboot persistence
 ```
-
-Recreating is cheap before Pi has built anything, and destroys the agents
-afterwards. Once agents exist, snapshot first.
-
-## Step 3 — Ask the user for the non-secret values
-
-While the VM provisions, ask for these in conversation:
-
-1. **A name for the OpenClaw agent.** Default `claw-one`.
-2. **A name for the Hermes agent.** Default `hermes-one`.
-3. **Whether they have a local vLLM endpoint** for model fallback. Usually no.
-   Only if yes, ask for its URL, key and model name.
-
-That is the whole list. Confirm the detected model access from Step 1 at the
-same time, if you have not already.
-
-## Step 4 — Have the user supply the secrets themselves
-
-**Never ask for a secret in conversation.** Not the bot tokens, not the
-Telegram user id. Asking puts them in the transcript, in your tool calls, and
-in any log of this session. This is a rule of the repo, not a judgment call
-for you to make per-run — see *Safety rules*.
-
-Instead, generate the file and hand it back for editing:
-
-```sh
-cp config/agents.env.example config/agents.env
-chmod 600 config/agents.env
-```
-
-Then, in `config/agents.env`, set:
-
-- `OPENCLAW_AGENT_NAME` and `HERMES_AGENT_NAME` to the names from Step 3.
-- `OPENCLAW_GATEWAY_TOKEN` to the output of `openssl rand -hex 32`. **Generate
-  it; never invent one and never ask the user for one.**
-
-Leave every other value blank. Then tell the user, naming the file explicitly:
-
-> `config/agents.env` is ready. Fill in these three if you want Telegram, then
-> tell me to continue:
-> `OPENCLAW_TELEGRAM_BOT_TOKEN`, `HERMES_TELEGRAM_BOT_TOKEN`,
-> `TELEGRAM_ALLOWED_USER_ID`
-> Leave them blank to build without channels — you can add them later.
-
-Wait for them. Do not read the file back to confirm its contents, do not echo
-the values, and do not proceed on the assumption they are filled in:
-`install-config.sh` will tell you what is missing.
-
-If the user pastes a token into the chat anyway, use it — refusing after the
-fact helps nobody — but tell them plainly that it is now in the transcript and
-that rotating it via @BotFather is cheap.
-
-
-## Step 5 — Push config and lock egress down
-
-```sh
-./scripts/install-config.sh
-```
-
-Before running it, confirm nothing local is about to be committed — everything
-in `config/` except the `*.example` templates and `README.md` is gitignored:
-
-```sh
-git status --porcelain -uall        # only *.example and README.md from config/
-```
-
-Copies config in over SSH (the VM has no mounts), starts the translation proxy
-as a user service, applies the **bootstrap** egress allowlist, and health-checks
-the model path. Do not continue if the health check fails — a broken model path
-will only resurface as confusing Pi failures later.
-
-## Step 6 — Hand the spec to Pi
-
-```sh
-./scripts/run-bootstrap.sh
-```
-
-Pi reads `spec/pi-target-state.md` and installs OpenClaw and Hermes. The spec requires
-Pi to emit an **idempotent setup script** rather than ad hoc commands, and to
-re-run it to prove idempotence.
-
-## Step 7 — Narrow egress
-
-```sh
-limactl shell agents -- sudo agent-egress runtime
-```
-
-Drops from the wide bootstrap allowlist to the steady-state one.
-
-## Step 8 — Verify
-
-```sh
-./verify/verify.sh            # structure, policy and egress — costs nothing
-./verify/verify.sh --models   # + one real completion per agent
-./verify/verify.sh --all      # + reboot persistence
-```
-
-Substrate, config permissions, egress policy, gateway state, and an assertion
-that **no chat channel is enabled yet**.
 
 The egress section is the point of the suite: it asserts a non-allowed
 destination is **blocked** at both layers — `403` from squid through the
@@ -218,31 +165,36 @@ proxy, no connection at all around it — and that the iptables rule is scoped
 to the agent uid, by checking the same request *succeeds* as root. Without
 that last control, a VM with no network at all would pass.
 
-**A plain run does not prove the model path.** `/health` and `/v1/models`
-answer 200 from local state with a dead upstream; only a completion proves it.
-Run `--models` before you tell the user the build works — and say so if you
-did not, because it sends real requests and spends their quota.
+`--idempotence` requires the bootstrap allowlist, since Pi's `setup.sh`
+fetches from pypi.org. Under `runtime` the check **skips**, and a skip in a
+thirty-line run reads like a pass. `bootstrap.sh` therefore runs it as step
+6b, before narrowing egress.
 
-## Step 9 — Stop
+**When you find a defect, the fix is a check that fails on it** — not just
+prose in the spec. Several checks exist only because something passed while
+being wrong.
 
-**Hard checkpoint.** Summarize for the user: what was installed, what the
-verification showed, what egress is permitted, and what is still unverified.
-**Do not enable any chat channel before this point**, and do not enable one
-without the user saying so afterward.
+**And check the tool's actual model before writing an assertion.** Three times
+in one session a `verify.sh` check was wrong and Pi was right: asserting a
+gateway method OpenClaw had removed, requiring a service that correctly did
+not exist, and demanding an agent directory name the tool cannot produce. Each
+came from writing a check against what output *looks like* rather than what
+the system *does*. When Pi reports something surprising, verify it before
+assuming Pi is wrong.
 
 ---
 
 ## Agent personality
 
 Both agents keep their character in their own `SOUL.md` inside the VM
-(`~/.openclaw/agents/default/SOUL.md`, `~/.hermes/SOUL.md`). **The agent owns
-that file. The user changes it by talking to the agent** — "show me your
-SOUL.md", "add this paragraph" — not by editing anything in this repo.
+(`~/.openclaw/agents/<live agent id>/SOUL.md`, `~/.hermes/SOUL.md`). **The
+agent owns that file. The user changes it by talking to the agent** — "show me
+your SOUL.md", "add this paragraph" — not by editing anything in this repo.
 
-This is not just simpler, it is forced by two earlier decisions: the VM has no
-mounts, so there is no host path to edit; and Hermes rewrites its own
-`MEMORY.md`, `USER.md` and skills as it learns, so a repo-tracked copy would
-conflict with the product by design.
+This is forced by two earlier decisions: the VM has no mounts, so there is no
+host path to edit; and Hermes rewrites its own `MEMORY.md`, `USER.md` and
+skills as it learns, so a repo-tracked copy would conflict with the product by
+design.
 
 So: **the repo ships a seed, never a managed file.** Pi writes a ten-line
 starter `SOUL.md` once at bootstrap and its setup script never touches it
@@ -250,16 +202,31 @@ again — re-running setup must not revert a personality the user has since
 edited. Do not add a sync script, a tracked `agents/` directory, or any
 mechanism for pulling these files back out.
 
+Two traps in that seeding, both already in the spec:
+
+- **`openclaw onboard` names the agent `main`** and ignores
+  `OPENCLAW_AGENT_NAME`. The id is immutable; `set-identity` sets the display
+  identity. The seed path must be the *live* agent id, read back from
+  `openclaw agents list` — not `default`.
+- **The seed guard must check content, not existence.** The Hermes installer
+  writes its own vendor persona, so `[ -f ] && skip` leaves an agent that has
+  never heard of the configured name. Guard on `grep -q "You are <NAME>"`.
+
 The escape hatch, for when an agent is too broken to talk to, is documentation
 rather than code:
 
 ```sh
-limactl shell agents -- nano ~/.openclaw/agents/default/SOUL.md
+limactl shell agents -- nano ~/.openclaw/agents/<name>/SOUL.md
 limactl shell agents -- nano ~/.hermes/SOUL.md
 ```
 
-Recovery from a genuinely broken agent is the VM snapshot (see `docs/`), not a
-backup mechanism of our own.
+Recovery from a genuinely broken agent is the VM snapshot, not a backup
+mechanism of our own.
+
+`local/` is gitignored and holds hand-written `SOUL.md` content migrated from
+another deployment. Installing those is a **one-time manual exception** the
+user has approved, and is explicitly *not* something the repo should automate.
+Do not build a sync mechanism for them.
 
 ---
 
@@ -270,14 +237,21 @@ These are not negotiable, and they override convenience.
 - **Curl-to-bash installers** (OpenClaw, Hermes, Tailscale): fetch the script
   and show it to the user, or pin a release, before executing it. This applies
   to Pi inside the VM too — it is written into `spec/pi-target-state.md`.
-- **Never enable a chat channel before Step 8 passes.** Stop and summarize.
+- **Never enable a chat channel before verification passes.** Stop and
+  summarize. Enabling one is a separate decision the user makes afterwards.
 - **Never write a token into a config file or echo one into a chat.** Use env
-  SecretRefs. The detection script never prints credentials; keep that property.
+  SecretRefs. The detection script never prints credentials; keep that
+  property. A rule stated without a mechanism and a check gets reported as
+  satisfied without being satisfied — `verify.sh` asserts
+  `plaintext=0, unresolved=0` from a plain login shell.
 - **Never ask the user for a secret in conversation.** Bot tokens and the
   Telegram user id are supplied by the user editing `config/agents.env`
-  directly (Step 4). Whether a secret ends up in a transcript must not depend
-  on which model happened to run this build.
-- **Never commit anything from `config/`.** Check before you finish.
+  directly. Whether a secret ends up in a transcript must not depend on which
+  model happened to run this build. If the user pastes one anyway, use it —
+  refusing after the fact helps nobody — but tell them plainly that it is now
+  in the transcript and that rotating it via @BotFather is cheap.
+- **Never commit anything from `config/`.** `bootstrap.sh` checks this at
+  preflight; check again before you finish.
 - **`agent-egress unlock` is for debugging only.** Re-lock immediately; never
   leave the VM unlocked at the end of a session.
 - **A spend-capable key crossing into the sandbox is a real risk.** The
@@ -301,21 +275,42 @@ The general-purpose equivalent is `LLM-Rosetta`, by argo-proxy's author.
 
 To add one: extend the `case "$BASE_HOST"` classifier in
 `scripts/detect-model-access.sh`, add its install step to `lima/agents.yaml`
-provisioning, and template its config in `config/`.
+provisioning, template its config in `config/`, and give its secrets the same
+SecretRef mechanism *and the same audit check* as Argo's.
 
 ---
 
 ## Repo map
 
 ```
+bootstrap.sh            run this. The whole host-side build.
 AGENTS.md               this file. CLAUDE.md is a symlink to it.
 README.md               user-facing guide -- what a human does after cloning
 lima/agents.yaml        the VM
-scripts/                host-side: detection, config push, bootstrap
-spec/pi-target-state.md          target-state spec Pi builds from
+scripts/                detection, config push, Pi handoff -- called by bootstrap.sh
+spec/pi-target-state.md target-state spec Pi builds from
 config/                 local config; only *.example is committed
-verify/verify.sh        automated checks (see Step 8)
-docs/                   porting, personality, failover
-  spark-handoff.md      read this FIRST on a Linux host (DGX Spark)
+verify/verify.sh        automated checks
+local/                  gitignored; the user's own files. Not managed here.
+docs/
+  handoff-2026-10-26.md READ FIRST if you are working on this repo
+  spark-handoff.md      read FIRST on a Linux host (DGX Spark)
   original-brief.md     the pre-build design brief and its reasoning
+  personality.md        how SOUL.md works
+  failover.md           the vLLM fallback (unverified)
+todo.md                 what is unfinished
 ```
+
+## Current status
+
+| Path | State |
+|---|---|
+| `bootstrap.sh` | **Written 2026-10-26, never run end to end.** |
+| `lima/agents.yaml` | Linux/qemu verified from scratch 2026-10-21 (DGX Spark). macOS/vz passed earlier, **not re-run since**; see `todo.md` item 00. |
+| `scripts/*` | Implemented, run against a real VM. |
+| `spec/pi-target-state.md` | Implemented. Hermes Telegram corrections (`63a2897`) are **unproven by Pi.** |
+| `verify/verify.sh` | 30 pass, 0 fail with `--models`; `--idempotence` passed. |
+| `docs/snapshots.md` | **Not written**, though `docs/personality.md` references it. |
+
+If you reach an unwritten step, stop and tell the user rather than improvising
+a replacement.

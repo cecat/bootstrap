@@ -1,9 +1,9 @@
 # Handoff: running this on a DGX Spark (or any Linux host)
 
 **Audience: the coding agent running on the Spark.** Read `AGENTS.md` first
-(`CLAUDE.md` is a symlink to it) —
-it is the build procedure and it still applies. This file is only the delta
-between the host it was built on and the host you are on.
+(`CLAUDE.md` is a symlink to it). The build itself is `./bootstrap.sh`, run
+by the user in their own terminal. This file is only the delta between the
+host it was built on and the host you are on.
 
 ---
 
@@ -255,15 +255,23 @@ workaround.
 
 ## 6. Order of work
 
-Follow `AGENTS.md` Steps 0–9 unchanged, with these insertions:
+The build is `./bootstrap.sh`, which runs what used to be Steps 0–9 of
+`AGENTS.md`. Two things to do around it on this host:
 
-1. **Before Step 0** — the KVM and packages checks in Section 1 above.
-2. **Step 1** — fresh detection (Section 3). Do not reuse the Mac's config.
-3. **Between Step 2 and Step 5** — the `192.168.5.2` reachability test
-   (Section 2), while the VM is still provisioning.
-4. **Step 9 is a hard checkpoint.** Summarize and stop. Do not enable Telegram
-   or any other channel before the user says so, and never before verification
-   passes.
+1. **Before running it** — the KVM and package checks in Section 1 above.
+   `bootstrap.sh` checks `/dev/kvm` is accessible and re-execs under `sg kvm`
+   if your shell predates the group membership, but it does not install qemu
+   for you.
+2. **While the VM provisions** — the `192.168.5.2` reachability test
+   (Section 2). `bootstrap.sh` is asking you the agent-name and token
+   questions during this window, so do it in a second terminal.
+
+Detection runs fresh from your live environment (Section 3). Do not reuse the
+Mac's `config/`.
+
+`bootstrap.sh` stops at the end without enabling any channel. That is a hard
+checkpoint, not a pause: enabling Telegram is a separate decision made after
+verification passes.
 
 The safety rules in `AGENTS.md` are not advisory and they are not relaxed by
 being on a different host: never ask for a secret in conversation, never pipe
