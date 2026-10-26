@@ -211,19 +211,34 @@ else
   fail "gateway has proxy env" "only $gwproxy proxy vars in openclaw-gateway.service -- channels will fail EHOSTUNREACH even though the model path works"
 fi
 
-# Hermes' gateway exists only to serve messaging channels. Until a channel is
-# enabled there is nothing for it to serve, and `hermes -z` answers without it
-# -- so requiring the unit here would fail a build that followed the spec,
-# which mandates channels stay off. Require it only once a channel is live.
+# Hermes' gateway serves messaging channels. If Telegram credentials are in
+# ~/.hermes/.env then the gateway must be installed and running -- installing
+# it is not the same as enabling a channel, and the build is required to
+# prove the path works before a human switches the channel on.
+#
+# Keyed on .env, not on channel_directory.json: Hermes never writes that
+# file, so an earlier version of this check passed unconditionally and hid a
+# Hermes that could not reach Telegram at all.
 hactive="$(g "systemctl --user is-active hermes-gateway.service" | tr -d '\r')"
-if g 'ls ~/.hermes/channel_directory.json' >/dev/null 2>&1; then
+if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
   if [ "$hactive" = "active" ]; then
-    pass "hermes-gateway" "active (a channel is configured)"
+    pass "hermes-gateway" "active (Telegram credentials are configured)"
   else
-    fail "hermes-gateway" "a channel is configured but the gateway is $hactive"
+    fail "hermes-gateway" "Telegram is configured but the gateway is $hactive -- run: hermes gateway install"
   fi
+
+  # A running service is not a working adapter. The plugin ships disabled and
+  # its python-telegram-bot dependency comes from pypi.org, which is only
+  # allowlisted during bootstrap -- miss either and the service stays active
+  # while the journal reports "No adapter available for telegram".
+  jr="$(g 'journalctl --user -u hermes-gateway.service --no-pager 2>/dev/null | grep -iE "\[Telegram\] Connected|No adapter available for telegram|adapter creation failed" | tail -1')"
+  case "$jr" in
+    *"Connected to Telegram"*) pass "Hermes Telegram adapter" "connected (polling)" ;;
+    "")                        skip "Hermes Telegram adapter" "no adapter activity in the journal yet" ;;
+    *)                         fail "Hermes Telegram adapter" "$(printf '%s' "$jr" | sed 's/.*: //') -- check: hermes plugins enable telegram-platform, and that pypi was reachable when it first started" ;;
+  esac
 else
-  pass "hermes-gateway" "not installed, and not needed: no channel is configured"
+  pass "hermes-gateway" "no Telegram credentials in ~/.hermes/.env; gateway not required"
 fi
 
 ocport="$(g 'ss -lnt 2>/dev/null | grep -c "127.0.0.1:18789"' | tr -dc '0-9')"

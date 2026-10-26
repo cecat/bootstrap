@@ -285,22 +285,64 @@ Any agent you configure that runs under systemd needs this same treatment.
 
 - Installed from `https://hermes-agent.nousresearch.com/install.sh`, same
   download-and-checksum treatment.
-- Configured via `hermes setup`. If that is interactive and you cannot find a
-  non-interactive path, **say so and stop** — do not drive it with `expect` or
-  simulated keystrokes.
+- Configured via `hermes setup`, which **does** have a non-interactive mode:
+  `hermes setup --non-interactive`, and per-section forms like
+  `hermes setup gateway`. In a VM with no TTY the non-interactive mode mostly
+  prints the `hermes config set ...` commands to run instead — read what it
+  says and use those. Never drive the interactive wizard with `expect` or
+  simulated keystrokes; if a step genuinely has no scriptable path, say so
+  and stop.
 - Model provider: the same gateway, OpenAI-compatible path. Set its base URL
   to `VM_BASE_URL`, api key to the ANL username, and
   a model id the gateway lists. Verify with a real completion, not `doctor`:
   `hermes doctor` checks `api.anthropic.com`, which is irrelevant here and
   will report a 403 that means nothing.
-- **No systemd service, and this is correct.** Unlike OpenClaw, Hermes answers
-  one-shot calls (`hermes -z '...'`) without any daemon. It *does* have a
-  gateway (`hermes gateway install`), but that gateway exists only to serve
-  **messaging channels** -- and channels stay disabled per rule 2, so there is
-  nothing for it to serve. Do not install it, and do not describe Hermes as
-  "CLI-only, it has no daemon": it has one, it is simply not wanted yet.
-  Install it only when a channel is actually turned on, which is a later,
-  human-made decision.
+- **Install the gateway service** when Telegram tokens are present:
+  `hermes gateway install`. Installing the machinery is not the same as
+  enabling a channel — rule 2 forbids turning a channel *on*, not building
+  what serves it. (OpenClaw works the same way: its gateway runs while
+  `channels.telegram.enabled` stays `false`.)
+
+  An earlier version of this spec said "do not install it", reasoning that
+  a disabled channel has nothing to serve. That was wrong and it was
+  expensive: because the service never existed, the whole dependency chain
+  below was never discovered, and Hermes shipped unable to reach Telegram
+  at all while looking correctly configured.
+
+  The service needs the same proxy drop-in as OpenClaw's — see *The gateway
+  needs the proxy*.
+- **The Telegram adapter needs three separate things, and missing any one
+  produces the same silent symptom.** `hermes gateway status` will say the
+  service is active while the journal says:
+
+  ```
+  WARNING gateway.run: No adapter available for telegram
+  ```
+
+  In order:
+
+  1. **Enable the plugin.** `telegram-platform` ships *installed but
+     disabled*; `hermes plugins list` shows `not enabled`. Run
+     `hermes plugins enable telegram-platform`.
+  2. **Let its Python dependency install.** On first start the adapter
+     fetches `python-telegram-bot` from **pypi.org**, which is in the
+     bootstrap allowlist and **not** the runtime one. So this must happen
+     while you are running, during the bootstrap phase. If it is attempted
+     later it fails with `tunnel error: unsuccessful` and
+     `Failed to fetch: https://pypi.org/simple/...` — which reads like a
+     network fault rather than a phase problem.
+  3. **Credentials in `~/.hermes/.env`** (below).
+
+- **Verify the adapter, not the service.** A running gateway proves nothing.
+  Check the journal for the adapter actually connecting:
+
+  ```sh
+  journalctl --user -u hermes-gateway.service --no-pager | grep -i telegram
+  # want: [Telegram] Connected to Telegram (polling mode)
+  ```
+
+  Quote that line. `Platform 'telegram' is registered but adapter creation
+  failed` means step 1 or 2 did not happen.
 - State in `~/.hermes`. Verified with a real completion, per the rule above.
 
 ### 3. Pi's own provider
@@ -423,11 +465,12 @@ Three more things this path gets wrong if you do not check:
   Setting the policy before the list produces a warning that all DMs will be
   dropped; setting both in that order is correct and the warning resolves.
 
-**For Hermes, there is no non-interactive `gateway setup`** — the command
-takes no flags at all, so rule 2's "do not drive it with simulated
-keystrokes" leaves it unusable. The supported alternative is its dotenv file
-at `~/.hermes/.env`, where the Telegram keys ship commented out around the
-`# TELEGRAM INTEGRATION` heading:
+**For Hermes, credentials go in its dotenv file** at `~/.hermes/.env`, where
+the Telegram keys ship commented out around the `# TELEGRAM INTEGRATION`
+heading. (`hermes setup gateway --non-interactive` exists but, with no TTY,
+prints guidance rather than configuring; the dotenv path is what works.)
+Credentials alone are **not** sufficient — see the three-part adapter
+requirement in section 2:
 
 ```
 TELEGRAM_BOT_TOKEN=<from HERMES_TELEGRAM_BOT_TOKEN>
@@ -439,10 +482,12 @@ Uncomment and fill those three, leave everything else in the file alone, and
 keep the file mode 0600. **Do not configure it without
 `TELEGRAM_ALLOWED_USERS`** — an unrestricted bot answers anyone who finds it.
 
-Hermes' gateway service is what *serves* channels, so configuring one is the
-point at which `hermes gateway install` becomes appropriate — see section 2.
-That service needs the same proxy environment as OpenClaw's; see *The gateway
-needs the proxy*.
+Then install and start the gateway service per section 2 — plugin enabled,
+dependency fetched during bootstrap, proxy drop-in applied — and confirm from
+the journal that the adapter connected. The channel stays **disabled** for
+the agent; what you are proving is that it *would* work the moment a human
+enables it. Shipping an unverifiable channel is how the last build left a
+bot that could never have answered.
 
 **Validate every token, and quote the result. This is mandatory.**
 

@@ -41,6 +41,42 @@ Until someone runs current `main` end to end on macOS, say "Linux verified
 
 ---
 
+## 0A. Hermes Telegram — spec corrected 2026-10-26, NOT yet proven by Pi
+
+The spec actively prevented Pi from setting up Hermes' Telegram channel. It
+said, in section 2: *"No systemd service, and this is correct... Do not
+install it."* The reasoning was that a disabled channel has nothing to
+serve, which conflated **installing the machinery** with **enabling the
+channel**. OpenClaw does the former while the latter stays `false`; Hermes
+should too.
+
+Because the service never existed, three real requirements went undiscovered
+through four builds. All are now in the spec:
+
+1. **`hermes gateway install` is required** when Telegram tokens are present.
+2. **`telegram-platform` ships installed but disabled.** `hermes plugins
+   list` shows `not enabled`; it needs `hermes plugins enable
+   telegram-platform`. Without it: `No adapter available for telegram`.
+3. **Its Python dependency comes from pypi.org**, which is allowlisted in
+   **bootstrap only**. So first start must happen during the Pi phase. Later
+   it fails `tunnel error: unsuccessful` / `Failed to fetch:
+   https://pypi.org/simple/...`, which reads as a network fault rather than
+   an egress-phase problem.
+
+Also corrected: the spec claimed *"there is no non-interactive `gateway
+setup`"*. False — `hermes setup --non-interactive` and `hermes setup
+gateway` both exist. That claim was written from one `--help` glance and is
+exactly the unverified assertion rule 5 forbids.
+
+`verify.sh` now keys the gateway check on `TELEGRAM_BOT_TOKEN` in
+`~/.hermes/.env` (it previously keyed on `channel_directory.json`, which
+Hermes never writes, so the check passed unconditionally) and asserts the
+adapter actually connected, from the journal.
+
+**Status: unproven.** These facts were established by hand on a VM that is
+now contaminated by those manual fixes. Nothing here counts until Pi
+reproduces it from the committed spec on a VM built from scratch.
+
 ## 0aa. Idempotence was self-reported and wrong — now checked
 
 `verify.sh --idempotence` re-runs Pi's `setup.sh` and asserts the second run
