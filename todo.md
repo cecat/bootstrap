@@ -5,6 +5,42 @@ it will bite.
 
 ---
 
+## 00. Re-verify on macOS — the Mac run is now stale
+
+**Status: open, and the repo currently overstates its own portability.**
+
+macOS was the original build host and passed 25 checks. Linux (DGX Spark) was
+verified from scratch on 2026-10-21 at **29 pass, 0 fail**. But everything
+that made that number go up landed *after* the Mac run, and none of it has
+been executed there:
+
+- `verify/verify.sh` — two added checks (gateway proxy env; secrets audit
+  `plaintext=0`/`unresolved=0`) and two fixed false negatives. One of those
+  was a call to `openclaw gateway call cli.chat.one-shot`, a method that no
+  longer exists in OpenClaw 2026.10.5 — so the **macOS build was verified
+  with a check that would now fail there too**.
+- `scripts/install-config.sh` — proxied-destination gate, delimited and
+  rewritten `~/.profile` block, allowlist drift warning.
+- `spec/pi-target-state.md` — `VM_BASE_URL`, secrets mechanism, proxy
+  drop-in, channel syntax, hard rules 5 (extended) and 6.
+- `config/allowlist-*.example` — `api.telegram.org` in both phases.
+
+Two things to watch when someone does run it:
+
+1. **`VM_BASE_URL` vs `UPSTREAM_BASE_URL` may be invisible on a Mac.** If the
+   host reaches Argo at a routable address rather than a `127.0.0.1` tunnel,
+   the two variables hold the same string and the bug that halted Pi on
+   Linux cannot reproduce. Do not read "it worked" as "the fix was
+   unnecessary".
+2. **The systemd drop-in is guest-side**, and the guest is Ubuntu under
+   `vz` just as under `qemu`, so it should carry over. Should.
+
+Until someone runs current `main` end to end on macOS, say "Linux verified
+2026-10-21; macOS verified at an earlier commit and not re-run" rather than
+"works on both". `AGENTS.md` and `README.md` both carry that wording now.
+
+---
+
 ## 0. RESOLVED: Hermes endpoint
 
 The gateway is argo-proxy and serves `/v1/chat/completions` as well as

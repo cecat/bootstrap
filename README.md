@@ -24,8 +24,8 @@ and propagates that inward.
 | **A coding agent** | Claude Code, Codex, or similar, opened in this directory. |
 
 **On Linux, read `docs/spark-handoff.md` before you start.** It covers the
-QEMU and KVM requirements, the exact package list, and which parts of this
-build are unverified — the whole thing has only ever been run on macOS.
+QEMU and KVM requirements, the exact package list, and the two traps that
+cost the first Linux run real time.
 
 Provisioning the VM takes about ten minutes, plus however long the agent
 installation runs. The VM uses 8 GiB of RAM and up to 60 GiB of disk.
@@ -228,19 +228,28 @@ todo.md                 what is unfinished
 
 ## Status
 
-Built and verified end to end on **macOS arm64** (Lima with Apple's
-Virtualization.framework): a clean run from nothing to both agents answering
-real completions, with the egress block confirmed at both layers.
+Verified end to end on **Linux arm64** (DGX Spark, Lima with QEMU+KVM) on
+2026-10-21: deleted the VM and every generated config file, re-entered the
+agent names and bot tokens, and rebuilt from nothing. Pi installed both
+agents from the written spec unaided; `verify/verify.sh --models` reported
+**29 passed, 0 failed**, including the egress block confirmed at both layers.
+
+It was first built on **macOS arm64** (Lima with Apple's
+Virtualization.framework), where it passed 25 checks.
 
 Known gaps, with detail in `todo.md`:
 
-- **Linux is unverified.** The config no longer pins a macOS-only hypervisor
-  and should select QEMU on Linux, but it has never been booted there. Read
-  `docs/spark-handoff.md` before trying.
+- **The macOS run is stale.** Everything that took verification from 25
+  checks to 29 — including a fix to a `verify.sh` call that no longer exists
+  in current OpenClaw — landed after it. The repo should still work there,
+  and nothing in those changes is Linux-specific, but nobody has run current
+  `main` on a Mac. Treat "works on both" as unproven until someone does.
 - **Only Argo** is implemented as a model provider. Adding one means extending
   a classifier in `scripts/detect-model-access.sh`; `AGENTS.md` describes how.
 - **The vLLM fallback is unverified** and currently untestable.
-- **Telegram has not been exercised** — it was blocked on the build network.
+- **Telegram is configured but has never carried a message.** Channels are
+  deliberately left disabled at the end of a build; enabling one is a
+  separate decision, and that path is untested.
 - **No snapshot or restore documentation** yet, which is the intended recovery
   path for an agent that has broken itself.
 

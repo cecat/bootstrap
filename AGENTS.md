@@ -27,7 +27,7 @@ This repo is mid-build. Implemented and checked:
 
 | Path | State |
 |---|---|
-| `lima/agents.yaml` | Implemented and booted on macOS/vz **and Linux/qemu** (DGX Spark, 2026-10-20). See `docs/spark-handoff.md` for the Linux traps. |
+| `lima/agents.yaml` | Linux/qemu verified from scratch 2026-10-21 (DGX Spark). macOS/vz passed earlier, but **not re-run since**; see `todo.md` item 00. |
 | `scripts/detect-model-access.sh` | Implemented, tested against a live Argo env. |
 | `scripts/install-config.sh` | Implemented and run against a real VM. |
 | `config/*.example` | Implemented. |
