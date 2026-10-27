@@ -5,23 +5,25 @@
 #   ./bootstrap.sh                   build (resumes; safe to re-run)
 #   ./bootstrap.sh --rebuild         destroy the VM and generated config first
 #   ./bootstrap.sh --dry-run         preflight and detection only, writes nothing
-#   ./bootstrap.sh --stop-before-pi  answer the questions, then hand Pi to a
-#                                    supervising coding agent rather than
-#                                    sitting at a TUI yourself
+#   ./bootstrap.sh --interactive-pi  watch Pi yourself in its TUI, instead of
+#                                    handing it to a supervising agent
 #
-# Why this is a script and not a procedure for a coding agent: every step here
-# is deterministic. Driving them with an agent adds variance without adding
-# judgment, and it gives the agent a reach into the VM that it should not
-# have. The one genuinely open-ended job -- installing two third-party tools
-# whose docs drift, and writing an idempotent setup script -- belongs to Pi,
-# inside the VM, working from spec/pi-target-state.md.
+# This script runs the deterministic half of the build and then STOPS, before
+# Pi. That stop is the design, not an interruption:
 #
-# Two things stay interactive, because a script cannot do them honestly:
-#   * confirming the detected model access (everything downstream depends on
-#     it, and a wrong endpoint surfaces much later as confusing Pi failures);
-#   * the user putting their own bot tokens into config/agents.env. This
-#     script never asks for a secret, and neither should anything else --
-#     a token typed in conversation is in the transcript forever.
+#   * The steps up to it never vary, so they are a script. Prose let an agent
+#     improvise, and improvising past these steps into the VM is what
+#     contaminated two earlier builds.
+#   * Pi is the opposite -- genuinely open-ended, and it over-claims. It has
+#     reported success over guards that could never match and over an agent
+#     it never renamed. Someone has to read the transcript against the spec.
+#   * That someone is a coding agent, driving scripts/pi-session.sh. Not the
+#     user. A human babysitting a TUI is how four bad builds shipped.
+#
+# The user is asked exactly two things, both of which a script cannot do
+# honestly: confirm the detected model endpoint, and put their own bot tokens
+# into config/agents.env. Nothing here ever asks for a secret -- a token
+# typed in conversation is in the transcript forever.
 #
 # Hard rule for anyone maintaining this: when a step fails, fix the script or
 # the spec and re-run. Do not reach into the VM and fix it by hand. A VM made
@@ -37,13 +39,17 @@ INSTANCE="${AGENTS_VM:-agents}"
 ORIG_ARGS="$*"
 REBUILD=0
 DRY_RUN=0
-STOP_BEFORE_PI=0
+# Default: stop before Pi and hand it to a supervising coding agent. Driving
+# Pi is the agent's job -- it over-claims, and catching that means reading a
+# transcript against the spec. --interactive-pi opts into the TUI instead,
+# for someone who deliberately wants to watch it themselves.
+INTERACTIVE_PI=0
 for a in "$@"; do
   case "$a" in
     --rebuild)        REBUILD=1 ;;
     --dry-run)        DRY_RUN=1 ;;
-    --stop-before-pi) STOP_BEFORE_PI=1 ;;
-    -h|--help) sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --interactive-pi) INTERACTIVE_PI=1 ;;
+    -h|--help) sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $a (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -93,6 +99,9 @@ if [ -t 0 ] && [ -r /dev/tty ]; then
   INTERACTIVE=1
 else
   INTERACTIVE=0
+  [ "$INTERACTIVE_PI" = "0" ] || fail "--interactive-pi needs a terminal:
+Pi's TUI cannot render against a pipe. Drop the flag and let the default
+path hand Pi to a supervising agent instead."
 fi
 
 # --- /dev/kvm: group membership, not an ACL --------------------------------
@@ -431,37 +440,28 @@ failures. Fix what it reported, then re-run ./bootstrap.sh."
 # ===========================================================================
 step "Step 6 -- hand the spec to Pi"
 
-if [ "$INTERACTIVE" = "0" ] || [ "$STOP_BEFORE_PI" = "1" ]; then
-  # Headless, or explicitly asked to stop: a supervising agent drives Pi and
-  # reads the transcript. Stop here rather than run it blind -- Pi
-  # over-claiming is this repo's documented failure mode, and an unread
-  # transcript is how it survived four builds.
+if [ "$INTERACTIVE_PI" = "0" ]; then
+  # The default, and the point of the project. Pi over-claims -- it has
+  # reported success over guards that could never match, over channel code
+  # whose active branch did nothing, and over an agent it never renamed.
+  # Four builds shipped that way because nobody read the transcript.
   #
-  # --stop-before-pi exists so a user at a terminal can answer the questions
-  # (which need a human) and still hand Pi to their agent (which needs a
-  # supervisor). Without it, an interactive run drops them into a TUI and
-  # makes them the babysitter.
+  # Reading a transcript against a spec is a coding agent's job, not the
+  # user's. So the deterministic part ends here and the agent takes over.
   cat <<EOF
 
-  Everything deterministic is done. What remains is Pi, and Pi needs
-  supervision: it has over-claimed success on every previous build.
+  The deterministic part is done. What remains is Pi, and Pi needs a
+  supervisor -- it has over-claimed success on every previous build.
 
-  Drive it with:
+  That supervisor is your coding agent, not you. Paste this to it:
 
-      ./scripts/pi-session.sh build            start the build
-      ./scripts/pi-session.sh transcript       read what it actually did
-      ./scripts/pi-session.sh say "<message>"  push back, same session
+      The VM is built and config is pushed. Drive and supervise Pi:
+      ./scripts/pi-session.sh build, then read the transcript and push
+      back with ./scripts/pi-session.sh say "...". Finish with
+      ./scripts/finish-build.sh when Pi is genuinely done.
 
-  Read the transcript before believing the summary. Specifically: a flurry
-  of retries followed by a confident report, guards that cannot match, and
-  log lines that announce work the code below them does not do.
-
-  When Pi is genuinely done, finish the build:
-
-      ./scripts/finish-build.sh
-
-  If Pi got something wrong, fix spec/pi-target-state.md and re-run. Do not
-  repair the VM by hand -- the repo is the deliverable.
+  (If you would rather watch Pi yourself in its own TUI, re-run with
+  --interactive-pi. You do not need to: the agent can do all of it.)
 
 EOF
   FINISHED=1

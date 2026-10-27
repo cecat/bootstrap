@@ -16,9 +16,9 @@ You drive the whole thing. The user answers two questions and edits one file.
 ./scripts/finish-build.sh           # idempotence, narrow egress, verify
 ```
 
-`bootstrap.sh` detects that it has no terminal and takes the headless path:
-agent names come from `OPENCLAW_AGENT_NAME` / `HERMES_AGENT_NAME` (or
-defaults), and it stops cleanly before Pi rather than running it blind.
+`bootstrap.sh` always stops before Pi and tells whoever ran it to hand Pi to
+you. With a terminal it asks the user the two questions first; without one it
+takes names from `OPENCLAW_AGENT_NAME` / `HERMES_AGENT_NAME` and defaults.
 
 Two things still need the user, and you must not do either for them:
 
@@ -136,10 +136,10 @@ idempotent `setup.sh`. That is your job, not the user's.
 | **3. Agent names** | Two names, defaults `claw-one` / `hermes-one`. Generates `OPENCLAW_GATEWAY_TOKEN` with `openssl rand -hex 32`. |
 | **4. Secrets** | Hands `config/agents.env` to the user to edit. **Never asks for a secret.** |
 | **5. Push config** | `scripts/install-config.sh` — copies config over SSH, applies the **bootstrap** allowlist, and gates on a real completion plus a proxied request. |
-| **6. Pi** | Headless: stops and tells you to use `scripts/pi-session.sh`. Interactive: `scripts/run-bootstrap.sh` drops the user into a Pi TUI. |
+| **6. Stop** | Prints the handoff and exits. Pi is yours, via `scripts/pi-session.sh`. Only `--interactive-pi` runs the TUI instead. |
 
-Then `scripts/finish-build.sh`, which `bootstrap.sh` execs at the end of an
-interactive run and you call directly after a supervised one:
+Then `scripts/finish-build.sh`, which you call once Pi is genuinely done
+(and which `bootstrap.sh --interactive-pi` execs for itself):
 
 | | |
 |---|---|
@@ -152,11 +152,9 @@ Useful flags and variables:
 
 ```sh
 ./bootstrap.sh                   # resumes; safe to re-run after a failure
-./bootstrap.sh --dry-run         # preflight and detection only, writes nothing
 ./bootstrap.sh --rebuild         # destroy the VM and generated config first
-./bootstrap.sh --stop-before-pi  # user answers the questions at a terminal,
-                                 # then hands Pi to you. The usual combination
-                                 # is --rebuild --stop-before-pi.
+./bootstrap.sh --dry-run         # preflight and detection only, writes nothing
+./bootstrap.sh --interactive-pi  # rare: a human watches Pi in its TUI
 
 OPENCLAW_AGENT_NAME=…       # headless: agent names, else the defaults
 HERMES_AGENT_NAME=…
@@ -347,7 +345,7 @@ scripts/
   detect-model-access.sh   find the endpoint the caller already uses
   install-config.sh        push config over SSH, lock egress down
   pi-session.sh            drive and supervise Pi headlessly  <-- your job
-  run-bootstrap.sh         interactive Pi, for a human at a terminal
+  run-bootstrap.sh         Pi's TUI; only used by --interactive-pi
   finish-build.sh          steps 6b-9: idempotence, narrow egress, verify
   check-telegram-tokens.sh validate bot tokens with getMe
 spec/pi-target-state.md target-state spec Pi builds from

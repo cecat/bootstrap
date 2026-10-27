@@ -38,8 +38,16 @@ installation runs. The VM uses 8 GiB of RAM and up to 60 GiB of disk.
 ./bootstrap.sh
 ```
 
-Run it in a terminal you can type into. It stops three times and otherwise
-runs on its own.
+Run it in a terminal you can type into. It asks you three things, builds the
+VM, and then **stops and hands the rest to your coding agent.**
+
+That stop is the design. The part that remains — Pi, installing two agents
+from a written spec — is the part that needs watching, because Pi reports
+success it has not earned. Reading its transcript against the spec is work
+for a coding agent, not for you.
+
+So when it stops, paste what it prints to Claude Code, Codex, or whatever
+you use, and let that do the supervising.
 
 ### What it will ask you
 
@@ -78,8 +86,9 @@ while the repo still produces failure for the next person who clones it.
 To start completely over:
 
 ```sh
-./bootstrap.sh --rebuild      # destroys the VM and the generated config
-./bootstrap.sh --dry-run      # preflight and detection only, writes nothing
+./bootstrap.sh --rebuild         # destroys the VM and the generated config
+./bootstrap.sh --dry-run         # preflight and detection only, writes nothing
+./bootstrap.sh --interactive-pi  # rare: watch Pi yourself in its own TUI
 ```
 
 ## What happens, in order
@@ -89,17 +98,19 @@ To start completely over:
    About ten minutes. It asks you the questions above while this runs.
 3. Copies your config in over SSH and locks egress down to a wide
    installation-time allowlist.
-4. Hands `spec/pi-target-state.md` to Pi and drops you into an interactive Pi
-   session. Tell it: *Build the target state described in AGENTS.md.* Pi
-   installs OpenClaw and Hermes, writes their service units, seeds each
-   agent's personality file, and produces a setup script it must run twice to
-   prove it is repeatable. Watch this part — it is the only step that is not
-   deterministic.
-5. Narrows egress to the steady-state allowlist.
-6. Runs verification, including real completions.
-7. **Stops and summarizes.** No chat channel is enabled at this point, even if
-   you supplied Telegram tokens. Turning one on is a separate decision you make
-   afterwards.
+4. **Stops, and tells you to hand Pi to your coding agent.**
+
+Your agent then does the rest, with `scripts/pi-session.sh`:
+
+5. Gives Pi the spec. Pi installs OpenClaw and Hermes, writes their service
+   units, seeds each agent's personality file, and produces a setup script
+   that must run twice unchanged to prove it is repeatable.
+6. Reads the transcript and argues with Pi where it over-claimed. This is
+   the step that four previous builds skipped, and all four shipped broken.
+7. Runs `scripts/finish-build.sh`: idempotence, narrows egress to the
+   steady-state allowlist, and verifies with real completions.
+8. **No chat channel is enabled**, even if you supplied Telegram tokens.
+   Turning one on is a separate decision you make afterwards.
 
 ## Checking it worked
 
