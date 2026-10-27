@@ -203,9 +203,15 @@ for attempt in 1 2 3; do
       -H 'content-type: application/json' \
       -d '{\"model\":\"argo:claude-4.5-sonnet\",\"max_tokens\":16,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: PATH_OK\"}]}'
   " 2>/dev/null)"
+  # Reassemble the text_delta fragments before matching. A stream splits the
+  # marker across deltas ("PATH" + "_OK"), so grepping the raw SSE for
+  # PATH_OK never matches and this gate fails against a perfectly good
+  # gateway -- which it did, on the first run after it was written.
+  #
   # message_stop as well as the text: a stream that delivers content and then
   # dies mid-flight is exactly the failure this gate exists to catch.
-  if printf '%s' "$RESP" | grep -q PATH_OK && printf '%s' "$RESP" | grep -q message_stop; then
+  TEXT="$(printf '%s' "$RESP" | grep -o '"text": *"[^"]*"' | sed 's/.*: *"//; s/"$//' | tr -d '\n')"
+  if [ "$TEXT" = "PATH_OK" ] && printf '%s' "$RESP" | grep -q message_stop; then
     ok_path=1
     [ "$attempt" -eq 1 ] || say "succeeded on attempt $attempt (the first was transient)"
     break
