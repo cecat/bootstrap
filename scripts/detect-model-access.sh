@@ -79,12 +79,38 @@ fi
 # --- 3. Loopback endpoints are a host gateway, not an error ----------------
 # Off-site, the working model path is an SSH tunnel on the host to an
 # argo-proxy running on an ANL machine (see `claude-argo-home`). The VM cannot
-# reach the host's 127.0.0.1, but it CAN reach the host through Lima's user-
-# mode gateway at 192.168.5.2 -- verified. So a loopback endpoint is recorded
-# as a gateway to bridge, not rejected.
+# reach the host's 127.0.0.1, but it CAN reach the host through Lima's
+# user-mode networking gateway. So a loopback endpoint is recorded as a
+# gateway to bridge, not rejected.
+#
+# ASK THE GUEST rather than hardcode the address. 192.168.5.2 is Lima's
+# user-mode gateway and has held under both vz and QEMU slirp so far -- but
+# it is a property of the running VM, not a constant, and a wrong value here
+# is invisible until Pi fails deep in a build with an unrelated-looking
+# error. The guest's default route is the authority; the constant is only a
+# fallback for when no VM exists yet.
 BASE_HOST="$(printf '%s' "$BASE_URL" | sed -E 's|^[a-z]+://||; s|[:/].*$||')"
 BASE_PORT="$(printf '%s' "$BASE_URL" | sed -nE 's|^[a-z]+://[^:/]+:([0-9]+).*|\1|p')"
-LIMA_HOST_GATEWAY="${LIMA_HOST_GATEWAY:-192.168.5.2}"
+
+LIMA_FALLBACK_GATEWAY=192.168.5.2
+if [ -n "${LIMA_HOST_GATEWAY:-}" ]; then
+  GW_SOURCE="LIMA_HOST_GATEWAY in the environment"
+elif command -v limactl >/dev/null 2>&1 &&
+     [ "$(limactl list --format '{{.Status}}' "${AGENTS_VM:-agents}" 2>/dev/null | head -1 || true)" = "Running" ]; then
+  LIMA_HOST_GATEWAY="$(limactl shell "${AGENTS_VM:-agents}" -- \
+      ip route show default 2>/dev/null \
+      | sed -nE 's/^default via ([0-9.]+).*/\1/p' | head -1 || true)"
+  if [ -n "$LIMA_HOST_GATEWAY" ]; then
+    GW_SOURCE="the guest's default route"
+  else
+    LIMA_HOST_GATEWAY="$LIMA_FALLBACK_GATEWAY"
+    GW_SOURCE="fallback (could not read the guest's default route)"
+  fi
+else
+  LIMA_HOST_GATEWAY="$LIMA_FALLBACK_GATEWAY"
+  GW_SOURCE="fallback (no running VM to ask yet)"
+fi
+
 VM_BASE_URL=""
 IS_GATEWAY=0
 
@@ -94,7 +120,7 @@ case "$BASE_HOST" in
     [ -n "$BASE_PORT" ] || BASE_PORT=44497
     VM_BASE_URL="http://$LIMA_HOST_GATEWAY:$BASE_PORT"
     say "host-side gateway detected on port $BASE_PORT"
-    say "the VM will reach it at $VM_BASE_URL"
+    say "the VM will reach it at $VM_BASE_URL (from $GW_SOURCE)"
     if ! curl -fsS --noproxy '*' --max-time 6 "$BASE_URL/health" >/dev/null 2>&1; then
       warn "nothing is answering on $BASE_URL right now."
       warn "If this is your SSH tunnel, bring it up before running install-config.sh."

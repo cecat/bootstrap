@@ -60,6 +60,27 @@ pi_turn() {
   ln -sfn "$(basename "$log")" "$LAST"
   printf '\n' >&2
   say "transcript: ${log#"$REPO"/}"
+
+  # A transcript that is only an upstream API error means Pi never started --
+  # it is not a build that went wrong, and it should not be read as one. The
+  # first time this happened the error ("Upstream stream ended before
+  # completion: ArgoAuthWarning") sent a session chasing a routing bug that
+  # did not exist; every later attempt worked. Name it for what it is.
+  if [ "$rc" -ne 0 ] && [ "$(wc -c <"$log")" -lt 2000 ] \
+     && grep -q '"type": *"error"' "$log" 2>/dev/null; then
+    cat >&2 <<EOF
+
+  Pi produced no work: its entire output was one upstream API error.
+
+  That is a model-endpoint problem, not a build problem, and it is often
+  transient -- a stream that dies before the first token. Nothing in the VM
+  changed, so just run the same command again.
+
+  If it repeats, check the path Pi actually uses:
+      ./verify/verify.sh --models
+
+EOF
+  fi
   return "$rc"
 }
 

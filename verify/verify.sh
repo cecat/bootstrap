@@ -390,6 +390,43 @@ fi
 # ---------------------------------------------------------------------------
 section "Model path"
 
+# The VM-facing gateway address used to be hardcoded to Lima's macOS value
+# and carried onto Linux unverified. It happened to be right -- Lima uses the
+# same user-mode subnet under QEMU slirp -- but nothing checked, and when a
+# build later failed for an unrelated reason the address was the first thing
+# blamed, costing a session. These two checks cost nothing and settle it.
+gw="$(groot 'cat /etc/agent-sandbox/model-gateway 2>/dev/null' | tr -d '\r')"
+if [ -z "$gw" ]; then
+  skip "VM gateway address is the guest's real default route" "no model-gateway configured"
+else
+  gw_host="${gw%%:*}"
+  guest_gw="$(g 'ip route show default 2>/dev/null' | sed -nE 's/^default via ([0-9.]+).*/\1/p' | head -1)"
+  if [ "$gw_host" = "$guest_gw" ]; then
+    pass "VM gateway address matches the guest's default route" "$gw_host"
+  else
+    fail "VM gateway address matches the guest's default route" \
+         "configured $gw_host, guest routes via ${guest_gw:-unknown} -- the VM cannot reach the host"
+  fi
+
+  # Streaming specifically: Pi, OpenClaw and Hermes all stream, and a
+  # non-streaming check passes on a path whose SSE is broken.
+  sse="$(g "curl -sN --noproxy '*' --max-time 60 -X POST http://$gw/v1/messages \
+           -H 'content-type: application/json' \
+           -d '{\"model\":\"argo:claude-4.5-sonnet\",\"max_tokens\":16,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: SSE_OK\"}]}' 2>&1")"
+  # Reassemble the text_delta fragments before looking for the marker: a
+  # stream splits "SSE_OK" across deltas ("SS" + "E_OK"), so grepping the
+  # raw SSE for it never matches. This check failed on a working gateway
+  # until that was fixed -- the same "assert against what output looks like
+  # rather than what the system does" mistake this file warns about.
+  sse_text="$(grep -o '"text": *"[^"]*"' <<<"$sse" | sed 's/.*: *"//; s/"$//' | tr -d '\n')"
+  if [ "$sse_text" = "SSE_OK" ] && grep -q message_stop <<<"$sse"; then
+    pass "gateway streams to the guest" "SSE completed through $gw"
+  else
+    fail "gateway streams to the guest" \
+         "no complete SSE stream from $gw -- agents will die mid-request: $(tr -d '\r' <<<"$sse" | grep -viE 'key|token|secret' | tail -2 | paste -sd' | ' -)"
+  fi
+fi
+
 if [ "$DO_MODELS" -eq 0 ]; then
   skip "OpenClaw answers a completion" "re-run with --models (sends a real request; uses your model quota)"
   skip "Hermes answers a completion"   "re-run with --models"

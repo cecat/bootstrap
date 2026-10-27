@@ -186,18 +186,40 @@ limactl shell "$INSTANCE" -- sudo /usr/local/sbin/agent-egress bootstrap
 # --- 5. Gate on a real completion ------------------------------------------
 # Not /health: it answers 200 from local state even when the upstream is dead.
 # That false green cost hours. Only a completion proves the whole path.
-say "issuing a real completion from inside the VM (up to 90s)"
-RESP="$(limactl shell "$INSTANCE" -- bash -c "
-  curl -s --noproxy '*' --max-time 90 -X POST '$MODEL_URL/v1/messages' \
-    -H 'content-type: application/json' \
-    -d '{\"model\":\"argo:claude-4.5-sonnet\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: PATH_OK\"}]}'
-" 2>/dev/null)"
+#
+# STREAMING, because that is what Pi does. A non-streaming gate passes on a
+# path where SSE is broken, and the user then sees Pi die with an opaque
+# upstream error that looks like anything but "the gate did not test this".
+#
+# Retried, because the first real failure here was transient: one attempt
+# returned "Upstream stream ended before completion" and every attempt
+# afterwards succeeded. A single-shot gate turns a blip into a hard stop
+# halfway through a build.
+say "issuing a real streaming completion from inside the VM"
+ok_path=0
+for attempt in 1 2 3; do
+  RESP="$(limactl shell "$INSTANCE" -- bash -c "
+    curl -sN --noproxy '*' --max-time 90 -X POST '$MODEL_URL/v1/messages' \
+      -H 'content-type: application/json' \
+      -d '{\"model\":\"argo:claude-4.5-sonnet\",\"max_tokens\":16,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: PATH_OK\"}]}'
+  " 2>/dev/null)"
+  # message_stop as well as the text: a stream that delivers content and then
+  # dies mid-flight is exactly the failure this gate exists to catch.
+  if printf '%s' "$RESP" | grep -q PATH_OK && printf '%s' "$RESP" | grep -q message_stop; then
+    ok_path=1
+    [ "$attempt" -eq 1 ] || say "succeeded on attempt $attempt (the first was transient)"
+    break
+  fi
+  [ "$attempt" -lt 3 ] && { say "attempt $attempt failed; retrying in 5s"; sleep 5; }
+done
 
-if printf '%s' "$RESP" | grep -q PATH_OK; then
-  say "model path works end to end"
+if [ "$ok_path" = "1" ]; then
+  say "model path works end to end (streaming)"
 else
-  printf '\033[31merror:\033[0m completion failed from the VM.\n' >&2
+  printf '\033[31merror:\033[0m streaming completion failed from the VM, 3 times.\n' >&2
   printf 'Endpoint tried: %s\n%s\n' "$MODEL_URL" "$(printf '%s' "$RESP" | head -c 300)" >&2
+  printf '\nIf a NON-streaming request to the same URL works, the gateway is\n' >&2
+  printf 'reachable but its SSE path is not -- check argo-proxy, not the network.\n' >&2
   exit 1
 fi
 
