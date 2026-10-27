@@ -163,15 +163,25 @@ ask() {
 
 # Print what config/agents.env holds, without ever printing a secret.
 agents_env_summary() {
+  # Secrets are shown as length + last four characters: enough for the user
+  # to recognise their own value and confirm it arrived intact, useless to
+  # anyone reading over a shoulder or scrolling back through a transcript.
+  # Plain "set" gave no way to tell a good paste from a truncated one.
+  _redact() {
+    if [ -z "$1" ]; then printf 'blank'
+    elif [ "${#1}" -le 8 ]; then printf '%d chars' "${#1}"   # too short to hint at
+    else printf '%d chars, ...%s' "${#1}" "${1: -4}"
+    fi
+  }
   # shellcheck disable=SC1091
   ( set -a; . config/agents.env 2>/dev/null; set +a
     printf '  config/agents.env:\n'
-    printf '    OpenClaw agent     : %s\n' "${OPENCLAW_AGENT_NAME:-<unset>}"
-    printf '    Hermes agent       : %s\n' "${HERMES_AGENT_NAME:-<unset>}"
-    printf '    gateway token      : %s\n' "$([ -n "${OPENCLAW_GATEWAY_TOKEN:-}" ] && echo set || echo BLANK)"
-    printf '    OpenClaw bot token : %s\n' "$([ -n "${OPENCLAW_TELEGRAM_BOT_TOKEN:-}" ] && echo set || echo blank)"
-    printf '    Hermes bot token   : %s\n' "$([ -n "${HERMES_TELEGRAM_BOT_TOKEN:-}" ] && echo set || echo blank)"
-    printf '    allowed user id    : %s\n' "$([ -n "${TELEGRAM_ALLOWED_USER_ID:-}" ] && echo set || echo blank)"
+    printf '    OpenClaw agent      : %s\n' "${OPENCLAW_AGENT_NAME:-<unset>}"
+    printf '    Hermes agent        : %s\n' "${HERMES_AGENT_NAME:-<unset>}"
+    printf '    gateway token       : %s\n' "$(_redact "${OPENCLAW_GATEWAY_TOKEN:-}")"
+    printf '    %s bot token : %s\n' "${OPENCLAW_AGENT_NAME:-OpenClaw}" "$(_redact "${OPENCLAW_TELEGRAM_BOT_TOKEN:-}")"
+    printf '    %s bot token : %s\n' "${HERMES_AGENT_NAME:-Hermes}" "$(_redact "${HERMES_TELEGRAM_BOT_TOKEN:-}")"
+    printf '    your Telegram id    : %s\n' "${TELEGRAM_ALLOWED_USER_ID:-blank}"
   )
 }
 
@@ -185,9 +195,25 @@ agents_env_summary() {
 # terminal and invites them to improvise.
 ask_secret() {
   local __var="$1" __prompt="$2" __in
-  printf '%s%s%s (not shown; Enter to skip): ' "$B" "$__prompt" "$Z"
+  printf '%s%s%s (hidden; Enter to skip): ' "$B" "$__prompt" "$Z"
   read -rs __in </dev/tty || __in=""
   printf '\n'
+  # Confirm that something arrived, without revealing it. A silent prompt
+  # leaves the user unable to tell a successful paste from a failed one,
+  # and a Telegram token is exactly the sort of thing a terminal paste
+  # mangles. Length plus the last four characters is enough to recognise
+  # your own token and useless to anyone else.
+  if [ -z "$__in" ]; then
+    printf '  skipped\n'
+  elif [ "${#__in}" -le 8 ]; then
+    # Too short to show any of: at 8 characters the last four are most of
+    # it. A real Telegram token is ~46, so this is also a useful warning.
+    printf '%s  ok%s  received %d characters (shorter than a bot token -- mispaste?)\n' \
+      "$G" "$Z" "${#__in}"
+  else
+    printf '%s  ok%s  received %d characters, ending ...%s\n' \
+      "$G" "$Z" "${#__in}" "${__in: -4}"
+  fi
   printf -v "$__var" '%s' "$__in"
 }
 
@@ -477,15 +503,23 @@ the VM boundary and passed to agent CLIs as arguments." ;;
   cat <<'EOF'
 
   Telegram, so you can talk to the agents from your phone. Optional --
-  press Enter three times to skip, and add it later by editing
-  config/agents.env and re-running.
+  press Enter to skip, and add it later by editing config/agents.env and
+  re-running.
 
-  Use a DEDICATED bot per agent from @BotFather, never a personal account.
-  Tokens are not echoed below and are written to a 0600 file.
+  One DEDICATED bot per agent from @BotFather, never a personal account.
+  Each token is hidden as you type; its length and last four characters are
+  echoed back so you can see the paste landed.
 
 EOF
-  ask_secret OC_TG  "OpenClaw bot token from @BotFather"
-  ask_secret HM_TG  "Hermes bot token from @BotFather"
+  # Name the agent, not the framework: these are two different bots, and
+  # "OpenClaw bot token" invites pasting the same one twice.
+  ask_secret OC_TG "@BotFather token for the bot that will BE $OPENCLAW_NAME"
+  ask_secret HM_TG "@BotFather token for the bot that will BE $HERMES_NAME"
+  if [ -n "$OC_TG" ] && [ "$OC_TG" = "$HM_TG" ]; then
+    fail "both agents were given the same bot token. Telegram allows one
+connection per bot, so they would fight over it and neither would stay
+up. Create a second bot with /newbot in @BotFather."
+  fi
   TG_UID=""
   if [ -n "$OC_TG" ] || [ -n "$HM_TG" ]; then
     # Not a secret -- it is your own account id, and the bots refuse
