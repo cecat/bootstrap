@@ -2,9 +2,12 @@
 # ===========================================================================
 # bootstrap.sh -- build the sandboxed agent VM, end to end.
 #
-#   ./bootstrap.sh              build (resumes; safe to re-run)
-#   ./bootstrap.sh --rebuild    destroy the VM and generated config first
-#   ./bootstrap.sh --dry-run    preflight and detection only, change nothing
+#   ./bootstrap.sh                   build (resumes; safe to re-run)
+#   ./bootstrap.sh --rebuild         destroy the VM and generated config first
+#   ./bootstrap.sh --dry-run         preflight and detection only, writes nothing
+#   ./bootstrap.sh --stop-before-pi  answer the questions, then hand Pi to a
+#                                    supervising coding agent rather than
+#                                    sitting at a TUI yourself
 #
 # Why this is a script and not a procedure for a coding agent: every step here
 # is deterministic. Driving them with an agent adds variance without adding
@@ -34,10 +37,12 @@ INSTANCE="${AGENTS_VM:-agents}"
 ORIG_ARGS="$*"
 REBUILD=0
 DRY_RUN=0
+STOP_BEFORE_PI=0
 for a in "$@"; do
   case "$a" in
-    --rebuild) REBUILD=1 ;;
-    --dry-run) DRY_RUN=1 ;;
+    --rebuild)        REBUILD=1 ;;
+    --dry-run)        DRY_RUN=1 ;;
+    --stop-before-pi) STOP_BEFORE_PI=1 ;;
     -h|--help) sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $a (try --help)" >&2; exit 2 ;;
   esac
@@ -426,11 +431,16 @@ failures. Fix what it reported, then re-run ./bootstrap.sh."
 # ===========================================================================
 step "Step 6 -- hand the spec to Pi"
 
-if [ "$INTERACTIVE" = "0" ]; then
-  # Headless: a supervising agent drives Pi and reads the transcript. Stop
-  # here rather than run it blind -- Pi over-claiming is this repo's
-  # documented failure mode, and an unread transcript is how it survived
-  # four builds.
+if [ "$INTERACTIVE" = "0" ] || [ "$STOP_BEFORE_PI" = "1" ]; then
+  # Headless, or explicitly asked to stop: a supervising agent drives Pi and
+  # reads the transcript. Stop here rather than run it blind -- Pi
+  # over-claiming is this repo's documented failure mode, and an unread
+  # transcript is how it survived four builds.
+  #
+  # --stop-before-pi exists so a user at a terminal can answer the questions
+  # (which need a human) and still hand Pi to their agent (which needs a
+  # supervisor). Without it, an interactive run drops them into a TUI and
+  # makes them the babysitter.
   cat <<EOF
 
   Everything deterministic is done. What remains is Pi, and Pi needs

@@ -151,9 +151,12 @@ interactive run and you call directly after a supervised one:
 Useful flags and variables:
 
 ```sh
-./bootstrap.sh --dry-run    # preflight and detection only, writes nothing
-./bootstrap.sh --rebuild    # destroy the VM and generated config, then build
-./bootstrap.sh              # resumes; safe to re-run after fixing a failure
+./bootstrap.sh                   # resumes; safe to re-run after a failure
+./bootstrap.sh --dry-run         # preflight and detection only, writes nothing
+./bootstrap.sh --rebuild         # destroy the VM and generated config first
+./bootstrap.sh --stop-before-pi  # user answers the questions at a terminal,
+                                 # then hands Pi to you. The usual combination
+                                 # is --rebuild --stop-before-pi.
 
 OPENCLAW_AGENT_NAME=…       # headless: agent names, else the defaults
 HERMES_AGENT_NAME=…
