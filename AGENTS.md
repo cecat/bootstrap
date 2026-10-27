@@ -6,7 +6,14 @@ Claude Code looks for `CLAUDE.md`. Same content either way.)*
 
 ## If you were asked to build this
 
-You drive the whole thing. The user answers two questions and edits one file.
+**Two agents, sandboxed.** This repo builds a Lima VM that cannot see the
+host filesystem and cannot reach the internet except through a domain
+allowlist. Inside it live an OpenClaw agent and a Hermes agent, reaching the
+same models the user already has — and they are installed not by you but by
+**Pi**, a coding agent running *inside* the VM, working from a written spec.
+
+You are the supervisor. Pi does the building; you check that it actually did
+what it says.
 
 ```sh
 ./bootstrap.sh                      # deterministic steps; stops before Pi
@@ -15,6 +22,20 @@ You drive the whole thing. The user answers two questions and edits one file.
 ./scripts/pi-session.sh say "..."   # push back, same session
 ./scripts/finish-build.sh           # idempotence, narrow egress, verify
 ```
+
+**Work out where you are before running anything** — the user may have run
+`bootstrap.sh` already and started you to take over from it:
+
+```sh
+limactl list                                    # does the VM exist?
+limactl shell agents -- cat /etc/agent-sandbox/phase   # bootstrap | runtime
+limactl shell agents -- test -x ~/agent-bootstrap/setup.sh && echo "Pi has built"
+./verify/verify.sh                              # costs nothing, says a lot
+```
+
+No VM → start at `bootstrap.sh`. VM up, phase `bootstrap`, no `setup.sh` →
+Pi has not run; start at `pi-session.sh build`. `setup.sh` exists → Pi has
+run at least once; read the transcript before doing anything else.
 
 `bootstrap.sh` always stops before Pi and tells whoever ran it to hand Pi to
 you. With a terminal it asks the user the two questions first; without one it

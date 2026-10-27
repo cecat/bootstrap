@@ -496,12 +496,38 @@ if [ "$INTERACTIVE_PI" = "0" ]; then
   The deterministic part is done. What remains is Pi, and Pi needs a
   supervisor -- it has over-claimed success on every previous build.
 
-  That supervisor is your coding agent, not you. Paste this to it:
+  That supervisor is your coding agent, not you.
 
-      The VM is built and config is pushed. Drive and supervise Pi:
-      ./scripts/pi-session.sh build, then read the transcript and push
-      back with ./scripts/pi-session.sh say "...". Finish with
-      ./scripts/finish-build.sh when Pi is genuinely done.
+  Start a coding agent in this directory:
+
+      cd $REPO
+
+  and paste it everything between the lines:
+
+  ---------------------------------------------------------------------
+  Read AGENTS.md in this repo first -- it is the full brief, and the
+  section "Your actual job is supervising Pi" is specifically for you.
+
+  Where things stand: ./bootstrap.sh has finished the deterministic
+  half of the build. The Lima VM "$INSTANCE" is provisioned and running,
+  config/ has been pushed into it over SSH, and its network egress is
+  locked to the wide bootstrap allowlist. Pi -- a coding agent living
+  inside that VM -- is installed but has not built anything yet.
+
+  Your job is the rest: have Pi build the two agents from
+  spec/pi-target-state.md, and check its work. It will tell you it
+  succeeded; previous builds shipped broken because nobody verified
+  that claim.
+
+      ./scripts/pi-session.sh build            run Pi
+      ./scripts/pi-session.sh transcript       read what it ACTUALLY did
+      ./scripts/pi-session.sh say "..."        push back, same session
+      ./scripts/finish-build.sh                verify and finish
+
+  Do not shell into the VM to fix anything by hand. When Pi gets
+  something wrong the fix belongs in spec/pi-target-state.md, because
+  the repo is the deliverable, not this VM.
+  ---------------------------------------------------------------------
 
   (If you would rather watch Pi yourself in its own TUI, re-run with
   --interactive-pi. You do not need to: the agent can do all of it.)
