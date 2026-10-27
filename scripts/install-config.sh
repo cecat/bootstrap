@@ -186,7 +186,7 @@ limactl shell "$INSTANCE" -- sudo /usr/local/sbin/agent-egress bootstrap
 # --- 5. Gate on a real completion ------------------------------------------
 # Not /health: it answers 200 from local state even when the upstream is dead.
 # That false green cost hours. Only a completion proves the whole path.
-say "issuing a real completion from inside the VM"
+say "issuing a real completion from inside the VM (up to 90s)"
 RESP="$(limactl shell "$INSTANCE" -- bash -c "
   curl -s --noproxy '*' --max-time 90 -X POST '$MODEL_URL/v1/messages' \
     -H 'content-type: application/json' \

@@ -79,6 +79,7 @@ CURRENT_STEP="startup"
 FINISHED=0
 on_exit() {
   local rc=$?
+  [ -n "${TICKER_PID:-}" ] && kill "$TICKER_PID" 2>/dev/null || true
   [ "$rc" -eq 0 ] && return 0
   [ "$FINISHED" = "1" ] && return 0
   printf '\n%serror:%s bootstrap.sh exited (status %d) during: %s\n' \
@@ -365,14 +366,26 @@ Edits to that file are ignored until the instance is recreated:
   ./bootstrap.sh --rebuild"
     ;;
   "")
-    say "creating instance '$INSTANCE' (about ten minutes; log: ${VM_LOG#"$REPO"/})"
+    # The cloud image dominates a first build and is free on every one
+    # after, so the estimate is honest only if it says which case this is.
+    if ls "$HOME"/.cache/lima/download/by-url-sha256/*/data >/dev/null 2>&1; then
+      VM_WAIT_DESC="Expect roughly 5-10 minutes. The Ubuntu image is already
+  cached, so this is boot plus package installation."
+    else
+      VM_WAIT_DESC="Expect roughly 10-20 minutes, most of it a one-time
+  ~600 MB download of the Ubuntu cloud image. Later builds reuse it and
+  take about half as long."
+    fi
+    say "creating instance '$INSTANCE' in the background"
     # --tty=false and stdin from /dev/null: this runs in the background while
-    # the user is answering prompts, and must never reach for the terminal.
+    # the user is editing agents.env, and must never reach for the terminal.
     limactl start --tty=false --name="$INSTANCE" lima/agents.yaml \
       >"$VM_LOG" 2>&1 </dev/null &
     VM_PID=$!
     ;;
   *)
+    VM_WAIT_DESC="Expect a minute or two: the VM exists already, so this is
+  a boot rather than a build. Provision scripts re-run on every boot."
     say "starting existing instance '$INSTANCE' (status was: $vm_status)"
     limactl start --tty=false "$INSTANCE" >"$VM_LOG" 2>&1 </dev/null &
     VM_PID=$!
@@ -418,13 +431,42 @@ ok "config/agents.env validated"
 step "Step 5 -- wait for the VM"
 
 if [ -n "$VM_PID" ]; then
-  say "waiting for provisioning to finish"
+  cat <<EOF
+
+  $VM_WAIT_DESC
+
+  What is happening, roughly in order:
+    * downloading the Ubuntu 24.04 cloud image (~600 MB, cached in
+      ~/.cache/lima -- only the first build on a machine pays for this)
+    * booting it, then apt-get: ca-certificates, curl, git, jq, openssl,
+      squid, iptables, python3
+    * Node 22 from nodesource, then Pi from npm
+    * Tailscale, best-effort -- a failure here is logged and ignored
+
+  Progress is in ${VM_LOG#"$REPO"/} if you want to watch:
+      tail -f ${VM_LOG#"$REPO"/}
+
+EOF
+  # A heartbeat, so a long silence is distinguishable from a hang. TICKER_PID
+  # is reaped by on_exit, which already runs on every path out of here --
+  # installing a second EXIT trap would replace that diagnostic.
+  START_WAIT=$SECONDS
+  ( while :; do
+      sleep 30
+      printf '  ... still provisioning (%dm%02ds elapsed)\n' \
+        $(( (SECONDS - START_WAIT) / 60 )) $(( (SECONDS - START_WAIT) % 60 ))
+    done ) &
+  TICKER_PID=$!
+
   if ! wait "$VM_PID"; then
+    kill "$TICKER_PID" 2>/dev/null || true
     tail -40 "$VM_LOG" >&2 || true
     fail "the VM failed to start. Full log: ${VM_LOG#"$REPO"/}
 On Linux the usual causes are /dev/kvm permissions and a too-old Lima.
 See docs/spark-handoff.md. Fix the cause and re-run ./bootstrap.sh."
   fi
+  kill "$TICKER_PID" 2>/dev/null || true
+  ok "provisioning finished in $(( (SECONDS - START_WAIT) / 60 ))m$(( (SECONDS - START_WAIT) % 60 ))s"
 fi
 [ "$(limactl list --format '{{.Status}}' "$INSTANCE" 2>/dev/null | head -1)" = "Running" ] \
   || fail "instance '$INSTANCE' is not running. Log: ${VM_LOG#"$REPO"/}"
