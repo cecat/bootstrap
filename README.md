@@ -38,9 +38,8 @@ installation runs. The VM uses 8 GiB of RAM and up to 60 GiB of disk.
 ./bootstrap.sh
 ```
 
-Run it in a terminal you can type into. It hands you one file to fill in,
-asks one question, builds the VM, and then **stops and hands the rest to
-your coding agent.**
+Run it in a terminal you can type into. It asks you five short questions,
+builds the VM, and then **stops and hands the rest to your coding agent.**
 
 That stop is the design. The part that remains — Pi, installing two agents
 from a written spec — needs **supervising**, not watching: reading its
@@ -58,28 +57,37 @@ If you would rather do the supervising yourself in Pi's own TUI, run
 `./bootstrap.sh --interactive-pi`. You can decide later too — re-running
 reuses the existing VM and takes about a minute to get back to this point.
 
-### What you supply: one file
-
-The build creates `config/agents.env` and hands it to you to edit, then
-starts the VM — so you have the ten-minute provision to fill it in. Every
-field is documented in the file, and **your coding agent can help you with
-it.** Defaults are fine for a first build.
-
-| | |
-|---|---|
-| **Agent names** | Two. Defaults `claw-one` and `hermes-one`. Just names — an agent's character lives in its own `SOUL.md` inside the VM, changed by talking to the agent. |
-| **Telegram** | Optional. One dedicated bot per agent from @BotFather — never a personal account — plus your own numeric user id, the only account they will answer. Blank is fine; add it later. |
-| **Gateway token** | Nothing to do. The build generated 64 random hex characters into your copy. It is blank in the committed template because that template is public — your token is unique to your install. |
-
-Nothing asks you to type a secret at a prompt or into a chat, by design: that
-puts it in the shell history, the transcript and the session log. A 0600 file
-does not.
-
-### The one question
+### What it asks you
 
 **Is the detected model access correct?** Look at this one properly —
 everything downstream depends on it, and a wrong endpoint doesn't fail here.
 It surfaces much later as confusing failures deep inside Pi.
+
+Then four questions while the VM provisions in the background:
+
+| | |
+|---|---|
+| **Agent names** | Two. Defaults `claw-one` and `hermes-one` — press Enter to accept. Just names; an agent's character lives in its own `SOUL.md` inside the VM, changed by talking to the agent. |
+| **Telegram bot tokens** | Optional — press Enter to skip and add them later. One dedicated bot per agent from @BotFather, never a personal account. Not echoed as you type, and written straight to a 0600 file. |
+| **Your Telegram user id** | Only asked if you supplied a token. The numeric id of the one account the bots will answer. @userinfobot will tell you yours. |
+
+Answers go into `config/agents.env` (0600, gitignored), along with a gateway
+token the script generates for you.
+
+### If you would rather use an editor
+
+Fill the file in before you start, and the script will leave it alone:
+
+```sh
+cp config/agents.env.example config/agents.env
+$EDITOR config/agents.env
+./bootstrap.sh
+```
+
+An existing `config/agents.env` is kept exactly as written. The script only
+adds `OPENCLAW_GATEWAY_TOKEN` if it is still blank, shows you a summary, and
+asks whether to keep those settings. Same for changing something later: edit
+the file, re-run.
 
 ### If something fails
 
@@ -98,11 +106,11 @@ To start completely over:
 ## What happens, in order
 
 1. Detects your model access and asks you to confirm it.
-2. Creates `config/agents.env` and hands it to you to edit.
-3. Provisions the VM — Node, squid, iptables tooling, and Pi. About ten
-   minutes, which is your window to edit that file.
-4. Copies your config in over SSH and locks egress down to a wide
-   installation-time allowlist.
+2. Starts provisioning the VM in the background — Node, squid, iptables
+   tooling, and Pi. About ten minutes.
+3. Asks the four questions while that runs, and writes `config/agents.env`.
+4. Waits for the VM, then copies your config in over SSH and locks egress
+   down to a wide installation-time allowlist.
 5. **Stops**, and writes `NEXT-STEP.md` for your coding agent.
 
 Your agent then does the rest, with `scripts/pi-session.sh`:

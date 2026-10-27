@@ -41,14 +41,15 @@ Pi has not run; start at `pi-session.sh build`. `setup.sh` exists → Pi has
 run at least once; read the transcript before doing anything else.
 
 `bootstrap.sh` always stops before Pi and tells whoever ran it to hand Pi to
-you. With a terminal it asks the user the two questions first; without one it
+you. With a terminal it asks the user its questions first; without one it
 takes names from `OPENCLAW_AGENT_NAME` / `HERMES_AGENT_NAME` and defaults.
 
 Two things need the user, and you must not do either for them:
 
-- **`config/agents.env`.** The single file they fill in — agent names and
-  Telegram tokens. Help them *edit* it; never ask for a secret in
-  conversation, and never read one back. See *Safety rules*.
+- **Supplying the values in `config/agents.env`** — agent names and Telegram
+  tokens. The script prompts for them; a user may also write the file
+  beforehand and the script will keep it. Either way: never ask for a secret
+  in conversation, and never read one back. See *Safety rules*.
 - **Confirming the detected model access.** Show them the summary from
   `./scripts/detect-model-access.sh --dry-run` and get an answer.
 
@@ -157,9 +158,9 @@ idempotent `setup.sh`. That is your job, not the user's.
 |---|---|
 | **0. Preflight** | `jq`, `curl`, `openssl`, `limactl`, and on Linux a usable `/dev/kvm`. Also asserts nothing under `config/` is visible to git. |
 | **1. Detect model access** | `scripts/detect-model-access.sh --dry-run`, shown to the user for confirmation. Then written to `config/model-access.env` (0600, gitignored). |
-| **2. The one file** | Creates `config/agents.env` from the template with a generated `OPENCLAW_GATEWAY_TOKEN`, and hands it to the user. Agent names and Telegram tokens both live there — no prompting for values that have a home in a file. **Never asks for a secret.** |
-| **3. Start the VM** | `limactl start` in the background. Provisioning is ~10 minutes, which is the user's window to edit that file rather than watch a progress bar. |
-| **4. Confirm it** | Prints a set/blank summary (never a value) and validates the names against `[A-Za-z0-9._-]`. |
+| **2. Start the VM** | `limactl start` in the background. Provisioning is ~10 minutes, and step 3 is four prompts, so the two overlap. |
+| **3. Ask** | Agent names, then Telegram tokens via `read -rs` (not echoed, not in history), into `config/agents.env` (0600) with a generated gateway token. A file that already exists is **kept as written** — only a blank gateway token is filled in — so a user can prepare it in an editor beforehand. |
+| **4. Validate** | Prints a set/blank summary (never a value), checks the names against `[A-Za-z0-9._-]`, the gateway token is non-empty, and the Telegram id is numeric. |
 | **5. Wait** | For provisioning to finish. |
 | **6. Push config** | `scripts/install-config.sh` — copies config over SSH, applies the **bootstrap** allowlist, and gates on a real completion plus a proxied request. |
 | **7. Stop** | Writes `NEXT-STEP.md` — your brief — and exits. Pi is yours, via `scripts/pi-session.sh`. Only `--interactive-pi` runs the TUI instead. |
