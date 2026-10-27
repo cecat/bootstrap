@@ -20,12 +20,13 @@ You drive the whole thing. The user answers two questions and edits one file.
 you. With a terminal it asks the user the two questions first; without one it
 takes names from `OPENCLAW_AGENT_NAME` / `HERMES_AGENT_NAME` and defaults.
 
-Two things still need the user, and you must not do either for them:
+Two things need the user, and you must not do either for them:
 
+- **`config/agents.env`.** The single file they fill in — agent names and
+  Telegram tokens. Help them *edit* it; never ask for a secret in
+  conversation, and never read one back. See *Safety rules*.
 - **Confirming the detected model access.** Show them the summary from
   `./scripts/detect-model-access.sh --dry-run` and get an answer.
-- **The bot tokens.** They edit `config/agents.env` themselves. Never ask
-  for a secret in conversation — see *Safety rules*.
 
 ### Your actual job is supervising Pi
 
@@ -132,21 +133,21 @@ idempotent `setup.sh`. That is your job, not the user's.
 |---|---|
 | **0. Preflight** | `jq`, `curl`, `openssl`, `limactl`, and on Linux a usable `/dev/kvm`. Also asserts nothing under `config/` is visible to git. |
 | **1. Detect model access** | `scripts/detect-model-access.sh --dry-run`, shown to the user for confirmation. Then written to `config/model-access.env` (0600, gitignored). |
-| **2. Start the VM** | `limactl start` in the background — provisioning is ~10 minutes and steps 3 and 4 are questions, so the user is not left watching a bar. |
-| **3. Agent names** | Two names, defaults `claw-one` / `hermes-one`. Generates `OPENCLAW_GATEWAY_TOKEN` with `openssl rand -hex 32`. |
-| **4. Secrets** | Hands `config/agents.env` to the user to edit. **Never asks for a secret.** |
-| **5. Push config** | `scripts/install-config.sh` — copies config over SSH, applies the **bootstrap** allowlist, and gates on a real completion plus a proxied request. |
-| **6. Stop** | Prints the handoff and exits. Pi is yours, via `scripts/pi-session.sh`. Only `--interactive-pi` runs the TUI instead. |
+| **2. The one file** | Creates `config/agents.env` from the template with a generated `OPENCLAW_GATEWAY_TOKEN`, and hands it to the user. Agent names and Telegram tokens both live there — no prompting for values that have a home in a file. **Never asks for a secret.** |
+| **3. Start the VM** | `limactl start` in the background. Provisioning is ~10 minutes, which is the user's window to edit that file rather than watch a progress bar. |
+| **4. Confirm it** | Prints a set/blank summary (never a value) and validates the names against `[A-Za-z0-9._-]`. |
+| **5. Wait** | For provisioning to finish. |
+| **6. Push config** | `scripts/install-config.sh` — copies config over SSH, applies the **bootstrap** allowlist, and gates on a real completion plus a proxied request. |
+| **7. Stop** | Prints the handoff and exits. Pi is yours, via `scripts/pi-session.sh`. Only `--interactive-pi` runs the TUI instead. |
 
 Then `scripts/finish-build.sh`, which you call once Pi is genuinely done
 (and which `bootstrap.sh --interactive-pi` execs for itself):
 
 | | |
 |---|---|
-| **6b. Idempotence** | `verify/verify.sh --idempotence`, here and not later: Pi's `setup.sh` fetches from pypi.org, which is allowlisted in **bootstrap only**, so the check silently skips under `runtime` — and a skip reads like a pass in a long run. |
-| **7. Narrow egress** | `agent-egress runtime`. |
-| **8. Verify** | `verify/verify.sh --models`. |
-| **9. Stop** | Summarizes. **No chat channel is enabled**, even when tokens were supplied. Exits non-zero if anything failed. |
+| **8. Idempotence** | `verify/verify.sh --idempotence`, here and not later: Pi's `setup.sh` fetches from pypi.org, which is allowlisted in **bootstrap only**, so the check silently skips under `runtime` — and a skip reads like a pass in a long run. |
+| **9. Narrow egress** | `agent-egress runtime`. |
+| **10. Verify** | `verify/verify.sh --models`. Then summarizes. **No chat channel is enabled**, even when tokens were supplied. Exits non-zero if anything failed. |
 
 Useful flags and variables:
 

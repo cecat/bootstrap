@@ -20,10 +20,14 @@
 #   * That someone is a coding agent, driving scripts/pi-session.sh. Not the
 #     user. A human babysitting a TUI is how four bad builds shipped.
 #
-# The user is asked exactly two things, both of which a script cannot do
-# honestly: confirm the detected model endpoint, and put their own bot tokens
-# into config/agents.env. Nothing here ever asks for a secret -- a token
-# typed in conversation is in the transcript forever.
+# The user supplies exactly one thing: config/agents.env, handed to them in
+# step 2 and edited while the VM provisions. Agent names, Telegram tokens,
+# everything -- one file, documented in itself, and their coding agent can
+# help fill it in. Nothing here asks for a secret at a prompt: that puts it
+# in the shell history and the transcript, where a 0600 file does not.
+#
+# The only other question is confirming the detected model endpoint, which
+# the script genuinely cannot decide alone.
 #
 # Hard rule for anyone maintaining this: when a step fails, fix the script or
 # the spec and re-run. Do not reach into the VM and fix it by hand. A VM made
@@ -145,24 +149,6 @@ Set BOOTSTRAP_ASSUME_YES=1 to answer yes to every such question."
       [Nn]|[Nn]o)  return 1 ;;
     esac
   done
-}
-
-ask() {
-  # ask VAR "prompt" "default" [ENV_OVERRIDE]  -- non-secret values only.
-  local __var="$1" __prompt="$2" __default="$3" __envvar="${4:-}" __in
-  if [ -n "$__envvar" ] && [ -n "${!__envvar:-}" ]; then
-    printf -v "$__var" '%s' "${!__envvar}"
-    printf '  %s: %s (from %s)\n' "$__prompt" "${!__envvar}" "$__envvar"
-    return 0
-  fi
-  if [ "$INTERACTIVE" = "0" ]; then
-    printf -v "$__var" '%s' "$__default"
-    printf '  %s: %s (default)\n' "$__prompt" "$__default"
-    return 0
-  fi
-  printf '%s%s%s [%s] ' "$B" "$__prompt" "$Z" "$__default"
-  read -r __in </dev/tty || __in=""
-  printf -v "$__var" '%s' "${__in:-$__default}"
 }
 
 # ===========================================================================
@@ -288,7 +274,76 @@ provider'. Only the Argo path is built out."
 ok "config/model-access.env written (0600)"
 
 # ===========================================================================
-step "Step 2 -- start the VM"
+step "Step 2 -- the one file you fill in"
+
+# This is the ONLY thing the user supplies, so it comes before the ten-minute
+# VM provision rather than being dribbled out as prompts afterwards. They can
+# edit it while the VM builds, and their coding agent can help -- every field
+# is documented in the file itself.
+#
+# Prompting for the agent names would be redundant: they are fields in this
+# same file. One input, one place.
+AGENTS_ENV_WAS_NEW=0
+if [ ! -f config/agents.env ]; then
+  # Seed from the template with a real gateway token. Substituted in bash,
+  # not sed, so a '|' or '&' in a later edit cannot corrupt the file.
+  GEN_TOKEN="$(openssl rand -hex 32)"
+  ( umask 077
+    while IFS= read -r line; do
+      case "$line" in
+        OPENCLAW_GATEWAY_TOKEN=*) printf 'OPENCLAW_GATEWAY_TOKEN="%s"\n' "$GEN_TOKEN" ;;
+        *)                        printf '%s\n' "$line" ;;
+      esac
+    done < config/agents.env.example > config/agents.env )
+  unset GEN_TOKEN
+  chmod 600 config/agents.env
+  AGENTS_ENV_WAS_NEW=1
+  ok "created config/agents.env (0600) with a generated gateway token"
+fi
+
+cat <<EOF
+
+  Everything you need to supply lives in one file:
+
+      $REPO/config/agents.env
+
+  Open it in an editor now. Each field is documented in the file.
+
+    * Agent names -- two of them. Defaults are fine.
+    * Telegram, if you want the agents reachable there: one dedicated bot
+      per agent from @BotFather (never a personal account), plus your own
+      numeric user id, which is the only account they will answer. Leave
+      blank to build without channels; you can add them later.
+    * The gateway token is already generated. Leave it alone.
+
+  Your coding agent can help you fill this in -- it is a normal file.
+
+  Nothing here asks you to type a secret at a prompt or into a chat, by
+  design: that puts it in the shell history, the transcript and the session
+  log. A 0600 file does not. Channels are configured DISABLED either way;
+  nothing is turned on until you say so, after verification.
+
+  The VM starts provisioning next and takes about ten minutes, so you have
+  that long to edit this.
+
+EOF
+
+# Print what the file currently holds, without ever printing a secret.
+agents_env_summary() {
+  # shellcheck disable=SC1091
+  ( set -a; . config/agents.env 2>/dev/null; set +a
+    printf '  config/agents.env:\n'
+    printf '    OpenClaw agent     : %s\n' "${OPENCLAW_AGENT_NAME:-<unset>}"
+    printf '    Hermes agent       : %s\n' "${HERMES_AGENT_NAME:-<unset>}"
+    printf '    gateway token      : %s\n' "$([ -n "${OPENCLAW_GATEWAY_TOKEN:-}" ] && echo set || echo BLANK)"
+    printf '    OpenClaw bot token : %s\n' "$([ -n "${OPENCLAW_TELEGRAM_BOT_TOKEN:-}" ] && echo set || echo blank)"
+    printf '    Hermes bot token   : %s\n' "$([ -n "${HERMES_TELEGRAM_BOT_TOKEN:-}" ] && echo set || echo blank)"
+    printf '    allowed user id    : %s\n' "$([ -n "${TELEGRAM_ALLOWED_USER_ID:-}" ] && echo set || echo blank)"
+  )
+}
+
+# ===========================================================================
+step "Step 3 -- start the VM (background)"
 
 # Start it now and keep going. Provisioning is about ten minutes and the next
 # step is questions, so there is no reason to make the user watch a bar.
@@ -323,98 +378,42 @@ Edits to that file are ignored until the instance is recreated:
 esac
 
 # ===========================================================================
-step "Step 3 -- agent names"
+step "Step 4 -- confirm config/agents.env"
 
-if [ -f config/agents.env ]; then
-  # Never print a token. Names only, and set/blank for everything else.
-  # shellcheck disable=SC1091
-  ( set -a; . config/agents.env; set +a
-    printf '  config/agents.env already exists:\n'
-    printf '    OpenClaw agent     : %s\n' "${OPENCLAW_AGENT_NAME:-<unset>}"
-    printf '    Hermes agent       : %s\n' "${HERMES_AGENT_NAME:-<unset>}"
-    printf '    gateway token      : %s\n' "$([ -n "${OPENCLAW_GATEWAY_TOKEN:-}" ] && echo set || echo BLANK)"
-    printf '    OpenClaw bot token : %s\n' "$([ -n "${OPENCLAW_TELEGRAM_BOT_TOKEN:-}" ] && echo set || echo blank)"
-    printf '    Hermes bot token   : %s\n' "$([ -n "${HERMES_TELEGRAM_BOT_TOKEN:-}" ] && echo set || echo blank)"
-    printf '    allowed user id    : %s\n' "$([ -n "${TELEGRAM_ALLOWED_USER_ID:-}" ] && echo set || echo blank)"
-  )
-  echo
-  if confirm "Keep this file as it is?"; then
-    KEEP_ENV=1
-  else
-    KEEP_ENV=0
-  fi
-else
-  KEEP_ENV=0
+# The file was handed over in step 2, before the VM started, so the user has
+# had the whole provision to edit it. Confirm it while the clock is still
+# running rather than after the wait.
+agents_env_summary
+
+if [ "$INTERACTIVE" = "1" ]; then
+  pause "Press Enter when config/agents.env is ready."
+  agents_env_summary
 fi
 
-if [ "$KEEP_ENV" = "0" ]; then
-  echo
-  echo "  Just names. An agent's character lives in its own SOUL.md inside the"
-  echo "  VM, which you change by talking to the agent -- see docs/personality.md."
-  echo
-  ask OPENCLAW_NAME "Name for the OpenClaw agent" "claw-one"   OPENCLAW_AGENT_NAME
-  ask HERMES_NAME   "Name for the Hermes agent"   "hermes-one" HERMES_AGENT_NAME
-
-  # agents.env is sourced by shells on both sides and the names reach agent
-  # CLIs as arguments. Keep them boring rather than quoting defensively in
-  # five places downstream.
-  for n in "$OPENCLAW_NAME" "$HERMES_NAME"; do
-    case "$n" in
+# Validate what the user actually wrote. These names are sourced by shells on
+# both sides and reach agent CLIs as arguments, so keep them boring rather
+# than quoting defensively in five places downstream.
+# shellcheck disable=SC1091
+( set -a; . config/agents.env 2>/dev/null; set +a
+  for pair in "OPENCLAW_AGENT_NAME:${OPENCLAW_AGENT_NAME:-}" \
+              "HERMES_AGENT_NAME:${HERMES_AGENT_NAME:-}"; do
+    case "${pair#*:}" in
       ''|*[!A-Za-z0-9._-]*)
-        fail "'$n' is not a usable agent name. Letters, digits, dot, dash and
-underscore only -- these names are sourced by shells and passed to CLIs." ;;
+        printf 'error: %s is empty or has characters outside [A-Za-z0-9._-].\n' \
+          "${pair%%:*}" >&2
+        printf '       Edit config/agents.env and re-run.\n' >&2
+        exit 1 ;;
     esac
   done
-
-  # Substitute in bash, not sed: the names come from the user and a '|' or
-  # '&' in one would otherwise corrupt the file or vanish silently.
-  GEN_TOKEN="$(openssl rand -hex 32)"
-  ( umask 077
-    while IFS= read -r line; do
-      case "$line" in
-        OPENCLAW_AGENT_NAME=*)    printf 'OPENCLAW_AGENT_NAME="%s"\n'    "$OPENCLAW_NAME" ;;
-        HERMES_AGENT_NAME=*)      printf 'HERMES_AGENT_NAME="%s"\n'      "$HERMES_NAME" ;;
-        OPENCLAW_GATEWAY_TOKEN=*) printf 'OPENCLAW_GATEWAY_TOKEN="%s"\n' "$GEN_TOKEN" ;;
-        *)                        printf '%s\n' "$line" ;;
-      esac
-    done < config/agents.env.example > config/agents.env )
-  unset GEN_TOKEN
-  chmod 600 config/agents.env
-  ok "config/agents.env written (0600), gateway token generated"
-fi
+  [ -n "${OPENCLAW_GATEWAY_TOKEN:-}" ] || {
+    printf 'error: OPENCLAW_GATEWAY_TOKEN is blank. Generate one:\n' >&2
+    printf '       openssl rand -hex 32\n' >&2
+    exit 1; }
+) || fail "config/agents.env is not usable yet (see above)."
+ok "config/agents.env validated"
 
 # ===========================================================================
-step "Step 4 -- your Telegram tokens, if you want them"
-
-cat <<EOF
-
-  Open this file in an editor:
-
-      $REPO/config/agents.env
-
-  and fill in these three if you want the agents reachable over Telegram:
-
-      OPENCLAW_TELEGRAM_BOT_TOKEN
-      HERMES_TELEGRAM_BOT_TOKEN
-      TELEGRAM_ALLOWED_USER_ID
-
-  One dedicated bot per agent from @BotFather -- never a personal account --
-  and your own numeric user id, the only account the bots will answer.
-
-  Leave them blank to build without channels; you can add them later.
-
-  This script will not ask you for these values and will not read them back
-  to you. A token typed into a terminal prompt or a chat ends up in the
-  transcript and in the session log; a token you put in a 0600 file does not.
-
-  Channels are configured DISABLED either way. Nothing is turned on until
-  you say so, after verification.
-
-EOF
-pause "Press Enter when the file is ready."
-
-# ===========================================================================
-step "Step 2 (cont.) -- waiting for the VM"
+step "Step 5 -- wait for the VM"
 
 if [ -n "$VM_PID" ]; then
   say "waiting for provisioning to finish"
@@ -430,7 +429,7 @@ fi
 ok "VM is up"
 
 # ===========================================================================
-step "Step 5 -- push config and lock egress down"
+step "Step 6 -- push config and lock egress down"
 
 ./scripts/install-config.sh "$INSTANCE" \
   || fail "install-config.sh failed. It stops rather than continue with a
@@ -438,7 +437,7 @@ broken model path, because that only resurfaces later as confusing Pi
 failures. Fix what it reported, then re-run ./bootstrap.sh."
 
 # ===========================================================================
-step "Step 6 -- hand the spec to Pi"
+step "Step 7 -- hand Pi to a supervising agent"
 
 if [ "$INTERACTIVE_PI" = "0" ]; then
   # The default, and the point of the project. Pi over-claims -- it has
@@ -511,7 +510,7 @@ EOF
 }
 
 # ===========================================================================
-step "Steps 6b-9 -- idempotence, narrow egress, verify"
+step "Steps 8-10 -- idempotence, narrow egress, verify"
 
 # One implementation, shared with the headless path, so the two cannot drift.
 FINISHED=1

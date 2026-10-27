@@ -38,8 +38,9 @@ installation runs. The VM uses 8 GiB of RAM and up to 60 GiB of disk.
 ./bootstrap.sh
 ```
 
-Run it in a terminal you can type into. It asks you three things, builds the
-VM, and then **stops and hands the rest to your coding agent.**
+Run it in a terminal you can type into. It hands you one file to fill in,
+asks one question, builds the VM, and then **stops and hands the rest to
+your coding agent.**
 
 That stop is the design. The part that remains — Pi, installing two agents
 from a written spec — is the part that needs watching, because Pi reports
@@ -49,33 +50,28 @@ for a coding agent, not for you.
 So when it stops, paste what it prints to Claude Code, Codex, or whatever
 you use, and let that do the supervising.
 
-### What it will ask you
+### What you supply: one file
+
+The build creates `config/agents.env` and hands it to you to edit, then
+starts the VM — so you have the ten-minute provision to fill it in. Every
+field is documented in the file, and **your coding agent can help you with
+it.** Defaults are fine for a first build.
+
+| | |
+|---|---|
+| **Agent names** | Two. Defaults `claw-one` and `hermes-one`. Just names — an agent's character lives in its own `SOUL.md` inside the VM, changed by talking to the agent. |
+| **Telegram** | Optional. One dedicated bot per agent from @BotFather — never a personal account — plus your own numeric user id, the only account they will answer. Blank is fine; add it later. |
+| **Gateway token** | Already generated. Leave it alone. |
+
+Nothing asks you to type a secret at a prompt or into a chat, by design: that
+puts it in the shell history, the transcript and the session log. A 0600 file
+does not.
+
+### The one question
 
 **Is the detected model access correct?** Look at this one properly —
 everything downstream depends on it, and a wrong endpoint doesn't fail here.
 It surfaces much later as confusing failures deep inside Pi.
-
-**A name for each agent.** Defaults `claw-one` and `hermes-one`. Just names:
-an agent's character lives in its own `SOUL.md` inside the VM, which you
-change by talking to the agent.
-
-**Your Telegram tokens, if you want them.** The build stops and hands you a
-file rather than asking. Open `config/agents.env` and fill in:
-
-```
-OPENCLAW_TELEGRAM_BOT_TOKEN=
-HERMES_TELEGRAM_BOT_TOKEN=
-TELEGRAM_ALLOWED_USER_ID=
-```
-
-Get a **separate bot** per agent from Telegram's @BotFather — never a personal
-account — and your own numeric user id, which is the only account the bots
-will answer. Then press Enter. Leave them blank to build without Telegram;
-you can add it later.
-
-Nothing asks you to type a secret, by design: a token typed at a prompt or
-into a chat ends up in the shell history, the transcript and the session log.
-A token you put in a 0600 file does not.
 
 ### If something fails
 
@@ -94,22 +90,23 @@ To start completely over:
 ## What happens, in order
 
 1. Detects your model access and asks you to confirm it.
-2. Creates the VM and provisions it — Node, squid, iptables tooling, and Pi.
-   About ten minutes. It asks you the questions above while this runs.
-3. Copies your config in over SSH and locks egress down to a wide
+2. Creates `config/agents.env` and hands it to you to edit.
+3. Provisions the VM — Node, squid, iptables tooling, and Pi. About ten
+   minutes, which is your window to edit that file.
+4. Copies your config in over SSH and locks egress down to a wide
    installation-time allowlist.
-4. **Stops, and tells you to hand Pi to your coding agent.**
+5. **Stops, and tells you to hand Pi to your coding agent.**
 
 Your agent then does the rest, with `scripts/pi-session.sh`:
 
-5. Gives Pi the spec. Pi installs OpenClaw and Hermes, writes their service
+6. Gives Pi the spec. Pi installs OpenClaw and Hermes, writes their service
    units, seeds each agent's personality file, and produces a setup script
    that must run twice unchanged to prove it is repeatable.
-6. Reads the transcript and argues with Pi where it over-claimed. This is
+7. Reads the transcript and argues with Pi where it over-claimed. This is
    the step that four previous builds skipped, and all four shipped broken.
-7. Runs `scripts/finish-build.sh`: idempotence, narrows egress to the
+8. Runs `scripts/finish-build.sh`: idempotence, narrows egress to the
    steady-state allowlist, and verifies with real completions.
-8. **No chat channel is enabled**, even if you supplied Telegram tokens.
+9. **No chat channel is enabled**, even if you supplied Telegram tokens.
    Turning one on is a separate decision you make afterwards.
 
 ## Checking it worked
