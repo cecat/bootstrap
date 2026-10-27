@@ -5,8 +5,8 @@
 #   ./bootstrap.sh                   build (resumes; safe to re-run)
 #   ./bootstrap.sh --rebuild         destroy the VM and generated config first
 #   ./bootstrap.sh --dry-run         preflight and detection only, writes nothing
-#   ./bootstrap.sh --interactive-pi  watch Pi yourself in its TUI, instead of
-#                                    handing it to a supervising agent
+#   ./bootstrap.sh --interactive-pi  supervise Pi yourself in its TUI, instead
+#                                    of handing it to a coding agent
 #
 # This script runs the deterministic half of the build and then STOPS, before
 # Pi. That stop is the design, not an interruption:
@@ -46,7 +46,7 @@ DRY_RUN=0
 # Default: stop before Pi and hand it to a supervising coding agent. Driving
 # Pi is the agent's job -- it over-claims, and catching that means reading a
 # transcript against the spec. --interactive-pi opts into the TUI instead,
-# for someone who deliberately wants to watch it themselves.
+# for someone who deliberately wants to do the reviewing themselves.
 INTERACTIVE_PI=0
 for a in "$@"; do
   case "$a" in
@@ -151,6 +151,32 @@ Set BOOTSTRAP_ASSUME_YES=1 to answer yes to every such question."
     esac
   done
 }
+
+# ===========================================================================
+# Say up front who will supervise Pi. Offering the choice only at step 7,
+# after the user has sat through a provision, is offering it too late to be
+# a choice. Re-running is genuinely cheap -- an existing VM is detected and
+# not rebuilt -- but nobody should have to discover that.
+if [ "$INTERACTIVE_PI" = "0" ]; then
+  cat <<'EOF'
+
+  ------------------------------------------------------------------
+  This builds a VM, then stops and hands the rest to your coding
+  agent. The remaining work is Pi -- an agent inside the VM that
+  installs the two agents from a written spec -- and it needs
+  supervising, not just watching: reading its transcript against the
+  spec and pushing back where it claims more than it did. Four
+  earlier builds shipped broken because that review never happened.
+
+  That review is a coding agent's job. You are not expected to do it.
+
+  If you would rather supervise Pi yourself, in its own TUI, stop now
+  and re-run with --interactive-pi. You can also just re-run later:
+  an existing VM is reused, so you lose nothing but a minute.
+  ------------------------------------------------------------------
+
+EOF
+fi
 
 # ===========================================================================
 step "Step 0 -- preflight"
@@ -302,6 +328,11 @@ if [ ! -f config/agents.env ]; then
   ok "created config/agents.env (0600) with a generated gateway token"
 fi
 
+if [ "$AGENTS_ENV_WAS_NEW" = "0" ]; then
+  # A re-run. The file already exists, so do not make the user sit through
+  # instructions for a job they have done -- just say where it is.
+  say "using the existing config/agents.env (edit it and re-run to change it)"
+else
 cat <<EOF
 
   Everything you need to supply lives in one file:
@@ -330,6 +361,7 @@ cat <<EOF
   that long to edit this.
 
 EOF
+fi
 
 # Print what the file currently holds, without ever printing a secret.
 agents_env_summary() {
@@ -400,7 +432,10 @@ step "Step 4 -- confirm config/agents.env"
 # running rather than after the wait.
 agents_env_summary
 
-if [ "$INTERACTIVE" = "1" ]; then
+# Only wait if the file was created this run. On a re-run the user already
+# filled it in, and pausing again turns a one-minute resume into another
+# round of prompts -- which is exactly what makes people not re-run.
+if [ "$INTERACTIVE" = "1" ] && [ "$AGENTS_ENV_WAS_NEW" = "1" ]; then
   pause "Press Enter when config/agents.env is ready."
   agents_env_summary
 fi
@@ -529,8 +564,10 @@ if [ "$INTERACTIVE_PI" = "0" ]; then
   the repo is the deliverable, not this VM.
   ---------------------------------------------------------------------
 
-  (If you would rather watch Pi yourself in its own TUI, re-run with
-  --interactive-pi. You do not need to: the agent can do all of it.)
+  (To supervise Pi yourself in its own TUI instead, re-run this script
+  with --interactive-pi. The VM is already built, so re-running skips
+  straight back to here -- about a minute. You do not need to, though:
+  a coding agent can do all of it, and is better at the reading.)
 
 EOF
   FINISHED=1

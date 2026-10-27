@@ -43,12 +43,17 @@ asks one question, builds the VM, and then **stops and hands the rest to
 your coding agent.**
 
 That stop is the design. The part that remains — Pi, installing two agents
-from a written spec — is the part that needs watching, because Pi reports
-success it has not earned. Reading its transcript against the spec is work
-for a coding agent, not for you.
+from a written spec — needs **supervising**, not watching: reading its
+transcript against the spec and pushing back where it claims more than it
+did. Pi reports success it has not earned, and four earlier builds shipped
+broken because nobody checked.
 
-So when it stops, paste what it prints to Claude Code, Codex, or whatever
-you use, and let that do the supervising.
+That review is a coding agent's job, not yours. When the script stops, paste
+what it prints to Claude Code, Codex, or whatever you use.
+
+If you would rather do the supervising yourself in Pi's own TUI, run
+`./bootstrap.sh --interactive-pi`. You can decide later too — re-running
+reuses the existing VM and takes about a minute to get back to this point.
 
 ### What you supply: one file
 
@@ -84,7 +89,7 @@ To start completely over:
 ```sh
 ./bootstrap.sh --rebuild         # destroys the VM and the generated config
 ./bootstrap.sh --dry-run         # preflight and detection only, writes nothing
-./bootstrap.sh --interactive-pi  # rare: watch Pi yourself in its own TUI
+./bootstrap.sh --interactive-pi  # rare: supervise Pi yourself, in its own TUI
 ```
 
 ## What happens, in order
