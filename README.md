@@ -5,7 +5,8 @@ one agent each — running in a VM that cannot see your filesystem and cannot
 reach the internet except through a domain allowlist you control.
 
 You run one script to build the VM. Then **Pi** — a small coding agent living
-*inside* the VM — installs the two agents from a written specification.
+*inside* the VM — installs the two agents from a written specification, with
+your own coding agent supervising it.
 
 The agents get the same model access you already have. Nothing to look up: the
 build reads your live `ANTHROPIC_BASE_URL` and your `~/.claude/settings*.json`
@@ -15,15 +16,68 @@ and propagates that inward.
 
 ## What you need first
 
+Items 1–3 are decisions and offline errands, not downloads. Settle them
+before you start rather than discovering them mid-build — and ask your
+coding agent for help with any of them.
+
+### 1. A coding agent, which does the second half of the build
+
+Claude Code, Codex, Cursor, or similar, able to open this directory. This is
+**required**, not a convenience: `bootstrap.sh` builds the VM and then stops,
+because what remains is supervising Pi — reading its transcript against the
+spec and pushing back where it claims more than it did. That is a coding
+agent's job. See *How to build it* below.
+
+Your agent can also help with everything else on this page, including the
+Telegram setup.
+
+### 2. Agreeing to share your model access
+
+**The agents in the VM will use the same model endpoint and credential your
+coding agent uses right now.** That is the central idea — nobody retypes an
+endpoint that can be discovered — but it has consequences worth accepting
+deliberately:
+
+- `bootstrap.sh` reads your live `ANTHROPIC_BASE_URL` and
+  `~/.claude/settings*.json`, resolves the credential, and copies it into the
+  VM. It shows you what it found and asks you to confirm before writing
+  anything.
+- **The agents will spend against that credential.** The sandbox limits where
+  a key can be *sent*; it does nothing about what it can *spend*. If your
+  provider offers a spend-capped key, use one — put it in
+  `config/model-access.env` as `CREDENTIAL=…` after detection runs.
+- Your host must be on whatever network the endpoint needs. For Argo that
+  means the Argonne network or its VPN. The VM inherits your host's
+  networking: if you can't reach it, neither can the VM.
+
+If none of that is acceptable, stop here — this design has no other way to
+give the agents model access.
+
+### 3. Telegram bots, if you want to reach the agents from your phone
+
+**Optional.** Skip it and the agents still work; you talk to them from a
+shell in the VM. You can add it later.
+
+This is the one thing you must do outside this repo, and it takes about two
+minutes in the Telegram app:
+
+1. Message **@BotFather** and send `/newbot`. Give it a name and a username
+   ending in `bot`. It replies with a token like `8104521177:AAH…`.
+2. **Do it twice.** Each agent needs its own bot — Telegram allows one
+   connection per bot, so a shared token means the two gateways fight over
+   it and neither stays up. `bootstrap.sh` rejects a duplicate.
+3. Message **@userinfobot** to get your own numeric user id. That is the only
+   account the bots will answer.
+
+Have those three values ready to paste when the script asks. Never use a
+personal account as a bot, and nothing here will ask you to.
+
+### 4. Software
+
 | | |
 |---|---|
 | **Lima** | macOS: `brew install lima`. Linux: the release binary from [lima-vm/lima](https://github.com/lima-vm/lima/releases) — distro packages are often older than the required 1.0.0 — plus QEMU and a usable `/dev/kvm`. |
-| **jq, openssl** | macOS: `brew install jq`. Linux: `sudo apt-get install jq openssl` |
-| **A working model endpoint** | Whatever your coding agent is using right now. For Argo that means being on the Argonne network or its VPN — the VM inherits your network, so if you can't reach it, neither can the VM. |
-
-You do **not** need a coding agent on the host. The build reads the model
-access your agent already has from its settings and environment, but it runs
-as a plain shell script.
+| **jq, openssl, curl** | macOS: `brew install jq`. Linux: `sudo apt-get install jq openssl curl` |
 
 **On Linux, read `docs/spark-handoff.md` before you start.** It covers the
 QEMU and KVM requirements, the exact package list, and the two traps that
@@ -68,7 +122,7 @@ Then four questions while the VM provisions in the background:
 | | |
 |---|---|
 | **Agent names** | Two. Defaults `claw-one` and `hermes-one` — press Enter to accept. Just names; an agent's character lives in its own `SOUL.md` inside the VM, changed by talking to the agent. |
-| **Telegram bot tokens** | Optional — press Enter to skip and add them later. One dedicated bot per agent from @BotFather, never a personal account. Not echoed as you type, and written straight to a 0600 file. |
+| **Telegram bot tokens** | The two from @BotFather (step 3 above). Optional — press Enter to skip. Hidden as you type; the length and last four characters are echoed back so you can see the paste landed. |
 | **Your Telegram user id** | Only asked if you supplied a token. The numeric id of the one account the bots will answer. @userinfobot will tell you yours. |
 
 Answers go into `config/agents.env` (0600, gitignored), along with a gateway
