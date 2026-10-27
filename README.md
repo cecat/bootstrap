@@ -31,6 +31,18 @@ agent's job. See *How to build it* below.
 Your agent can also help with everything else on this page, including the
 Telegram setup.
 
+**It needs permission to run this repo's scripts**, or it will read the
+brief, work out what to do, and then stop and ask you to type each command —
+the opposite of the point. Claude Code reads `.claude/settings.json`, which
+this repo ships for that purpose; you may have to trust project settings
+once on first open. For any other tool, the canonical list is in `AGENTS.md`
+→ *Commands you need, and the ones you must not run*; translate it into
+whatever that tool uses, or just approve commands as they come up.
+
+Don't reach for a blanket bypass flag. The same list also *denies* a few
+things — shelling into the VM to fix it by hand, deleting the instance,
+unlocking the sandbox — and those denials are load-bearing, not caution.
+
 ### 2. Agreeing to share your model access
 
 **The agents in the VM will use the same model endpoint and credential your

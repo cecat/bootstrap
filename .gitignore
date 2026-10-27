@@ -15,6 +15,7 @@ config/*
 tokens
 secrets
 secrets/
+debug-notes/
 auth.json
 
 # Agent + VM state that must never be committed

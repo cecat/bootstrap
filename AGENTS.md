@@ -94,6 +94,74 @@ the evidence.
 None of the scripts hand you a VM shell. That is deliberate, and reaching
 around it defeats the point of the project.
 
+### Commands you need, and the ones you must not run
+
+**This list is the canonical one.** It is prose because every coding tool
+has its own approval mechanism and no repo can ship config for all of them.
+Translate it into whatever yours uses, or approve commands as prompted.
+
+A session that cannot run these stops and asks the user to type each
+command by hand — which is precisely the work this design exists to take
+*off* the user. That happened on 2026-10-27: a fresh agent read the brief,
+oriented correctly, and then could not act.
+
+Should be allowed to run unattended:
+
+```sh
+./bootstrap.sh                       # and its flags
+./scripts/pi-session.sh …            # build | transcript | say
+./scripts/finish-build.sh
+./scripts/detect-model-access.sh --dry-run
+./scripts/check-telegram-tokens.sh
+./verify/verify.sh …
+git …
+limactl list
+limactl shell agents -- cat /etc/agent-sandbox/phase
+```
+
+Should be **denied**, and this is a design rule rather than caution:
+
+```sh
+limactl shell agents -- <anything else>   # no hand-repair of the VM
+limactl delete … / limactl stop …          # destroys a build
+… agent-egress unlock                      # removes the sandbox
+```
+
+Note the asymmetry: the two `limactl shell` probes above are read-only and
+named here deliberately, while the general form is not allowed. The rule
+"fix the spec, not the VM" is enforceable as a permission; as prose alone it
+has already been violated twice.
+
+**Do not ask the user to bypass permissions wholesale** (Claude Code's
+`--dangerously-skip-permissions` or any equivalent). It would let the build
+run, and it would also remove the one guardrail that stops you reaching into
+the VM. An allowlist gives you the first without the second.
+
+**Claude Code users get this already:** `.claude/settings.json` is committed
+and encodes exactly the lists above, so a fresh session can work unattended.
+You may have to trust project settings once on first open.
+
+Other tools have no committed-config convention, which is why the prose list
+above is the canonical one. Its absence for Codex or Cursor is not a gap in
+the repo.
+
+Two notes if you ever need to change that file. A permissions file is
+self-modification, so an agent is blocked from writing one without the user
+explicitly saying so — ask, do not work around it. And write it yourself
+once authorized: see the next section.
+
+### Do not hand the user text to transcribe
+
+**The user cannot copy text out of their terminal interface.** Anything you
+"hand them to paste" they would retype by hand, character by character.
+
+So: never end a turn with "paste this into X" for more than a few words.
+Write the file yourself. If a tool denial stops you, say so plainly and ask
+for authorization — do not fall back on making them transcribe it.
+
+Same for shell commands. They run commands one at a time, so a long command
+is a long retype. Put it in a script and give them one short line.
+
 Everything below is background. Read it before you change anything; you do
 not need it to run a build.
 
@@ -377,6 +445,9 @@ scripts/
 spec/pi-target-state.md target-state spec Pi builds from
 config/                 local config; only *.example is committed
 verify/verify.sh        automated checks
+.claude/settings.json   Claude Code permissions, committed. A convenience
+                        encoding of the canonical list above; other tools
+                        read that list from this file instead.
 local/                  gitignored; the user's own files. Not managed here.
 docs/
   handoff-2026-10-26.md READ FIRST if you are working on this repo
