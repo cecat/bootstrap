@@ -23,8 +23,11 @@ what it says.
 ./scripts/finish-build.sh           # idempotence, narrow egress, verify
 ```
 
-**Work out where you are before running anything** — the user may have run
-`bootstrap.sh` already and started you to take over from it:
+**If `NEXT-STEP.md` exists in this directory, read it first.** `bootstrap.sh`
+writes it when it stops, and it says exactly which phase the build reached.
+
+Otherwise, work out where you are before running anything — the user may
+have run `bootstrap.sh` already and started you to take over from it:
 
 ```sh
 limactl list                                    # does the VM exist?
@@ -159,7 +162,7 @@ idempotent `setup.sh`. That is your job, not the user's.
 | **4. Confirm it** | Prints a set/blank summary (never a value) and validates the names against `[A-Za-z0-9._-]`. |
 | **5. Wait** | For provisioning to finish. |
 | **6. Push config** | `scripts/install-config.sh` — copies config over SSH, applies the **bootstrap** allowlist, and gates on a real completion plus a proxied request. |
-| **7. Stop** | Prints the handoff and exits. Pi is yours, via `scripts/pi-session.sh`. Only `--interactive-pi` runs the TUI instead. |
+| **7. Stop** | Writes `NEXT-STEP.md` — your brief — and exits. Pi is yours, via `scripts/pi-session.sh`. Only `--interactive-pi` runs the TUI instead. |
 
 Then `scripts/finish-build.sh`, which you call once Pi is genuinely done
 (and which `bootstrap.sh --interactive-pi` execs for itself):

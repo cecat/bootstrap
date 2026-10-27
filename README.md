@@ -48,8 +48,11 @@ transcript against the spec and pushing back where it claims more than it
 did. Pi reports success it has not earned, and four earlier builds shipped
 broken because nobody checked.
 
-That review is a coding agent's job, not yours. When the script stops, paste
-what it prints to Claude Code, Codex, or whatever you use.
+That review is a coding agent's job, not yours. The script writes the
+handoff to `NEXT-STEP.md` when it stops, so all you do is start a coding
+agent in this directory and tell it:
+
+> Read NEXT-STEP.md and do what it says.
 
 If you would rather do the supervising yourself in Pi's own TUI, run
 `./bootstrap.sh --interactive-pi`. You can decide later too — re-running
@@ -100,7 +103,7 @@ To start completely over:
    minutes, which is your window to edit that file.
 4. Copies your config in over SSH and locks egress down to a wide
    installation-time allowlist.
-5. **Stops, and tells you to hand Pi to your coding agent.**
+5. **Stops**, and writes `NEXT-STEP.md` for your coding agent.
 
 Your agent then does the rest, with `scripts/pi-session.sh`:
 
