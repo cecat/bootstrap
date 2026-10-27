@@ -61,7 +61,7 @@ it.** Defaults are fine for a first build.
 |---|---|
 | **Agent names** | Two. Defaults `claw-one` and `hermes-one`. Just names — an agent's character lives in its own `SOUL.md` inside the VM, changed by talking to the agent. |
 | **Telegram** | Optional. One dedicated bot per agent from @BotFather — never a personal account — plus your own numeric user id, the only account they will answer. Blank is fine; add it later. |
-| **Gateway token** | Already generated. Leave it alone. |
+| **Gateway token** | Nothing to do. The build generated 64 random hex characters into your copy. It is blank in the committed template because that template is public — your token is unique to your install. |
 
 Nothing asks you to type a secret at a prompt or into a chat, by design: that
 puts it in the shell history, the transcript and the session log. A 0600 file

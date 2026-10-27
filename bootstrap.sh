@@ -314,7 +314,9 @@ cat <<EOF
       per agent from @BotFather (never a personal account), plus your own
       numeric user id, which is the only account they will answer. Leave
       blank to build without channels; you can add them later.
-    * The gateway token is already generated. Leave it alone.
+    * The gateway token is done -- bootstrap.sh just generated 64 random
+      hex characters into your copy. It is blank in the committed template
+      because that template is public; yours is unique to this install.
 
   Your coding agent can help you fill this in -- it is a normal file.
 
