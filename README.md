@@ -1,6 +1,27 @@
 # Sandboxed persistent agents
 
-Two persistent AI agents — an **OpenClaw** gateway and a **Hermes** gateway,
+## Abstract
+
+This repository is meant to jumpstart an agentic exploration environment. To
+proceed:
+1. Clone the repository
+2. Run the ./bootstrap.sh script
+3. Open your favorite coding agent and tell it to read NEXT-STEPS.md
+and do what it says.
+4. Wait 10-20 minutes
+5. Interact with your agents via Telegram.
+
+You'll need to do a bit of pre-work including setting up Telegram bots for
+each agent and obtaining their tokens (and your Telegram ID) from Telegram.
+Your agents will use the same models that your coding agent uses, though you
+can modify this by hand. 
+
+Add-ons will be forthcoming for enabling Google Suite and Slack, though if
+you are adventurous you might just go ahead and set that up yourself.
+
+End Goal: Two persistent AI agents and agentic gateways to support research in
+areas such as agent collaboration and interactions.  — an **OpenClaw** gateway
+and a **Hermes** gateway,
 one agent each — running in a VM that cannot see your filesystem and cannot
 reach the internet except through a domain allowlist you control.
 
