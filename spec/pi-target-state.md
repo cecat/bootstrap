@@ -371,10 +371,40 @@ Any agent you configure that runs under systemd needs this same treatment.
 
 ### 3. Pi's own provider
 
-Write `~/.pi/agent/models.json` with a custom provider whose `baseUrl` is
-`VM_BASE_URL`, with `CREDENTIAL` as the apiKey. Credentials in
-`~/.pi/agent/auth.json` are a secret;
-mode 0600, never printed.
+**`~/.pi/agent/models.json` already exists and is already correct. Leave it
+alone.** `install-config.sh` wrote it before you started: provider id `argo`,
+`baseUrl` set to `VM_BASE_URL`, `api` `anthropic-messages`, apiKey as the env
+reference `$ARGO_CREDENTIAL`, mode 0600. It is the reason you are able to run
+at all. Confirm those facts with `jq` and move on.
+
+**Do not rewrite it, rename its provider, or "migrate" it to match OpenClaw's
+provider id.** This file is the supervision channel. `scripts/pi-session.sh`
+invokes you as `pi -p --provider argo --model argo:claude-4.5-sonnet`, so the
+key `argo` must keep existing under the `providers` **object**.
+
+On 2026-10-28 a run replaced it with an *array* of provider objects whose id
+was `argo-gateway` — reasoning, understandably, that section 1 mandates that
+id for OpenClaw. Two things broke at once. The array shape is not what Pi's
+loader reads, so no provider resolved at all; and the id no longer matched.
+Every subsequent supervision turn died with:
+
+```
+Error: Unknown provider "argo". Use --list-models to see available providers/models.
+```
+
+That is unrecoverable from inside: the supervisor's only means of asking you
+to repair it is the thing you just broke, and the build had to be finished by
+editing the repo instead.
+
+**The `argo-gateway` id in section 1 is OpenClaw's provider id, in
+`openclaw.json`. It has nothing to do with this file.** Two different tools,
+two different config files, two different ids, both correct.
+
+If you believe this file genuinely must change, **stop and report it** rather
+than editing it — per rule 1, breaking your own supervision is not an obstacle
+to route past.
+
+Credentials in `~/.pi/agent/auth.json` are a secret; mode 0600, never printed.
 
 ### 4. Model fallback — only if configured
 

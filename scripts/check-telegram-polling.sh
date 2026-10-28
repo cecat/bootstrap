@@ -35,8 +35,21 @@ for var in OPENCLAW_TELEGRAM_BOT_TOKEN HERMES_TELEGRAM_BOT_TOKEN; do
     continue
   fi
 
-  body="$(printf 'url = "https://api.telegram.org/bot%s/getUpdates?timeout=0&limit=1"\n' "$tok" \
-          | curl -sS --max-time 25 -K - 2>&1)"
+  # Sample several times, because the two answers are NOT symmetric. A 409
+  # proves a consumer is holding the poll open. A 200 proves only that nobody
+  # was holding it *at that instant* -- and a long-poll client reconnects in a
+  # loop, so there is a short gap between calls where a probe slips through and
+  # sees 200. On 2026-10-28 one run of this script said POLLING and the next
+  # five said idle, for a Hermes adapter that was polling the whole time.
+  # Treating a single 200 as "idle" is therefore a false pass on the one check
+  # that guards against a live bot. Any 409 in the window wins.
+  body=''
+  for _ in 1 2 3 4 5 6; do
+    body="$(printf 'url = "https://api.telegram.org/bot%s/getUpdates?timeout=0&limit=1"\n' "$tok" \
+            | curl -sS --max-time 25 -K - 2>&1)"
+    printf '%s' "$body" | jq -e '.error_code == 409' >/dev/null 2>&1 && break
+    sleep 2
+  done
 
   if printf '%s' "$body" | jq -e '.error_code == 409' >/dev/null 2>&1; then
     printf '  %-28s POLLING -- a consumer is live; this bot would answer now\n' "$var"

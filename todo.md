@@ -101,9 +101,96 @@ exactly the unverified assertion rule 5 forbids.
 Hermes never writes, so the check passed unconditionally) and asserts the
 adapter actually connected, from the journal.
 
-**Status: unproven.** These facts were established by hand on a VM that is
-now contaminated by those manual fixes. Nothing here counts until Pi
-reproduces it from the committed spec on a VM built from scratch.
+**Status: PROVEN by Pi 2026-10-28.** On a build driven entirely through
+`pi-session.sh build` from the committed spec, Pi installed the gateway,
+enabled `telegram-platform`, let the pypi dependency land during bootstrap,
+and the journal shows `[Telegram] Connected to Telegram (polling mode)`.
+`verify.sh` passes both the `hermes-gateway` and `Hermes Telegram adapter`
+checks. No hand-fixing was involved. See item 0P for what that success then
+exposed.
+
+## 0P. Two checks contradict each other: a connected adapter IS a live bot
+
+**Found 2026-10-28, unresolved. This is a spec question, not a bug.**
+
+`verify.sh` now asserts both of these, and they cannot both hold:
+
+- **`Hermes Telegram adapter` — wants `Connected to Telegram (polling mode)`
+  in the journal.** Added so a channel could be *proven* reachable before a
+  human enables it (item 0A).
+- **`no Telegram bot is being polled` — wants no 409 from `getUpdates`.**
+  Added because config saying `enabled: false` cannot tell "disabled" from
+  "a gateway already holding a long-poll open and answering anyway".
+
+Polling mode *is* an open `getUpdates` loop. So the moment Hermes' adapter
+connects — exactly what the spec demands — the bot becomes live on Telegram's
+side and the safety check correctly fails. Pi did nothing wrong; it satisfied
+section 2 and tripped the channel guard by doing so.
+
+The current build sits in precisely that state: OpenClaw idle (its channel is
+genuinely off), Hermes POLLING.
+
+**Resolved 2026-10-28 by the user: both agents are meant to end up live on
+Telegram and talking to him.** "No channel is live" was only ever a
+build-ordering gate — enabling is the user's call, made after reading a
+summary, not something Pi or a supervising agent does quietly mid-build. It
+was never a claim that Telegram is dangerous. So a check demanding that
+nothing ever polls is measuring the wrong property for this project.
+
+**What replaces it: prove the restriction, not the silence.** Telegram has no
+server-side allowlist — anyone who finds the bot can send to it, and nothing
+upstream stops delivery. What stops a stranger is adapter-level filtering:
+OpenClaw's `dmPolicy: allowlist` + `allowFrom`, Hermes'
+`TELEGRAM_ALLOWED_USERS`. The sender id is compared and non-matching messages
+are dropped **before any model is invoked**, so a stranger's text never
+becomes a prompt and there is no judgment call for an LLM to be argued out
+of. That is a code path, not a SOUL.md instruction.
+
+The real risk is therefore not "a bot is polling" but "the filter is absent
+or wrong" — an empty `allowFrom`, a typo'd id, a still-commented dotenv line.
+Every config file looks fine in all three cases.
+
+`verify.sh` now asserts the filters directly (`OpenClaw Telegram is
+restricted`, `Hermes Telegram is restricted`), including that the configured
+id actually appears in each list. Nothing checked this before today, through
+five builds.
+
+**Still unverified, and worth doing once a channel is on:** no one has watched
+a filter actually drop a message. It needs a second Telegram account
+messaging one of the bots. Everything above is from config semantics and
+documented behaviour — which rule 5 says is not the same as having seen it.
+
+A caution for whoever writes that check: `[ "$a" != *glob* ]` does **not**
+glob-match inside `[ ]`; it compares literally and reports a mismatch every
+time. The first version of the id comparison did exactly that against an
+`allowFrom` that was correct. Use `case`.
+
+**The polling check was also flapping, and is now fixed.** A single
+`getUpdates` probe saw 409 once and 200 five times for an adapter that was
+polling throughout: a long-poll client reconnects in a loop and a probe slips
+into the gap. A 409 proves a live consumer; a 200 proves nothing. The check
+now samples six times and any 409 wins.
+
+## 0Q. Pi broke its own supervision channel — spec corrected, unproven
+
+**Found 2026-10-28.** Spec section 3 said "write `~/.pi/agent/models.json`".
+`install-config.sh` has *already* written it — that file is how Pi runs at
+all. Pi rewrote it as an **array** of providers with the id `argo-gateway`,
+reasonably generalising from section 1, which mandates that id for OpenClaw.
+
+Both halves broke. The array shape is not what Pi's loader reads, and the id
+no longer matched what `pi-session.sh` passes. Every later supervision turn
+died with `Unknown provider "argo"`, so the one tool for pushing back on Pi
+was gone, mid-build — unrecoverable from inside, since asking Pi to fix it
+requires the channel it just broke.
+
+Section 3 now says the file exists, is correct, and must be confirmed rather
+than written, and explains that `argo-gateway` is OpenClaw's provider id in a
+different file. `verify.sh` gained a check asserting the `argo` key still
+resolves, which reports the shape (`object` vs `array`) because an array
+otherwise reports as "providers: 0" and reads like an empty object.
+
+**Unproven:** the corrected wording has not been through a fresh Pi run.
 
 ## 0aa. Idempotence was self-reported and wrong — now checked
 
