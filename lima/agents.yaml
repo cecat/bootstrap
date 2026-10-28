@@ -307,8 +307,18 @@ provision:
       systemctl daemon-reload
       systemctl enable agent-egress.service
 
-      # squid must not come up before an allowlist exists.
-      systemctl disable --now squid >/dev/null 2>&1 || true
+      # squid must not come up before an allowlist exists -- but ONLY on the
+      # first provision. Lima re-runs this script on every boot, after
+      # agent-egress.service has already applied the phase and started squid,
+      # so an unconditional disable stops the proxy a few seconds into every
+      # reboot. The symptom is subtle: iptables still blocks everything, so
+      # the sandbox stays fail-closed and `--reboot` reports a non-allowed
+      # domain as 000 (no connection) instead of squid's 403 -- while every
+      # ALLOWED destination is broken too. Once a phase exists, egress policy
+      # belongs to agent-egress.service; leave it alone.
+      if [ ! -f /etc/agent-sandbox/phase ]; then
+        systemctl disable --now squid >/dev/null 2>&1 || true
+      fi
 
   # -------------------------------------------------------------------------
   # 4. Agent toolchain, as the agent user: Pi only.

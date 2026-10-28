@@ -259,6 +259,15 @@ Any agent you configure that runs under systemd needs this same treatment.
   it must survive logout and reboot.
 - Model provider points at `VM_BASE_URL` (Anthropic shape), with
   `CREDENTIAL` supplied as the API key.
+
+  **The provider id must be exactly `argo-gateway`.** Not `anthropic`, and
+  not whatever the shape of the API suggests. The id is referenced by the
+  secrets plan below (`models.providers.argo-gateway.apiKey`) and asserted by
+  `verify/verify.sh`, so a different name silently decouples the two: a run
+  that names it `anthropic` configures a working provider, migrates its key
+  correctly, passes the secrets audit, and then fails the completion check
+  with `Unknown model: argo-gateway/claude-sonnet-5`. A previous run did
+  exactly this. Set the default model to `argo-gateway/<model id>`.
 - **Exactly one agent, carrying the name in `OPENCLAW_AGENT_NAME`.**
   `openclaw onboard` creates an agent whose **id** is `main` and does not
   read your env. That id is immutable — `openclaw agents` offers
@@ -297,6 +306,21 @@ Any agent you configure that runs under systemd needs this same treatment.
   a model id the gateway lists. Verify with a real completion, not `doctor`:
   `hermes doctor` checks `api.anthropic.com`, which is irrelevant here and
   will report a 403 that means nothing.
+
+  **Setting `OPENAI_API_KEY` in `~/.hermes/.env` is not sufficient**, and the
+  failure is misleading. With `provider: "custom"` Hermes did not pick that
+  variable up, and every completion died with
+  `Upstream stream ended before completion: ArgoAuthWarning` — which reads
+  like an upstream or auth-server fault, not a missing local variable. The
+  same request succeeded two ways, which is what localises it: `curl` direct
+  to the gateway, and `hermes chat -q test --oneshot --api-key "<username>"`.
+
+  So determine which variable the *installed version* actually reads for a
+  custom provider — check `hermes config` output and the shipped `.env`
+  comments, which on v0.22.5 mention `OPENROUTER_API_KEY` rather than
+  `OPENAI_API_KEY`. Then prove it with a completion run from the service's
+  own environment, with no `--api-key` flag. Do not put the key in
+  `config.yaml`; that violates rule 4.
 - **Install the gateway service** when Telegram tokens are present:
   `hermes gateway install`. Installing the machinery is not the same as
   enabling a channel — rule 2 forbids turning a channel *on*, not building

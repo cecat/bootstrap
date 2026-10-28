@@ -30,7 +30,9 @@ ok()   { printf '%s  ok%s  %s\n' "$G" "$Z" "$*"; }
 # Pi must actually have produced something. Running the rest against a VM
 # where Pi never finished yields a wall of failures that look like bugs in
 # this repo rather than an unfinished build.
-limactl shell "$INSTANCE" -- test -x "\$HOME/agent-bootstrap/setup.sh" 2>/dev/null \
+# bash -lc, not a bare `test`: without a shell in the guest the argument
+# arrives as the literal string "$HOME" and the check can never pass.
+limactl shell "$INSTANCE" -- bash -lc 'test -x "$HOME/agent-bootstrap/setup.sh"' 2>/dev/null \
   || fail "~/agent-bootstrap/setup.sh does not exist in the VM, so Pi has not
 produced its setup script yet. The spec makes that script the deliverable.
 Run ./scripts/pi-session.sh transcript to see where it stopped."
@@ -41,14 +43,26 @@ step "Idempotence -- before egress narrows"
 # Pi's setup.sh fetches from pypi.org, allowlisted in bootstrap only, so
 # verify.sh SKIPS this check under the runtime allowlist -- and a skip reads
 # like a pass in a thirty-line run. It has to happen here or not at all.
+# On a re-run egress is already 'runtime', so the check cannot run at all.
+# That is not the same as failing it, and reporting it as a failure sends
+# someone hunting a guard bug that does not exist. Distinguish the two:
+# unchecked is a warning, actually-changed is a failure.
+PHASE_NOW="$(limactl shell "$INSTANCE" -- cat /etc/agent-sandbox/phase 2>/dev/null | tr -dc 'a-z')"
 IDEM_RC=0
-AGENTS_VM="$INSTANCE" ./verify/verify.sh --idempotence || IDEM_RC=$?
-if [ "$IDEM_RC" != "0" ]; then
-  warn "idempotence failed (above). Pi's setup.sh changes state on a second
+if [ "$PHASE_NOW" = "bootstrap" ]; then
+  AGENTS_VM="$INSTANCE" ./verify/verify.sh --idempotence || IDEM_RC=$?
+  if [ "$IDEM_RC" != "0" ]; then
+    warn "idempotence failed (above). Pi's setup.sh changes state on a second
 run, so re-running it is not safe and it is not the repeatable artifact the
 spec asks for. Continuing to the rest of the verification so everything is
 visible at once; usually the cause is a guard that can never match. This
 build will not be reported as passing."
+  fi
+else
+  warn "egress is already '$PHASE_NOW', so idempotence was NOT checked --
+it needs the bootstrap allowlist for pypi.org. This is a re-run; the check
+ran against the bootstrap phase the first time through. To prove it again
+from scratch: ./bootstrap.sh --rebuild"
 fi
 
 # ===========================================================================

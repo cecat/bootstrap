@@ -463,12 +463,12 @@ todo.md                 what is unfinished
 | Path | State |
 |---|---|
 | `bootstrap.sh` | Steps 0-5 ran clean on Linux 2026-10-26. Step 6 onward unproven. |
-| `scripts/pi-session.sh` | **Written 2026-10-26, never run.** |
-| `scripts/finish-build.sh` | **Written 2026-10-26, never run.** |
-| `lima/agents.yaml` | Linux/qemu verified from scratch 2026-10-21 (DGX Spark). macOS/vz passed earlier, **not re-run since**; see `todo.md` item 00. |
+| `scripts/pi-session.sh` | **Run end to end 2026-10-28.** `build`, `say` and `transcript` all work. Caveat: `pi -p` emits only Pi's final summary, not its intermediate tool calls, so "read the transcript" gives less than the brief assumes — lean on `verify.sh` as the independent check. |
+| `scripts/finish-build.sh` | **Run 2026-10-28; two bugs found and fixed.** Its `setup.sh` gate passed `\$HOME` to a shell-less `limactl shell -- test`, so it could never match and aborted the whole phase; and a *skipped* idempotence check (egress already `runtime` on a re-run) was reported as a failure. |
+| `lima/agents.yaml` | Linux/qemu verified from scratch 2026-10-21 (DGX Spark). macOS/vz passed earlier, **not re-run since**; see `todo.md` item 00. Squid-after-reboot fix added 2026-10-28 and **unverified — needs `--rebuild`**; see `todo.md` item 0S. |
 | `scripts/*` | Implemented, run against a real VM. |
-| `spec/pi-target-state.md` | Implemented. Hermes Telegram corrections (`63a2897`) are **unproven by Pi.** |
-| `verify/verify.sh` | 30 pass, 0 fail with `--models`; `--idempotence` passed. |
+| `spec/pi-target-state.md` | Implemented. Hermes Telegram corrections (`63a2897`) **proven by Pi 2026-10-28** — adapter connected, polling. Three new corrections added that run: provider id must be `argo-gateway`, Hermes needs `OPENROUTER_API_KEY` not `OPENAI_API_KEY`, and the provider needs `"api": "anthropic-messages"`. |
+| `verify/verify.sh` | 33 pass, 0 fail with `--models`; `--idempotence` passed. `--reboot` fails until the squid fix above is proven. |
 | `docs/snapshots.md` | **Not written**, though `docs/personality.md` references it. |
 
 If you reach an unwritten step, stop and tell the user rather than improvising

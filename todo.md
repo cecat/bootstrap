@@ -5,6 +5,34 @@ it will bite.
 
 ---
 
+## 0S. The squid-after-reboot fix is written but UNVERIFIED
+
+**Status: open. Fixed in `lima/agents.yaml`, never proven.**
+
+Found 2026-10-28. Lima re-runs its provision scripts on every boot, and the
+last line of the egress block was an unconditional
+`systemctl disable --now squid`. On a reboot that runs *after*
+`agent-egress.service` has already applied the phase and started squid, so
+the proxy is stopped a few seconds into every boot.
+
+The symptom is easy to misread as success: iptables is still active, so the
+sandbox stays fail-closed, and `verify.sh --reboot` reports a non-allowed
+domain as `000` (no connection) rather than squid's `403`. Every
+**allowed** destination is equally dead, which is the part that matters.
+Confirmed from journal timestamps: squid started 07:49:31, Lima's
+provisioning stopped it 07:49:34.
+
+The fix makes the disable conditional on `/etc/agent-sandbox/phase` not yet
+existing. **It cannot be verified without `--rebuild`** — Lima froze a copy
+of `agents.yaml` into the instance at creation time and re-reads that copy,
+so the edit has no effect on the current VM. See *Things that will bite you*
+in `AGENTS.md`.
+
+Next person: run `./bootstrap.sh --rebuild`, then `verify.sh --reboot`, and
+confirm the non-allowed domain comes back `403` rather than `000`.
+
+---
+
 ## 00. Re-verify on macOS — the Mac run is now stale
 
 **Status: open, and the repo currently overstates its own portability.**
