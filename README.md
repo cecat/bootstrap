@@ -29,7 +29,8 @@ You run one script to build the VM. Then **Pi** — a small coding agent living
 *inside* the VM — installs the two agents from a written specification, with
 your own coding agent supervising it.
 
-The agents get the same model access you already have. Nothing to look up: the
+The agents get the same model access you already have. Nothing to look up.
+We developed and tested with Claude Code, and the
 build reads your live `ANTHROPIC_BASE_URL` and your `~/.claude/settings*.json`
 and propagates that inward.
 
