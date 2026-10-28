@@ -441,7 +441,8 @@ scripts/
   pi-session.sh            drive and supervise Pi headlessly  <-- your job
   run-bootstrap.sh         Pi's TUI; only used by --interactive-pi
   finish-build.sh          steps 6b-9: idempotence, narrow egress, verify
-  check-telegram-tokens.sh validate bot tokens with getMe
+  check-telegram-tokens.sh  validate bot tokens with getMe
+  check-telegram-polling.sh is anything actually polling a bot? (409 test)
 spec/pi-target-state.md target-state spec Pi builds from
 config/                 local config; only *.example is committed
 verify/verify.sh        automated checks

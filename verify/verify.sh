@@ -26,6 +26,7 @@
 set -uo pipefail
 
 VM="${AGENTS_VM:-agents}"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DO_MODELS=0 DO_REBOOT=0 DO_IDEM=0
 for a in "$@"; do
   case "$a" in
@@ -349,6 +350,31 @@ if g 'ls ~/.hermes/channel_directory.json' >/dev/null 2>&1; then
   fi
 else
   pass "Hermes has no channel enabled" "no channel directory"
+fi
+
+# Both checks above read CONFIG. Config cannot distinguish "disabled" from
+# "disabled in the file, but a gateway already opened a long-poll and is
+# answering anyway" -- and the 2026-10-28 build reported Hermes' adapter as
+# "connected and polling" while its channel was nominally off. Ask Telegram
+# instead: it permits exactly one getUpdates consumer per bot, so a 409
+# Conflict means something is holding the poll open and the bot is live.
+#
+# Run from the HOST, not the guest: the question is whether the bot is being
+# polled at all, by anything, which is a fact about Telegram's side.
+if [ -f "$REPO_DIR/config/agents.env" ]; then
+  # Capture the status on the same line as the call: a bare `$?` after an
+  # assignment reports the assignment's status, which is always 0, and the
+  # check could never fail.
+  poll_rc=0
+  poll_out="$("$REPO_DIR/scripts/check-telegram-polling.sh" 2>&1)" || poll_rc=$?
+  if [ "$poll_rc" -eq 0 ]; then
+    pass "no Telegram bot is being polled" "$(grep -c 'idle' <<<"$poll_out") bot(s) idle; nothing would answer a message"
+  else
+    fail "no Telegram bot is being polled" \
+         "$(grep -E 'POLLING|rejected|UNREACHABLE' <<<"$poll_out" | sed 's/^ *//' | paste -sd' | ' -)"
+  fi
+else
+  skip "no Telegram bot is being polled" "config/agents.env not present"
 fi
 
 # ---------------------------------------------------------------------------
