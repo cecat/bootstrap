@@ -261,10 +261,21 @@ if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
   # its python-telegram-bot dependency comes from pypi.org, which is only
   # allowlisted during bootstrap -- miss either and the service stays active
   # while the journal reports "No adapter available for telegram".
-  jr="$(g 'journalctl --user -u hermes-gateway.service --no-pager 2>/dev/null | grep -iE "\[Telegram\] Connected|No adapter available for telegram|adapter creation failed" | tail -1')"
+  #
+  # Scope the journal to the CURRENT service start, and take the last
+  # adapter event rather than the last *connect*. Until 2026-10-28 this
+  # grepped the whole journal for "Connected to Telegram", so one successful
+  # connect made it report "connected (polling)" forever -- including after
+  # the adapter had dropped and was failing to reconnect. The suite said
+  # connected while an external 409 probe said nothing was polling, and the
+  # stale line was believed over the live evidence. A disconnect that the
+  # adapter never recovers from is exactly what this check exists to catch.
+  jr="$(g 'journalctl --user -u hermes-gateway.service --no-pager _SYSTEMD_INVOCATION_ID="$(systemctl --user show -p InvocationID --value hermes-gateway.service)" 2>/dev/null | grep -iE "\[Telegram\] Connected|No adapter available for telegram|adapter creation failed|Telegram network error|Conflict: terminated" | tail -1')"
   case "$jr" in
-    *"Connected to Telegram"*) pass "Hermes Telegram adapter" "connected (polling)" ;;
-    "")                        skip "Hermes Telegram adapter" "no adapter activity in the journal yet" ;;
+    *"Connected to Telegram"*) pass "Hermes Telegram adapter" "connected (polling), this service start" ;;
+    "")                        skip "Hermes Telegram adapter" "no adapter activity since the service started" ;;
+    *"Conflict: terminated"*)  skip "Hermes Telegram adapter" "another getUpdates consumer took the poll -- usually check-telegram-polling.sh running; the adapter reconnects on its own" ;;
+    *"network error"*)         fail "Hermes Telegram adapter" "$(printf '%s' "$jr" | sed 's/.*: //') -- connected earlier but dropped; it is not polling now" ;;
     *)                         fail "Hermes Telegram adapter" "$(printf '%s' "$jr" | sed 's/.*: //') -- check: hermes plugins enable telegram-platform, and that pypi was reachable when it first started" ;;
   esac
 else
@@ -347,7 +358,7 @@ check_soul() {
 check_soul "Hermes" '$HOME/.hermes/SOUL.md' "$want_he"
 
 # ---------------------------------------------------------------------------
-section "Channels: restricted, and off until a human says otherwise"
+section "Channels: never reachable without an allowlist"
 
 # WHO MAY TALK TO THE BOT IS THE CHECK THAT MATTERS.
 #
@@ -409,25 +420,41 @@ else
   skip "Hermes Telegram is restricted" "no Telegram credentials configured"
 fi
 
-# Safety assertion, not a feature test. AGENTS.md forbids enabling any chat
-# channel before this suite passes, so finding one enabled here is a failure
-# regardless of whether it works.
+# Safety assertion, not a feature test -- but the thing being asserted
+# changed on 2026-10-28. This used to require zero enabled channels, on the
+# rule "never enable a chat channel". That rule is now "never let a bot be
+# reachable without an allowlist": a Luoji the user can message is a success
+# measure, and spec section 7 has Pi enable it as a final gated step.
+#
+# So enabled is fine; enabled WITHOUT a restriction is the failure. The
+# dmPolicy/allowFrom checks above establish whether the restriction exists;
+# this one makes an enabled-but-unrestricted channel fatal rather than
+# merely noted, because that is the state where a stranger reaches an agent
+# with shell access.
 oc_ch="$(g 'jq -r "(.channels // {}) | to_entries | map(select(.value.enabled != false)) | length" ~/.openclaw/openclaw.json 2>/dev/null' | tr -dc '0-9')"
 if [ "${oc_ch:-0}" = "0" ]; then
-  pass "OpenClaw has no channel enabled" "no Telegram or other channel is live"
+  pass "OpenClaw channel safety" "no channel enabled (restriction not load-bearing yet)"
+elif [ "${oc_pol:-}" = "allowlist" ] && [ -n "${oc_alw:-}" ]; then
+  pass "OpenClaw channel safety" "$oc_ch channel(s) enabled, restricted to $oc_alw"
 else
-  fail "OpenClaw has no channel enabled" "$oc_ch channel(s) enabled -- AGENTS.md Step 9 says a channel must not be on before verification passes"
+  fail "OpenClaw channel safety" "$oc_ch channel(s) enabled with dmPolicy=${oc_pol:-unset} allowFrom=${oc_alw:-empty} -- a reachable agent with shell access that anyone could message. Disable it: openclaw config set channels.telegram.enabled false"
 fi
 
+# Hermes has no enable flag: the adapter polls from the moment the gateway
+# starts. Its safety therefore rests entirely on TELEGRAM_ALLOWED_USERS,
+# asserted above. This check stays as a backstop for anything that *does*
+# write an enabled entry into the channel directory.
 if g 'ls ~/.hermes/channel_directory.json' >/dev/null 2>&1; then
   he_ch="$(g 'jq -r "[.. | objects | select(.enabled == true)] | length" ~/.hermes/channel_directory.json 2>/dev/null' | tr -dc '0-9')"
   if [ "${he_ch:-0}" = "0" ]; then
-    pass "Hermes has no channel enabled" "channel directory lists none enabled"
+    pass "Hermes channel safety" "channel directory lists none enabled; reachability is the adapter's, restriction asserted above"
+  elif [ -n "${he_alw:-}" ]; then
+    pass "Hermes channel safety" "$he_ch enabled, restricted to $he_alw"
   else
-    fail "Hermes has no channel enabled" "$he_ch enabled"
+    fail "Hermes channel safety" "$he_ch enabled with no TELEGRAM_ALLOWED_USERS"
   fi
 else
-  pass "Hermes has no channel enabled" "no channel directory"
+  pass "Hermes channel safety" "no channel directory"
 fi
 
 # Report which bots are live, but do NOT fail on it.
@@ -601,5 +628,5 @@ if [ "$FAIL" -eq 0 ] && [ "$DO_MODELS" -eq 0 ]; then
   printf '  A gateway can be up and still have a dead model path. Run with\n'
   printf '  --models before reporting this build as working.\n'
 fi
-[ "$FAIL" -eq 0 ] || printf '\n  %sVerification failed.%s Do not enable a chat channel.\n' "$R" "$Z"
+[ "$FAIL" -eq 0 ] || printf '\n  %sVerification failed.%s If a channel is live, confirm its allowlist or disable it.\n' "$R" "$Z"
 exit $(( FAIL > 0 ? 1 : 0 ))

@@ -102,6 +102,18 @@ scripts/install-config.sh first."
   say)
     [ $# -ge 2 ] || fail "usage: $0 say \"<message>\""
     shift
+    # Re-copy the spec every turn. The supervision loop is "Pi gets it wrong
+    # -> fix spec/pi-target-state.md -> push back", so by the time you run
+    # `say` the host spec has usually changed. Until 2026-10-28 only `build`
+    # copied it, leaving Pi reading the version it was first given: a message
+    # saying "re-read rule 2, it has changed" pointed at a file where it had
+    # not. Pi noticed and asked rather than guessing, which is the only
+    # reason this was caught instead of producing a build against a spec
+    # nobody had.
+    if [ -f "$REPO/spec/pi-target-state.md" ]; then
+      limactl copy "$REPO/spec/pi-target-state.md" "$INSTANCE:$WORKDIR/AGENTS.md" \
+        || fail "could not refresh the spec in the VM."
+    fi
     pi_turn "$*"
     ;;
 

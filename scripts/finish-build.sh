@@ -85,8 +85,12 @@ step "Stop"
 
 cat <<EOF
 
-  No chat channel is enabled, even if bot tokens were supplied. Turning one
-  on is a separate decision, made deliberately, after this passes.
+  Channel state is reported above, per agent. Both bots are restricted to
+  the configured Telegram user id; that allowlist, not silence, is what
+  keeps an agent with shell access out of a stranger's reach.
+
+  Hermes polls Telegram whenever its gateway runs -- it has no enable flag.
+  OpenClaw's channel is enabled by Pi only after every other check passes.
 
   Still worth checking:
 

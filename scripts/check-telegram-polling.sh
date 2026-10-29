@@ -12,6 +12,20 @@
 # second call returns 409 Conflict, something else is holding the poll open,
 # which means the bot is live and would answer a message now.
 #
+# !! THIS PROBE IS NOT PASSIVE. !!
+#
+# The same rule that makes it work makes it disruptive: our getUpdates call
+# TAKES the poll from whoever held it. A live Hermes adapter logs
+# "Conflict: terminated by other getUpdates request" and drops into its
+# reconnect backoff for a few seconds. It recovers on its own, and the user
+# may see the bot miss a beat.
+#
+# So do not run this in a loop, and do not run it while someone is talking to
+# a bot. On 2026-10-28 repeated runs produced a cluster of Conflict errors in
+# the Hermes journal that were then misread as egress narrowing having broken
+# the adapter -- the diagnostic manufactured the symptom it was called to
+# investigate, and the wrong diagnosis was handed to Pi.
+#
 # Reads tokens from the 0600 config file and passes them to curl on stdin,
 # never on the command line. Nothing here prints a token, and getUpdates with
 # timeout=0 consumes nothing.
@@ -67,9 +81,15 @@ done
 
 echo
 if [ "$rc" = "0" ]; then
-  echo "  No bot is being polled. Channels are off in the way that matters."
+  echo "  No bot answered as live. Note the asymmetry: a 409 proves a bot IS"
+  echo "  being polled, but these 200s only prove nobody held the poll during"
+  echo "  the sampling window. A reconnecting adapter can read as idle."
 else
-  echo "  At least one bot is live or unverifiable. If a channel was supposed"
-  echo "  to be disabled, 'disabled' is not what the running system is doing."
+  echo "  At least one bot is live or unverifiable. That is the expected state"
+  echo "  for Hermes, whose adapter polls whenever its gateway runs. What makes"
+  echo "  it safe is the allowlist -- see verify.sh's restriction checks."
 fi
+echo
+echo "  This probe took the poll from any live adapter; it reconnects within"
+echo "  seconds. Avoid re-running while someone is using a bot."
 exit "$rc"

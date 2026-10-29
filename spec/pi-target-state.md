@@ -20,9 +20,24 @@ Violating any of these means stopping and reporting, not working around it.
    `agent-egress unlock`, edit iptables, or add to the allowlist yourself.
    A blocked domain is information for the user, not an obstacle to route past.
 
-2. **Never enable a chat channel.** Not Telegram, not anything else. Install
-   and configure them as *disabled*. Enabling happens after a human reads your
-   summary. See *Stop here* at the end.
+2. **Never let a bot be reachable without an allowlist.** A live agent has
+   shell access and no permission prompts, and Telegram delivers a stranger's
+   DM straight to it regardless of the egress allowlist — which constrains
+   where data can *go*, not who can get in. Worse, `api.telegram.org` is
+   itself allowlisted in both phases, so a reached agent can read
+   `agents.env` and send the credentials back out through the same channel.
+
+   So the rule is about *order*, not abstinence. Restriction comes first,
+   enablement last:
+
+   - Never run a step that leaves a channel live with no `allowFrom` /
+     `TELEGRAM_ALLOWED_USERS`, even briefly. `openclaw channels add` does
+     exactly this — see section 6 for the ordering that closes the window.
+   - Enable a channel only as the **final** step, after everything else in
+     this spec verifies and you have read the allowlist back.
+   - If you cannot confirm the allowlist, leave the channel disabled and say
+     so. A disabled channel is a working outcome; an unrestricted live one is
+     not.
 
 3. **Never pipe an installer into a shell.** Download it to
    `~/agent-bootstrap/installers/`, record its SHA256, then execute the saved
@@ -475,11 +490,16 @@ You are NAME, a personal assistant running in a sandboxed VM.
 - This file is yours. If the user asks you to change how you behave, edit it.
 ```
 
-### 6. Channels — configured, disabled
+### 6. Channels — restricted first, then live
 
 If Telegram tokens are present in `agents.env`, configure each agent's Telegram
-channel but leave it **disabled**, restricted to `TELEGRAM_ALLOWED_USER_ID`.
-If the tokens are absent, skip this and say so.
+channel restricted to `TELEGRAM_ALLOWED_USER_ID`. If the tokens are absent,
+skip this and say so.
+
+**The end state is a reachable agent.** A Luoji that answers its owner on
+Telegram is a success measure of this build, not a follow-up task. But it is
+the *last* thing you do, and it is gated — see "Closing the window" below and
+the enablement step at the end of this section.
 
 **This step is where the last run failed, so read rule 6 again before starting
 it.** Pi wrote a function containing the comment "Telegram configuration
@@ -509,15 +529,28 @@ Three more things this path gets wrong if you do not check:
   `onboard` does. Migrate it the same way, with a target of
   `channels.telegram.botToken` → env `OPENCLAW_TELEGRAM_BOT_TOKEN`, and
   re-run the audit afterwards.
-- **`channels add` leaves the channel `enabled: true`.** The spec requires it
-  disabled until a human says otherwise, so set
-  `channels.telegram.enabled false` unless you have been told to enable it.
-- **Restrict who may talk to it.** The defaults are `dmPolicy: "pairing"` and
-  no `allowFrom`, which is not the same as "only the owner". Set
-  `channels.telegram.dmPolicy allowlist` and
-  `channels.telegram.allowFrom '["<TELEGRAM_ALLOWED_USER_ID>"]' --json`.
-  Setting the policy before the list produces a warning that all DMs will be
-  dropped; setting both in that order is correct and the warning resolves.
+- **`channels add` leaves the channel `enabled: true`** — with `dmPolicy:
+  "pairing"` and no `allowFrom`. That combination is a live bot that nobody
+  has restricted yet, and it is the one state rule 2 forbids.
+
+**Closing the window.** `channels add` creates the hazard, so disable the
+channel *immediately* after it and before anything else, then restrict, then
+re-enable at the very end:
+
+```sh
+openclaw channels add --channel telegram --token "$TOKEN" --agent "$AGENT_ID"
+openclaw config set channels.telegram.enabled false          # close it NOW
+openclaw config set channels.telegram.dmPolicy allowlist
+openclaw config set channels.telegram.allowFrom '["<TELEGRAM_ALLOWED_USER_ID>"]' --json
+```
+
+Setting the policy before the list produces a warning that all DMs will be
+dropped; setting both in that order is correct and the warning resolves.
+
+Do not reorder these. Restricting before disabling leaves the bot live and
+unrestricted for however long the intervening commands take, which is exactly
+the gap rule 2 is about. If `channels add` fails partway, disable the channel
+before you debug anything.
 
 **For Hermes, credentials go in its dotenv file** at `~/.hermes/.env`, where
 the Telegram keys ship commented out around the `# TELEGRAM INTEGRATION`
@@ -536,12 +569,33 @@ Uncomment and fill those three, leave everything else in the file alone, and
 keep the file mode 0600. **Do not configure it without
 `TELEGRAM_ALLOWED_USERS`** — an unrestricted bot answers anyone who finds it.
 
+**Use that file. Do not invent another one.** On 2026-10-28 a run put these
+variables in `~/.config/agent-sandbox/hermes-telegram.env` and loaded them
+through the systemd drop-in instead. It worked — the adapter connected and
+the bot answered — and it was still wrong, for a reason worth understanding
+because it generalises.
+
+`verify/verify.sh` decides whether Hermes Telegram is configured *and whether
+to check the allowlist at all* by grepping `^TELEGRAM_BOT_TOKEN=` in
+`~/.hermes/.env`. With the credentials elsewhere it found nothing, reported
+"no Telegram credentials; gateway not required", and **skipped the
+restriction check entirely** — while the bot was live and polling. A green
+run, an unverified allowlist, and a reachable agent.
+
+So: a working layout that no checker can see is worse than a broken one,
+because it fails silently and in the safe-looking direction. If you believe
+a different location is genuinely better, **stop and report it** rather than
+building it — changing where state lives breaks the external checks that are
+the only independent evidence anyone has about this build. That the run was
+asked afterwards whether it had tried `~/.hermes/.env` first, and answered
+honestly that it had not, is the only reason this was caught.
+
 Then install and start the gateway service per section 2 — plugin enabled,
 dependency fetched during bootstrap, proxy drop-in applied — and confirm from
-the journal that the adapter connected. The channel stays **disabled** for
-the agent; what you are proving is that it *would* work the moment a human
-enables it. Shipping an unverifiable channel is how the last build left a
-bot that could never have answered.
+the journal that the adapter connected. Note that for Hermes "connected"
+*means* an open long-poll: the adapter is reachable as soon as it starts, and
+there is no separate enable flag. That is why `TELEGRAM_ALLOWED_USERS` must
+be in place **before** the gateway first starts, not after.
 
 **Validate every token, and quote the result. This is mandatory.**
 
@@ -568,11 +622,47 @@ Then:
 
 - **Verify by reading back the state you claim to have created** -- the
   `channels` entry in `openclaw.json`, or `~/.hermes/channel_directory.json`
-  -- and show that it exists and is disabled. The channel must not be live:
-  `verify/verify.sh` asserts zero enabled channels and will fail the build.
+  -- and show that it exists, and quote its `dmPolicy` and `allowFrom`.
+  `verify/verify.sh` fails the build on a channel that is enabled with an
+  empty allowlist.
 - If you still cannot determine the syntax, write **nothing**, leave no
   placeholder function, and report it plainly as not done. That is a
   completely acceptable outcome. A false "configured" is not.
+
+### 7. Enable OpenClaw's channel — last, and gated
+
+This is the final step of the build. Do it only when **all** of these hold,
+and state in your summary that you checked each one:
+
+1. Every other section of this spec is done and verified.
+2. The bot token passed `getMe` (section 6).
+3. `jq -r '.channels.telegram.dmPolicy' ~/.openclaw/openclaw.json` is
+   `allowlist`, and `allowFrom` contains `TELEGRAM_ALLOWED_USER_ID`. Read it
+   back from the file — do not trust that your earlier command worked.
+4. The secrets audit is clean, so the token is a SecretRef and not plaintext.
+
+If any of them fails, **leave the channel disabled**, say which one failed,
+and stop. Shipping disabled is a good outcome; shipping live and
+unrestricted is the failure this spec exists to prevent.
+
+When they all hold:
+
+```sh
+openclaw config set channels.telegram.enabled true
+systemctl --user restart openclaw-gateway.service
+```
+
+Then prove it is actually live rather than merely configured: the gateway
+must be `active`, and the journal must show the Telegram channel starting
+without `EHOSTUNREACH` (if you see that, the proxy drop-in is missing — see
+*The gateway needs the proxy*). Quote the line.
+
+**Do not message the agent to test it, and do not send yourself a Telegram
+message.** Confirm from configuration and the journal. The user tests it by
+talking to their own bot.
+
+Hermes needs no equivalent step: its adapter is reachable from the moment the
+gateway starts, which is why its allowlist must be in place beforehand.
 
 ---
 
@@ -622,8 +712,9 @@ not finished — fix it and start this check again.
 
 ## Stop here
 
-When the target state is reached, **stop**. Do not enable channels. Do not
-start a conversation with either agent to try them out.
+When the target state is reached, **stop**. Section 7 is the last thing you
+do; nothing follows it. Do not start a conversation with either agent to try
+them out, and do not send a Telegram message to a bot.
 
 Write a summary covering:
 
@@ -634,9 +725,11 @@ Write a summary covering:
 - **Installer checksums** and where the saved copies are.
 - **What you skipped and why** — unset fallback, absent tokens, anything you
   could not verify.
-- **What is configured but disabled** — the channels, and exactly what a human
-  would do to enable one. If you configured nothing, say that instead; do not
-  list a feature here that you did not actually write.
+- **Channel state, per agent** — enabled or disabled, and the `dmPolicy` and
+  `allowFrom` / `TELEGRAM_ALLOWED_USERS` you read back from the files. For
+  OpenClaw, confirm each of section 7's four gates. If you left a channel
+  disabled, say which gate failed. If you configured nothing, say that; do
+  not list a feature here that you did not actually write.
 - **Secrets** — the `openclaw secrets audit --check` line showing
   `plaintext=0` and `unresolved=0`, quoted, from a clean login shell.
 - **Channels** — the `getMe` result for every token you were given: the bot

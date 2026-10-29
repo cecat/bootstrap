@@ -385,8 +385,18 @@ These are not negotiable, and they override convenience.
 - **Curl-to-bash installers** (OpenClaw, Hermes, Tailscale): fetch the script
   and show it to the user, or pin a release, before executing it. This applies
   to Pi inside the VM too — it is written into `spec/pi-target-state.md`.
-- **Never enable a chat channel before verification passes.** Stop and
-  summarize. Enabling one is a separate decision the user makes afterwards.
+- **Never let a bot be reachable without an allowlist.** Not the same as
+  "never enable a channel", which is what this said until 2026-10-28. A live
+  agent has shell access and no permission prompts, and `api.telegram.org`
+  is allowlisted in both egress phases — so a stranger who reaches the bot
+  can read `agents.env` and send the credentials back out the same way. The
+  allowlist is the control; silence is not.
+
+  A reachable Luoji is a *success measure*, so the spec has Pi enable
+  OpenClaw's channel as its final gated step (section 7), after the
+  restriction is read back from the file. Hermes has no enable flag at all —
+  its adapter polls from the moment the gateway starts, which is why its
+  `TELEGRAM_ALLOWED_USERS` must be set before first start.
 - **Never write a token into a config file or echo one into a chat.** Use env
   SecretRefs. The detection script never prints credentials; keep that
   property. A rule stated without a mechanism and a check gets reported as
