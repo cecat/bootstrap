@@ -44,3 +44,7 @@ dist/
 # the Agent personality section of AGENTS.md). It is personal, it names
 # people, and it must not be mistaken for something this repo installs.
 local/
+
+# Pre-simplification snapshot of the repo (2026-10-29). Local reference
+# only -- git history is the real record. See archive/2026-10-29/README.md.
+archive/
