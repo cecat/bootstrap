@@ -43,45 +43,94 @@ mkdir -p "$LOGDIR"
 
 # Run one Pi turn. Output goes to the terminal AND to the log, because the
 # supervising agent reads the log while the user watches the stream.
-pi_turn() {
+# One attempt. Returns pi's exit code; sets NO_WORK=1 if the whole transcript
+# was a single upstream API error, which means Pi never started.
+NO_WORK=0
+pi_attempt() {
   local prompt="$1" stamp log
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   log="$LOGDIR/pi-$stamp.log"
+  NO_WORK=0
 
   # Single-quoted guest command with the prompt passed as a positional
   # argument, never interpolated: a prompt containing a quote would
   # otherwise run as shell on the guest.
+  # timeout, because a stalled turn does not fail -- it waits forever. On
+  # 2026-10-29 a one-variable fix sat for 34 minutes with an idle VM (~5% of
+  # one core) and an empty log: a model stream that opened and then delivered
+  # nothing, with no client-side deadline to end it. An error can be retried;
+  # a hang just consumes the session. PI_TIMEOUT is generous because a real
+  # cold build legitimately runs ~30 minutes of busy CPU.
+  timeout "${PI_TIMEOUT:-45m}" \
   limactl shell "$INSTANCE" -- bash -lc '
     cd ~/'"$WORKDIR"' || exit 1
     exec pi -p --session-id "$1" --provider "$2" --model "$3" -- "$4"
   ' _ "$SESSION_ID" "$PROVIDER" "$MODEL" "$prompt" 2>&1 | tee "$log"
 
   local rc=${PIPESTATUS[0]}
+  # 124 is timeout's "deadline hit". Treat a hang that produced nothing as a
+  # no-work failure so it retries like any other transient.
+  if [ "$rc" -eq 124 ]; then
+    say "turn exceeded ${PI_TIMEOUT:-45m} and was killed"
+    [ "$(wc -c <"$log")" -lt 2000 ] && NO_WORK=1
+  fi
   ln -sfn "$(basename "$log")" "$LAST"
   printf '\n' >&2
   say "transcript: ${log#"$REPO"/}"
 
   # A transcript that is only an upstream API error means Pi never started --
-  # it is not a build that went wrong, and it should not be read as one. The
-  # first time this happened the error ("Upstream stream ended before
-  # completion: ArgoAuthWarning") sent a session chasing a routing bug that
-  # did not exist; every later attempt worked. Name it for what it is.
+  # not a build that went wrong. Seen as "ArgoAuthWarning", "[Errno 104]
+  # Connection reset by peer", and an empty stream; a rejected credential
+  # kills a stream mid-flight rather than returning 401, so these read as
+  # network faults and are not.
   if [ "$rc" -ne 0 ] && [ "$(wc -c <"$log")" -lt 2000 ] \
      && grep -q '"type": *"error"' "$log" 2>/dev/null; then
-    cat >&2 <<EOF
-
-  Pi produced no work: its entire output was one upstream API error.
-
-  That is a model-endpoint problem, not a build problem, and it is often
-  transient -- a stream that dies before the first token. Nothing in the VM
-  changed, so just run the same command again.
-
-  If it repeats, check the path Pi actually uses:
-      ./verify/verify.sh --models
-
-EOF
+    NO_WORK=1
   fi
   return "$rc"
+}
+
+# Retry a turn that produced no work at all. These are transient often enough
+# that a supervisor re-running by hand was the single biggest time sink on
+# 2026-10-29: three consecutive no-work failures sent a session chasing slirp,
+# squid and credential-resolution theories, and the next attempt worked with
+# nothing changed.
+#
+# Only no-work failures retry. A turn where Pi actually did something and then
+# failed is a real result -- repeating it would double the side effects of a
+# script that may not be idempotent yet, which is exactly what we are asking
+# Pi to prove.
+PI_MAX_TRIES="${PI_MAX_TRIES:-5}"
+pi_turn() {
+  local prompt="$1" rc=0 try=1
+  while :; do
+    pi_attempt "$prompt"; rc=$?
+    [ "$NO_WORK" -eq 1 ] || return "$rc"
+
+    if [ "$try" -ge "$PI_MAX_TRIES" ]; then
+      cat >&2 <<EOF
+
+  Pi produced no work $PI_MAX_TRIES times running: every transcript was a
+  single upstream API error. That is past the point of a transient.
+
+  Check the path Pi actually uses, which tests the agents' real request
+  rather than a convenient approximation of it:
+
+      ./verify/verify.sh --models
+      bash scripts/diag-stream.sh
+
+  Note a rejected credential presents as a stream dying mid-flight, not as
+  a 401 -- see docs/gotchas.md.
+
+EOF
+      return "$rc"
+    fi
+
+    local wait=$(( try * 15 ))
+    say "no work produced (attempt $try/$PI_MAX_TRIES, upstream error). Retrying in ${wait}s."
+    sleep "$wait"
+    try=$(( try + 1 ))
+  done
 }
 
 case "${1:-}" in

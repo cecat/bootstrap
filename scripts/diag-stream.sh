@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# Diagnostic: why do Pi and Hermes fail on a model path that curl proves good?
+#
+#   bash scripts/diag-stream.sh [instance]
+#
+# Settled on 2026-10-29, all PASSING from inside the VM, so do not re-litigate:
+#   * long streams (3000 tokens, 6.5s)      -- slirp/QEMU NAT is not the fault
+#   * the proxied path, NO_PROXY honoured   -- squid is not in the model path
+#   * the model id argo:claude-4.5-sonnet   -- not a model-name problem
+#   * an anonymous request, and one bearing x-api-key: $CREDENTIAL
+#
+# Still failing: Pi (3x, errors "ArgoAuthWarning" and "[Errno 104] Connection
+# reset by peer") and Hermes (empty after 180s). Both send a credential drawn
+# from their own config; every passing test above either sent none or sent
+# $CREDENTIAL by hand. So the suspect is now credential RESOLUTION in the
+# clients, not the network.
+#
+# Specifically: spec section 3 has Pi's models.json reference $ARGO_CREDENTIAL,
+# while install-config.sh exports CREDENTIAL. If the former is never exported,
+# Pi sends an unresolved or empty key -- and an auth failure is exactly what
+# ArgoAuthWarning reports.
+#
+# Read-only. Prints no secret values, only lengths and whether a name resolves.
+# ---------------------------------------------------------------------------
+set -uo pipefail
+
+INSTANCE="${1:-${AGENTS_VM:-agents}}"
+say() { printf '\n\033[1m==>\033[0m %s\n' "$*"; }
+
+gw="$(limactl shell "$INSTANCE" -- sudo cat /etc/agent-sandbox/model-gateway 2>/dev/null | tr -d '\r')"
+[ -n "$gw" ] || { echo "no model gateway configured" >&2; exit 1; }
+
+say "which credential names resolve in a plain login shell"
+limactl shell "$INSTANCE" -- bash -lc '
+  for v in CREDENTIAL ARGO_CREDENTIAL ANTHROPIC_API_KEY OPENROUTER_API_KEY OPENAI_API_KEY; do
+    printf "    %-20s %s\n" "$v" "$(eval "printf %s \"\${$v:-}\"" | wc -c | tr -d " ") chars"
+  done'
+
+say "what Pi's models.json actually sends as its apiKey"
+limactl shell "$INSTANCE" -- bash -lc '
+  f=$HOME/.pi/agent/models.json
+  raw=$(jq -r "(.providers.argo.apiKey // \"MISSING\")" "$f" 2>/dev/null)
+  case "$raw" in
+    MISSING) printf "    apiKey: MISSING from providers.argo\n" ;;
+    \$*)     name=${raw#\$}; name=${name#\{}; name=${name%\}}
+             len=$(eval "printf %s \"\${$name:-}\"" | wc -c | tr -d " ")
+             printf "    apiKey is the reference %s\n" "$raw"
+             printf "    %s resolves to %s chars in this shell\n" "$name" "$len"
+             [ "$len" = "0" ] && printf "    ^^ UNRESOLVED: Pi sends an empty key, which argo-proxy reports as ArgoAuthWarning\n" ;;
+    *)       printf "    apiKey is a literal value (%s chars) -- not a SecretRef\n" "$(printf %s "$raw" | wc -c | tr -d " ")" ;;
+  esac'
+
+say "does the gateway reject a BAD credential the way it rejected Pi?"
+limactl shell "$INSTANCE" -- bash -lc "
+  for key in '' 'not-a-real-user'; do
+    printf '    x-api-key=%-16s ' \"\${key:-<empty>}\"
+    curl -sS --noproxy '*' -m 60 -o /tmp/diag-auth.txt -w 'HTTP %{http_code} ' \
+      http://$gw/v1/messages \
+      -H 'Content-Type: application/json' -H 'anthropic-version: 2023-06-01' \
+      -H \"x-api-key: \$key\" \
+      -d '{\"model\":\"argo:claude-4.5-sonnet\",\"messages\":[{\"role\":\"user\",\"content\":\"say OK\"}],\"max_tokens\":16,\"stream\":true}'
+    printf 'exit=%s %s\n' \"\$?\" \"\$(grep -oiE 'argoauthwarning|not registered|error' /tmp/diag-auth.txt | head -1)\"
+  done"
+
+say "a LARGE request, as Pi sends (system prompt + tools), not a 50-token one"
+limactl shell "$INSTANCE" -- bash -lc "
+  python3 -c \"
+import json,sys
+pad = 'The quick brown fox jumps over the lazy dog. ' * 2000
+json.dump({'model':'argo:claude-4.5-sonnet','max_tokens':64,'stream':True,
+           'messages':[{'role':'user','content':pad + ' Reply with exactly: BIG_OK'}]}, sys.stdout)
+\" > /tmp/diag-big.json
+  printf '    request bytes: %s\n' \"\$(wc -c </tmp/diag-big.json)\"
+  curl -sS --noproxy '*' -m 180 -N -o /tmp/diag-big-out.txt \
+    -w '    HTTP %{http_code} in %{time_total}s\n' \
+    http://$gw/v1/messages \
+    -H 'Content-Type: application/json' -H 'anthropic-version: 2023-06-01' \
+    --data-binary @/tmp/diag-big.json
+  printf '    curl exit: %s, message_stop: %s\n' \"\$?\" \"\$(grep -c message_stop /tmp/diag-big-out.txt)\"
+  tail -c 200 /tmp/diag-big-out.txt | tr -d '\n'; echo"
+
+say "Pi itself, smallest possible prompt, fresh session"
+limactl shell "$INSTANCE" -- bash -lc '
+  cd ~/agent-bootstrap 2>/dev/null || cd ~
+  timeout 120 pi -p --session-id diag-probe --provider argo \
+    --model argo:claude-4.5-sonnet -- "Reply with exactly: PI_OK" 2>&1 | tail -5'
+
+say "done"
