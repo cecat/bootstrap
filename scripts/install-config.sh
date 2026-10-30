@@ -255,4 +255,4 @@ esac
 echo
 say "done. egress status:"
 limactl shell "$INSTANCE" -- sudo /usr/local/sbin/agent-egress status
-printf '\nNext: ./scripts/run-bootstrap.sh\n'
+printf '\nNext: ./scripts/pi-session.sh build\n'

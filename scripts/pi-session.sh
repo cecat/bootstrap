@@ -56,12 +56,17 @@ pi_attempt() {
   # argument, never interpolated: a prompt containing a quote would
   # otherwise run as shell on the guest.
   # timeout, because a stalled turn does not fail -- it waits forever. On
-  # 2026-10-29 a one-variable fix sat for 34 minutes with an idle VM (~5% of
-  # one core) and an empty log: a model stream that opened and then delivered
-  # nothing, with no client-side deadline to end it. An error can be retried;
-  # a hang just consumes the session. PI_TIMEOUT is generous because a real
-  # cold build legitimately runs ~30 minutes of busy CPU.
-  timeout "${PI_TIMEOUT:-45m}" \
+  # 2026-10-29 two turns sat with an idle VM (~5% of one core) and an empty
+  # log: a model stream that opened and then delivered nothing, with no
+  # client-side deadline to end it. An error can be retried; a hang just
+  # consumes the session.
+  #
+  # 15m, not an hour: a full cold build -- installing both agents, writing
+  # setup.sh, running it twice -- takes about 30 minutes of BUSY cpu, and a
+  # follow-up `say` turn is minutes. Anything past 15m with no output has
+  # always been a hang, never slow progress. Retrying early costs one
+  # attempt; waiting out a long deadline costs the session.
+  timeout "${PI_TIMEOUT:-15m}" \
   limactl shell "$INSTANCE" -- bash -lc '
     cd ~/'"$WORKDIR"' || exit 1
     exec pi -p --session-id "$1" --provider "$2" --model "$3" -- "$4"
