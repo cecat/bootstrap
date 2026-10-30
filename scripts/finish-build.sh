@@ -50,8 +50,16 @@ step "Idempotence -- before egress narrows"
 PHASE_NOW="$(limactl shell "$INSTANCE" -- cat /etc/agent-sandbox/phase 2>/dev/null | tr -dc 'a-z')"
 IDEM_RC=0
 if [ "$PHASE_NOW" = "bootstrap" ]; then
-  AGENTS_VM="$INSTANCE" ./verify/verify.sh --idempotence || IDEM_RC=$?
-  if [ "$IDEM_RC" != "0" ]; then
+  # Key on the idempotence CHECK, not on verify.sh's exit code. The suite
+  # exits non-zero if ANY check failed, so an unrelated failure elsewhere
+  # used to print "idempotence failed" directly beneath "PASS setup.sh is
+  # idempotent". A fresh agent on 2026-10-30 called that contradiction the
+  # single most confusing moment of its run, and said the emphatic prose
+  # would have won over the check had it not read the full output.
+  IDEM_OUT="$(AGENTS_VM="$INSTANCE" ./verify/verify.sh --idempotence 2>&1)" || true
+  printf '%s\n' "$IDEM_OUT"
+  if grep -qE '^ +FAIL +setup\.sh is idempotent' <<<"$IDEM_OUT"; then
+    IDEM_RC=1
     warn "idempotence failed (above). Pi's setup.sh changes state on a second
 run, so re-running it is not safe and it is not the repeatable artifact the
 spec asks for. Continuing to the rest of the verification so everything is

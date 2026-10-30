@@ -61,11 +61,17 @@ pi_attempt() {
   # client-side deadline to end it. An error can be retried; a hang just
   # consumes the session.
   #
-  # 15m, not an hour: a full cold build -- installing both agents, writing
-  # setup.sh, running it twice -- takes about 30 minutes of BUSY cpu, and a
-  # follow-up `say` turn is minutes. Anything past 15m with no output has
-  # always been a hang, never slow progress. Retrying early costs one
-  # attempt; waiting out a long deadline costs the session.
+  # 15m is a wall clock, and it has to be, because `pi -p` BUFFERS: it
+  # writes nothing until its final summary, so a healthy run and a hung one
+  # both show an empty log throughout. On 2026-10-30 the successful build
+  # sat at 0 bytes for 4m11s and then wrote 3141 bytes at once. Anything
+  # that watches the log for silence would kill that build every time.
+  #
+  # The signal that actually separates the two is guest CPU -- a working
+  # build holds qemu near 40% of a core, a hang sits around 5% -- but that
+  # is a host-side observation a supervisor can make, not something this
+  # script can read portably. So: a plain deadline, set from measurement.
+  # A full cold build took 4m12s; the longest honest turn seen is minutes.
   timeout "${PI_TIMEOUT:-15m}" \
   limactl shell "$INSTANCE" -- bash -lc '
     cd ~/'"$WORKDIR"' || exit 1
@@ -76,7 +82,7 @@ pi_attempt() {
   # 124 is timeout's "deadline hit". Treat a hang that produced nothing as a
   # no-work failure so it retries like any other transient.
   if [ "$rc" -eq 124 ]; then
-    say "turn exceeded ${PI_TIMEOUT:-45m} and was killed"
+    say "turn exceeded ${PI_TIMEOUT:-15m} and was killed"
     [ "$(wc -c <"$log")" -lt 2000 ] && NO_WORK=1
   fi
   ln -sfn "$(basename "$log")" "$LAST"
@@ -132,7 +138,7 @@ EOF
     fi
 
     local wait=$(( try * 15 ))
-    say "no work produced (attempt $try/$PI_MAX_TRIES, upstream error). Retrying in ${wait}s."
+    say "no work produced (attempt $try/$PI_MAX_TRIES). Retrying in ${wait}s."
     sleep "$wait"
     try=$(( try + 1 ))
   done

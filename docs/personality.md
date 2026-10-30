@@ -14,7 +14,7 @@ to sync, no file in this repo to change, and no restart needed.
 
 | Agent | File |
 |---|---|
-| OpenClaw | `~/.openclaw/agents/default/SOUL.md` (inside the VM) |
+| OpenClaw | `~/.openclaw/agents/<agent-id>/SOUL.md` (inside the VM) |
 | Hermes | `~/.hermes/SOUL.md` (inside the VM) |
 
 ## Why not edit the files directly
@@ -38,7 +38,8 @@ When an agent is too broken to talk to — a mangled `SOUL.md`, or a bad edit
 made while running on the degraded fallback model:
 
 ```sh
-limactl shell agents -- nano ~/.openclaw/agents/default/SOUL.md
+limactl shell agents -- openclaw agents list     # get the id first
+limactl shell agents -- nano ~/.openclaw/agents/<agent-id>/SOUL.md
 limactl shell agents -- nano ~/.hermes/SOUL.md
 ```
 

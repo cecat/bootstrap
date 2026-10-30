@@ -93,8 +93,12 @@ with a token gateway and a daemon, running as a systemd **user** service.
 - Provider id must be exactly **`argo-gateway`**, pointed at `VM_BASE_URL`,
   with `CREDENTIAL` as the API key. `verify.sh` asserts this id.
 - Exactly one agent, displaying the name in `OPENCLAW_AGENT_NAME`. Onboard
-  creates an agent whose **id** is `main` and ignores your env; the id is
-  immutable. Set the *identity* instead, then read it back.
+  picks the **id** itself and ignores your env, and there is no rename —
+  `openclaw agents` offers add/delete/set-identity only. So do not try to
+  change the id or add a second agent to get the name you want: set the
+  *identity*, then read it back from `openclaw agents list`. Derive any
+  path you need (the SOUL.md directory) from that output rather than
+  assuming what the id will be.
 - `onboard` writes the gateway token and apiKey into `openclaw.json` as
   plaintext. Migrate both to env SecretRefs (`openclaw secrets apply`).
   `openclaw secrets audit --check` must report `plaintext=0` **and
