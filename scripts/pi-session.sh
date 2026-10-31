@@ -65,6 +65,16 @@ pi_attempt() {
   # Single-quoted guest command with the prompt as a positional argument,
   # never interpolated: a prompt containing a quote would otherwise run as
   # shell on the guest.
+  #
+  # The deadline is a crude backstop, nothing cleverer. It was once argued
+  # for at length on the grounds that a wall clock was the ONLY option,
+  # because a buffered Pi made a working turn and a hung one look alike.
+  # That argument died with --mode json: the log now grows continuously, so
+  # silence genuinely means stalled and a silence-based watchdog would
+  # work. It is deliberately not built. Four hangs is a thin basis for more
+  # machinery, the event log will show exactly where the next one stops,
+  # and 15m plus the retry below already recovers without a human. Revisit
+  # if the logs show hangs recurring -- not before.
   timeout "${PI_TIMEOUT:-15m}" \
   limactl shell "$INSTANCE" -- bash -lc '
     cd ~/'"$WORKDIR"' || exit 1
@@ -137,7 +147,8 @@ for block in msg.get("content", []):
 # that a supervisor re-running by hand was the single biggest time sink on
 # 2026-10-29: three consecutive no-work failures sent a session chasing slirp,
 # squid and credential-resolution theories, and the next attempt worked with
-# nothing changed.
+# nothing changed. It earned its place on the next rebuild, killing a real
+# hang unattended; attempt 2 then built the entire target state in 4m12s.
 #
 # Only no-work failures retry. A turn where Pi actually did something and then
 # failed is a real result -- repeating it would double the side effects of a
@@ -153,11 +164,16 @@ pi_turn() {
     if [ "$try" -ge "$PI_MAX_TRIES" ]; then
       cat >&2 <<EOF
 
-  Pi produced no work $PI_MAX_TRIES times running: every transcript was a
-  single upstream API error. That is past the point of a transient.
+  Pi produced no work $PI_MAX_TRIES times running: not one attempt reached
+  a single tool call. That is past the point of a transient.
 
-  Check the path Pi actually uses, which tests the agents' real request
-  rather than a convenient approximation of it:
+  The event log says where it stopped. If the last event is a turn_start
+  with nothing after it, Pi never got a reply from the model:
+
+      ./scripts/pi-session.sh transcript 20
+
+  Then check the path Pi actually uses, which tests the agents' real
+  request rather than a convenient approximation of it:
 
       ./verify/verify.sh --models
       bash scripts/diag-stream.sh
