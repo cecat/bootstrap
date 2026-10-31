@@ -28,6 +28,19 @@ say() { printf '\n\033[1m==>\033[0m %s\n' "$*"; }
 gw="$(limactl shell "$INSTANCE" -- sudo cat /etc/agent-sandbox/model-gateway 2>/dev/null | tr -d '\r')"
 [ -n "$gw" ] || { echo "no model gateway configured" >&2; exit 1; }
 
+# The egress boundary, probed from the agent user through squid. The web
+# must answer and the private network must not: 403 is squid refusing,
+# which is the only self-validating answer here. A 000 means nothing was
+# listening and proves nothing either way.
+say "egress boundary: public web allowed, private network refused"
+limactl shell "$INSTANCE" -- bash -lc '
+  for t in http://example.com/ http://192.168.5.2/ http://10.0.0.1/ \
+           http://172.16.0.1/ http://169.254.169.254/ http://127.0.0.1:8080/; do
+    printf "    %-32s " "$t"
+    curl -sS -m 8 -o /dev/null -w "%{http_code}\n" --proxy http://127.0.0.1:3128 "$t" 2>/dev/null \
+      || echo "(no response)"
+  done'
+
 say "which credential names resolve in a plain login shell"
 limactl shell "$INSTANCE" -- bash -lc '
   for v in CREDENTIAL ARGO_CREDENTIAL ANTHROPIC_API_KEY OPENROUTER_API_KEY OPENAI_API_KEY; do

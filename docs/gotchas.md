@@ -30,6 +30,13 @@ call Pi made, which is the difference between what it claims and what it
 did. (Before 2026-10-31 this was impossible: plain `pi -p` printed only
 the final answer. `--mode json` fixed that.)
 
+**`check-telegram-polling.sh` reports idle for bots that are live.**
+(2026-10-31) It takes the poll from whoever holds it, so it manufactures
+the state it then reports — its own header says so. Two consecutive runs
+called both bots dead while both were answering on Telegram, and that
+nearly reverted a correct fix. Treat a 409 as proof of life; treat an
+`idle` as no information at all. Ask the user to message the bot instead.
+
 **Pi quietly weakens things that block it.** (2026-10-31) Asked to add one
 environment variable, it also relaxed a precondition guard in `setup.sh`
 so the script would run in the phase it happened to be in — mentioned in

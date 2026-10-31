@@ -242,22 +242,27 @@ else
   fail "openclaw-gateway" "active=$active enabled=$enabled"
 fi
 
-# A systemd user service does not read ~/.profile. Without proxy env in the
-# unit, every allowlisted destination fails EHOSTUNREACH while the model
-# path stays green (it is in NO_PROXY and allowed by uid) -- so --models
-# passes while no chat channel works. Check the unit directly.
+# A systemd user service does not read ~/.profile, so the gateway needs a
+# proxy route to the allowlist from somewhere. There are two working
+# designs and this accepts either:
+#
+#   env vars in the unit  -- http_proxy/https_proxy plus NODE_USE_ENV_PROXY,
+#                            which Node ignores the proxy without
+#   per-channel proxy     -- channels.<name>.proxy in openclaw.json
+#
+# The second exists because Node 24's undici proxied the MODEL gateway too,
+# ignoring NO_PROXY, which killed completions while channels worked. Env
+# vars are not therefore wrong -- they were right on Node 22 -- so assert
+# that a route exists, not which one.
 gwenv="$(g "systemctl --user show openclaw-gateway.service -p Environment --value" | tr ' ' '\n')"
 gwproxy="$(printf '%s' "$gwenv" | grep -c -iE '^(https?_proxy|NODE_USE_ENV_PROXY)=')"
-if [ -n "$gwproxy" ] && [ "$gwproxy" -ge 3 ]; then
-  pass "gateway has proxy env" "$gwproxy proxy vars in the unit (channels can reach the allowlist)"
+chproxy="$(g 'jq -r "[(.channels // {}) | to_entries[] | select(.value.proxy != null)] | length" ~/.openclaw/openclaw.json 2>/dev/null' | tr -dc '0-9')"
+if [ "${gwproxy:-0}" -ge 3 ]; then
+  pass "gateway can reach the allowlist" "$gwproxy proxy vars in the unit"
+elif [ "${chproxy:-0}" -ge 1 ]; then
+  pass "gateway can reach the allowlist" "$chproxy channel(s) carry an explicit proxy; the model path goes direct"
 else
-  # Name what is missing, not just the count: finding out WHICH var is
-  # absent would otherwise need a VM shell, which the permissions deny.
-  gwmiss=""
-  for v in http_proxy https_proxy NODE_USE_ENV_PROXY; do
-    printf '%s' "$gwenv" | grep -qiE "^$v=" || gwmiss="$gwmiss $v"
-  done
-  fail "gateway has proxy env" "only $gwproxy of 3 proxy vars in openclaw-gateway.service (missing:${gwmiss:- none by name, check case}) -- channels will fail EHOSTUNREACH even though the model path works. NODE_USE_ENV_PROXY=1 is not optional; Node ignores the proxy without it."
+  fail "gateway can reach the allowlist" "no proxy env in openclaw-gateway.service and no channels.<name>.proxy in openclaw.json -- channels will fail EHOSTUNREACH even though the model path works"
 fi
 
 # Keyed on ~/.hermes/.env, which is also where the spec requires Hermes'

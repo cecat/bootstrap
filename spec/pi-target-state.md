@@ -35,21 +35,27 @@ summary.
    from the moment the gateway starts, so its `TELEGRAM_ALLOWED_USERS` must
    be set *before* first start.
 
-3. **Never pipe an installer into a shell.** Download to
+3. **Never run a command that does not exit.** No `tail -f`, no `watch`, no
+   `journalctl -f`, no interactive prompt. You have no terminal to interrupt
+   one from: it blocks until your whole turn is killed, and the work in
+   progress is lost. To see a log, read the file. To watch a long command,
+   run it with `timeout` and read its output afterwards.
+
+4. **Never pipe an installer into a shell.** Download to
    `~/agent-bootstrap/installers/`, record the SHA256, execute the saved file.
 
-4. **Never write a secret into a config file, a log, or your output.**
+5. **Never write a secret into a config file, a log, or your output.**
    Secrets live in `~/.config/agent-sandbox/agents.env` (0600) and are
    referenced through systemd `EnvironmentFile=` or the agent's own
    SecretRef mechanism. Print variable names, never values.
 
-5. **Report only what you verified — including failures.** "Installed"
+6. **Report only what you verified — including failures.** "Installed"
    means a command exited zero and you are quoting its output. Before
    writing "blocked" or "unsupported", run the command that shows it. "I did
    not check" is an acceptable thing to write; a diagnosis you did not make
    is not.
 
-6. **No placeholders described as done.** If you cannot work out how to
+7. **No placeholders described as done.** If you cannot work out how to
    configure something, say so and stop. A log line claiming an action, over
    code that does not perform it, is the same offence.
 
@@ -138,9 +144,23 @@ has no proxy variables, reaches the model fine (direct, uid-allowed), and
 fails every allowlisted destination with `EHOSTUNREACH`. That state passes
 a model check and cannot reach Telegram.
 
-Put the proxy variables and the `EnvironmentFile=` lines in the same
-drop-in, including `NODE_USE_ENV_PROXY=1` (Node ignores the proxy without
-it). Prove it against a proxied destination, not the model endpoint.
+It needs a route to the proxy, and there are two designs. Either works:
+
+- **Env vars in the drop-in** — `http_proxy`, `https_proxy` and
+  `NODE_USE_ENV_PROXY=1`, alongside the `EnvironmentFile=` lines.
+- **Per-channel** — `openclaw config set channels.telegram.proxy
+  http://127.0.0.1:3128`, leaving the environment clean.
+
+Pick by what the installed Node does. Under Node 24 the env-var form made
+undici proxy the *model* gateway as well, ignoring `NO_PROXY`, so squid
+refused it as a private address and every completion hung with no error.
+The per-channel form avoids that by keeping the model path direct. On Node
+22 the env-var form worked. Check rather than assume, and say which you
+used.
+
+**Prove it against a proxied destination, not the model endpoint** — and
+prove it the way the adapter actually connects. A journal line saying the
+adapter *started* is not the same as a request completing.
 
 ### Personality seeds
 
@@ -217,5 +237,5 @@ skipped and why; per-agent channel state with the `dmPolicy`/`allowFrom` you
 read back; the secrets audit line; the `getMe` result per token; and
 anything that surprised you — including where this spec was wrong.
 
-Before writing it, check each claim against rule 5: point at the output that
+Before writing it, check each claim against rule 6: point at the output that
 proves it, or change the wording.
