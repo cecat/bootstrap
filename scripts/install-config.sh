@@ -87,12 +87,20 @@ cat > "$CFG/pi-models.json" <<JSON
 JSON
 printf '%s\n' "$GATEWAY" > "$CFG/model-gateway"
 
+# Squid needs the bare address: the model gateway is a private IP the agents
+# must reach, so it is allowed ahead of the private-range denial. A client
+# that proxies everything -- Node 24's undici, even with NO_PROXY set --
+# would otherwise have its completions refused, and the failure is silent.
+# Never empty: squid will not start on an empty `acl dst` file, and that
+# would take all egress down. 255.255.255.255 matches nothing.
+printf '%s\n' "${GATEWAY:-255.255.255.255}" | cut -d: -f1 > "$CFG/model-gateway-ip"
+
 # --- 3. Copy into the guest ------------------------------------------------
 say "copying config into $INSTANCE"
 limactl shell "$INSTANCE" -- rm -rf /tmp/agent-config
 limactl shell "$INSTANCE" -- mkdir -p /tmp/agent-config
 for f in agents.env model-access.env allowlist-bootstrap.conf allowlist-runtime.conf \
-         pi-models.json model-gateway; do
+         pi-models.json model-gateway model-gateway-ip; do
   limactl copy "$CFG/$f" "$INSTANCE:/tmp/agent-config/$f"
 done
 
@@ -170,7 +178,8 @@ limactl shell "$INSTANCE" -- bash -eo pipefail -c '
   sudo install -d -m 0755 /etc/agent-sandbox/allowlists
   sudo install -m 0644 /tmp/agent-config/allowlist-bootstrap.conf /etc/agent-sandbox/allowlists/
   sudo install -m 0644 /tmp/agent-config/allowlist-runtime.conf   /etc/agent-sandbox/allowlists/
-  sudo install -m 0644 /tmp/agent-config/model-gateway /etc/agent-sandbox/model-gateway
+  sudo install -m 0644 /tmp/agent-config/model-gateway    /etc/agent-sandbox/model-gateway
+  sudo install -m 0644 /tmp/agent-config/model-gateway-ip /etc/agent-sandbox/model-gateway-ip
 
   rm -rf /tmp/agent-config
 '

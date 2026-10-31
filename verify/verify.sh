@@ -254,6 +254,8 @@ fi
 # ignoring NO_PROXY, which killed completions while channels worked. Env
 # vars are not therefore wrong -- they were right on Node 22 -- so assert
 # that a route exists, not which one.
+#
+# Neither covers web_fetch: see the managed-proxy check below.
 gwenv="$(g "systemctl --user show openclaw-gateway.service -p Environment --value" | tr ' ' '\n')"
 gwproxy="$(printf '%s' "$gwenv" | grep -c -iE '^(https?_proxy|NODE_USE_ENV_PROXY)=')"
 chproxy="$(g 'jq -r "[(.channels // {}) | to_entries[] | select(.value.proxy != null)] | length" ~/.openclaw/openclaw.json 2>/dev/null' | tr -dc '0-9')"
@@ -263,6 +265,17 @@ elif [ "${chproxy:-0}" -ge 1 ]; then
   pass "gateway can reach the allowlist" "$chproxy channel(s) carry an explicit proxy; the model path goes direct"
 else
   fail "gateway can reach the allowlist" "no proxy env in openclaw-gateway.service and no channels.<name>.proxy in openclaw.json -- channels will fail EHOSTUNREACH even though the model path works"
+fi
+
+# OpenClaw's HTTP tools read a managed proxy from config and ignore the
+# environment, so web_fetch goes direct into the uid lockdown while every
+# other check above passes. The agent then reports the block as a transient
+# upstream error and may route around it.
+ocproxy="$(g 'jq -r ".proxy.proxyUrl // empty" ~/.openclaw/openclaw.json 2>/dev/null' | tr -d '\r')"
+if [ -n "$ocproxy" ]; then
+  pass "OpenClaw web tools use the proxy" "proxy.proxyUrl=$ocproxy"
+else
+  fail "OpenClaw web tools use the proxy" "proxy.proxyUrl unset -- web_fetch will fail EHOSTUNREACH though channels and completions work. Run: openclaw config set proxy.proxyUrl http://127.0.0.1:3128"
 fi
 
 # Keyed on ~/.hermes/.env, which is also where the spec requires Hermes'

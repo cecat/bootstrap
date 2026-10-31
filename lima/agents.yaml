@@ -155,6 +155,11 @@ provision:
       #!/bin/bash
       set -euo pipefail
       install -d -m 0755 /etc/agent-sandbox/allowlists
+      # squid will not start if an `acl dst` file is missing or empty, and
+      # that takes all egress down. Seed an address no request can name;
+      # install-config.sh overwrites it when there is a real gateway.
+      [ -s /etc/agent-sandbox/model-gateway-ip ] \
+        || echo 255.255.255.255 > /etc/agent-sandbox/model-gateway-ip
 
       cat > /etc/squid/squid.conf <<'SQUID'
       # Forward proxy for the sandboxed agents. No TLS interception.
@@ -177,8 +182,18 @@ provision:
       acl Safe_ports port 8000      # vLLM fallback over Tailscale
       acl CONNECT method CONNECT
 
-      # The private ranges, plus this machine. Denied first, so no later
-      # allow rule can reach them.
+      # The model gateway is a private address the agents MUST reach, so it
+      # is permitted before the private-range denial below. Without this,
+      # any client that proxies everything -- Node 24's undici does, even
+      # with the address in NO_PROXY -- has its completions refused by
+      # squid, and the failure is silent: the stream opens and hangs.
+      # Written by scripts/install-config.sh; absent when the model path
+      # does not cross the host boundary.
+      acl model_gw dst "/etc/agent-sandbox/model-gateway-ip"
+      http_access allow model_gw
+
+      # The private ranges, plus this machine. Everything the agents could
+      # use to reach the host or its neighbours.
       acl private dst 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16
       acl private dst 127.0.0.0/8 ::1 fc00::/7 fe80::/10
 

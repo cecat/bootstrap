@@ -144,23 +144,30 @@ has no proxy variables, reaches the model fine (direct, uid-allowed), and
 fails every allowlisted destination with `EHOSTUNREACH`. That state passes
 a model check and cannot reach Telegram.
 
-It needs a route to the proxy, and there are two designs. Either works:
+Give it one in the drop-in, alongside the `EnvironmentFile=` lines:
+`http_proxy`, `https_proxy` and `NODE_USE_ENV_PROXY=1`.
 
-- **Env vars in the drop-in** — `http_proxy`, `https_proxy` and
-  `NODE_USE_ENV_PROXY=1`, alongside the `EnvironmentFile=` lines.
-- **Per-channel** — `openclaw config set channels.telegram.proxy
-  http://127.0.0.1:3128`, leaving the environment clean.
+Node 24's undici proxies everything and ignores `NO_PROXY`, so the model
+gateway goes through squid too. That is fine: squid allows the gateway
+address ahead of its private-range denial. Do not route the model path
+around the proxy — a client-side exemption undici ignores is how this
+broke before.
 
-Pick by what the installed Node does. Under Node 24 the env-var form made
-undici proxy the *model* gateway as well, ignoring `NO_PROXY`, so squid
-refused it as a private address and every completion hung with no error.
-The per-channel form avoids that by keeping the model path direct. On Node
-22 the env-var form worked. Check rather than assume, and say which you
-used.
+**OpenClaw needs a second, separate setting.** Its HTTP tools read a
+managed proxy from config, not from the environment, so the drop-in alone
+leaves `web_fetch` going direct into the uid lockdown:
+
+    openclaw config set proxy.proxyUrl http://127.0.0.1:3128
+
+Without it the gateway looks healthy, Telegram works and completions pass,
+and only the agent's own web tools fail. Hermes needs no equivalent — it
+honours the environment.
 
 **Prove it against a proxied destination, not the model endpoint** — and
 prove it the way the adapter actually connects. A journal line saying the
-adapter *started* is not the same as a request completing.
+adapter *started* is not the same as a request completing. For OpenClaw
+that means `web_fetch` specifically: every other check passes while it is
+broken.
 
 ### Personality seeds
 
