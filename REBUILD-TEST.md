@@ -2,10 +2,13 @@
 
 You are running an experiment, not a build. Read this whole file first.
 
-**The question being tested:** this repo was just cut from ~5,300 lines to
-~3,850, including a spec that went from 749 lines to 215. Does a build
-driven from the shorter documents still work? The previous run scored 34 of
-35 checks.
+**The question being tested:** this repo was cut from ~5,300 lines to
+~4,500, including a spec that went from 749 lines to 248. Does a build
+driven from the shorter documents still work, from nothing, unattended?
+
+The previous build reached 36 passed / 0 failed — but not in one pass. It
+needed three supervisor interventions and a repo fix mid-run, so it does
+not answer the question. This run is the real test.
 
 **You are the instrument, not the engineer.** Your value here is that you
 have no prior context. Everything you find confusing, ambiguous or missing
@@ -27,13 +30,20 @@ experiment is wasted.
    several hours to five successive wrong theories; that is the specific
    failure mode this rule exists to prevent.
 
+   This bars *explaining* a failure, not *noticing* one. Record everything
+   you observe, including things that look fine — a check that passes
+   while the thing it names is broken is the most valuable finding here,
+   and it has happened.
+
 3. **Do not shell into the VM** beyond what the scripts do themselves. The
    one allowed probe is
    `limactl shell agents -- cat /etc/agent-sandbox/phase`.
 
-4. **Do not read `archive/`, `git log`, or `git show`.** They contain the
-   old, longer versions of these documents. Reading them contaminates the
-   test — the point is whether the *current* text is sufficient on its own.
+4. **Do not read `archive/`, `git log`, `git show`, or `debug-notes/`.**
+   They hold older and longer versions of these documents, and notes
+   written for a past run. Reading them contaminates the test — the point
+   is whether the *current* text is sufficient on its own. The working
+   tree is current and committed; read the files themselves freely.
 
 5. **One retry, then stop.** `scripts/pi-session.sh` already retries
    transient model errors by itself; let it. If a step fails for any other
@@ -48,17 +58,23 @@ experiment is wasted.
 
 ## What to do
 
+Work inside `tmux` from the start (see `docs/tmux.md`) — a dropped SSH
+session killed a build twice on 2026-10-31.
+
 Read `AGENTS.md` first, as a newcomer would. Then:
 
 ```sh
 ./bootstrap.sh --rebuild
 ```
 
-This destroys the existing VM and both agents. That is intended — a
-snapshot named `green-2026-10-30` exists, so nothing is at risk. It will
-also delete `config/agents.env` and then stop, asking for it to be filled
-in. **The user will do that.** Ask them, wait, and do not ask for any
-token, id or secret in the conversation itself — those go in the file.
+This destroys the existing VM and both agents. That is intended, and there
+is no undo: `limactl snapshot` has twice lost snapshots that it had
+confirmed, so do not offer one as a safety net. The repo is the
+deliverable; the VM is a fixture.
+
+It will also delete `config/agents.env` and then stop, asking for it to be
+filled in. **The user will do that.** Ask them, wait, and do not ask for
+any token, id or secret in the conversation itself — those go in the file.
 
 Then continue as `AGENTS.md` describes. In outline, though follow the repo
 rather than this summary if they differ:
@@ -73,6 +89,13 @@ rather than this summary if they differ:
 
 If `verify.sh` reports failures, **report them. Do not fix them.**
 
+Then run the one check `verify.sh` cannot: ask the user to message each
+agent on Telegram and have it **fetch a web page**. On 2026-10-31 every
+automated check passed while one agent could not reach the web at all.
+Record the agent's exact words. If it mentions a workaround, a fallback,
+a reader proxy, or rate-limiting, quote that — an agent reporting success
+by routing around a block is a finding, not a pass.
+
 Supervising Pi is in scope — reading its summary sceptically and checking
 it against `verify.sh` is the job. But if Pi gets something wrong, note it
 and stop; do not start a repair loop, and keep any message to Pi to a few
@@ -86,7 +109,14 @@ Write your findings to `REBUILD-RESULT.md` in the repo root. That file is
 the deliverable. Cover:
 
 **Outcome** — the final `verify.sh --models` tally (passed/failed/skipped),
-and the name of every failing check with its message, quoted.
+and the name of every failing check with its message, quoted. Then,
+separately, whether each agent fetched a web page over Telegram, in its
+own words.
+
+**How many times you had to intervene.** The question is whether the
+documents build this unattended, so every message to Pi, every retry and
+every point you had to decide something counts. Zero is the target; say
+plainly how far off it was.
 
 **Timing** — roughly how long `bootstrap.sh` took, how long Pi's build
 took, and whether anything hung.
