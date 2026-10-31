@@ -8,20 +8,18 @@
 #   ./verify/verify.sh --idempotence  + re-run Pi's setup.sh, assert no change
 #   ./verify/verify.sh --all        everything
 #
-# Design rules, learned the hard way during the first build:
+# Rules for anything added here:
 #
-#   * A verification that only checks the allowed path proves nothing. The
-#     egress section asserts that a NON-allowed destination is BLOCKED, at
-#     both layers, and that the block is scoped to the agent uid.
-#   * /health and /v1/models are false greens -- they answer 200 from local
-#     state with a dead upstream. Only a completion proves the model path,
-#     which is why --models exists and why it is honest about costing quota.
-#   * Negative tests must not use a host the network itself blocks. We use
-#     example.com over PLAIN HTTP: squid returns a clean 403. Over HTTPS
-#     squid denies CONNECT and curl reports 000, which is indistinguishable
-#     from the network simply being down.
+#   * Assert the negative. A check that only exercises the allowed path
+#     proves nothing about the boundary.
+#   * Only a completion proves the model path. /health and /v1/models
+#     answer 200 from local state with a dead upstream.
+#   * Negative egress tests use PLAIN HTTP. Over HTTPS a refusal reports
+#     curl 000, indistinguishable from the network being down.
+#   * Assert what the system does, not what its output looks like. Several
+#     checks here have failed correct builds by matching on wording.
 #
-# Nothing here mutates the VM except --reboot. No secret is ever printed.
+# Nothing mutates the VM except --reboot. No secret is ever printed.
 # ===========================================================================
 set -uo pipefail
 
@@ -84,9 +82,9 @@ fi
 pi_v="$(g 'pi --version 2>/dev/null' | head -1)"
 [ -n "$pi_v" ] && pass "Pi installed" "$pi_v" || fail "Pi installed" "pi not found on PATH"
 
-# The egress lockdown keys off this uid. Lima gives the guest the HOST's uid,
-# so an empty file here means provisioning guessed and gave up -- which would
-# leave the agents completely unconfined.
+# The egress lockdown keys off this uid, so an empty file here means the
+# agents are unconfined. Do not infer the uid from a range: Lima gives the
+# guest the host's uid, which on macOS is 502.
 au="$(groot 'cat /etc/agent-sandbox/agent-user 2>/dev/null' | tr -d '\r')"
 if [ -n "$au" ]; then
   pass "agent user resolved" "$au (uid $(g "id -u $au" | tr -dc '0-9'))"
@@ -114,17 +112,13 @@ for f in .config/agent-sandbox/agents.env .config/agent-sandbox/model-access.env
   fi
 done
 
-# Pi's own provider is the supervision channel: scripts/pi-session.sh invokes
-# `pi -p --provider argo --model argo:claude-4.5-sonnet`, and spec section 3
-# also tells Pi to write this same file. On 2026-10-28 Pi rewrote it with a
-# renamed provider, and every later `pi-session.sh say` died with
-# `Unknown provider "argo"` -- so the one tool for pushing back on Pi was gone,
-# mid-build, with no way to ask Pi to repair it. Assert the id pi-session.sh
-# actually passes still resolves.
+# Pi's own provider is the supervision channel -- pi-session.sh passes
+# `--provider argo`, so if that id stops resolving there is no way left to
+# ask Pi to repair anything. Pi has renamed it before.
 #
-# Accept either shape: Pi's schema keys providers by object key, but a rewrite
-# can turn it into an array of objects carrying an `id`. Report which we saw,
-# because "providers: 0" from an array reads as an empty object otherwise.
+# Accept either shape and report which: providers is normally an object
+# keyed by id, but a rewrite can turn it into an array of objects, and an
+# array counted as an object reads as empty.
 pi_shape="$(g 'jq -r ".providers | type" $HOME/.pi/agent/models.json 2>/dev/null' | tr -d '\r')"
 pi_prov="$(g 'jq -r "[(.providers // empty) | if type == \"object\" then keys[] else .[].id // empty end] | join(\",\")" $HOME/.pi/agent/models.json 2>/dev/null' | tr -d '\r')"
 case ",$pi_prov," in
@@ -135,11 +129,9 @@ esac
 # ---------------------------------------------------------------------------
 section "Egress policy"
 
-# --idempotence requires the bootstrap allowlist: Pi's setup.sh fetches from
-# pypi.org, which runtime does not permit. So a run that asks for it is
-# deliberately mid-build and 'bootstrap' is the correct phase -- failing on
-# it would make --all unsatisfiable in either phase, which is what used to
-# happen. A plain run still fails: a finished build must be on runtime.
+# --idempotence needs the bootstrap allowlist (Pi's setup.sh fetches from
+# pypi.org), so for that run 'bootstrap' is the correct phase. A plain run
+# still requires runtime: a finished build must be narrowed.
 phase="$(groot 'cat /etc/agent-sandbox/phase 2>/dev/null' | tr -d '\r')"
 case "$phase" in
   runtime)   pass "egress phase" "runtime (steady state)" ;;
@@ -167,10 +159,9 @@ fi
 # ---------------------------------------------------------------------------
 section "Egress enforcement (the part that actually proves something)"
 
-# 1. Through the proxy, to a destination that is NOT on the allowlist.
-#    A 403 is self-validating: it can only come from squid, so it proves at
-#    once that squid is reachable AND that it is denying. A connection error
-#    would mean squid is down, which is a different failure.
+# 1. Through the proxy, to a destination NOT on the allowlist. A 403 is
+#    self-validating -- only squid can send it, so it proves squid is both
+#    reachable and denying. A connection error means squid is down instead.
 code="$(g 'curl -sS -m 15 -o /dev/null -w "%{http_code}" --proxy http://127.0.0.1:3128 http://example.com/ 2>/dev/null')"
 case "$code" in
   403) pass "non-allowed domain is DENIED by squid" "http://example.com -> 403" ;;
@@ -178,9 +169,9 @@ case "$code" in
   *)   fail "non-allowed domain is DENIED by squid" "got '${code:-no response}', expected 403. Is squid listening on 127.0.0.1:3128?" ;;
 esac
 
-# 2. Around the proxy entirely. The iptables chain should reject this.
-#    --reject-with icmp-admin-prohibited makes it fail fast rather than hang,
-#    so a timeout here is itself a signal that something else is wrong.
+# 2. Around the proxy entirely; the iptables chain rejects it. The reject
+#    is icmp-admin-prohibited, so this fails fast -- a timeout instead of
+#    an immediate refusal means something else is wrong.
 t0=$SECONDS
 direct="$(g 'curl -sS -m 15 -o /dev/null -w "%{http_code}" --noproxy "*" http://1.1.1.1/ 2>/dev/null')"
 dt=$((SECONDS - t0))
@@ -190,10 +181,8 @@ else
   fail "direct bypass is BLOCKED by iptables" "got HTTP $direct -- the agent can reach the internet without the proxy"
 fi
 
-# 3. Scope check. The same request as root must SUCCEED, because the rule is
-#    matched on the agent's uid. If root is blocked too, the rule is wrong
-#    even though test 2 passed -- and test 2 would pass just as well if the
-#    VM simply had no network at all. This is the control.
+# 3. The control for test 2, which would pass equally well if the VM had no
+#    network at all. The rule is uid-scoped, so root must SUCCEED here.
 rootdirect="$(groot 'curl -sS -m 15 -o /dev/null -w "%{http_code}" --noproxy "*" http://1.1.1.1/ 2>/dev/null')"
 if [ "$rootdirect" != "000" ] && [ -n "$rootdirect" ]; then
   pass "lockdown is scoped to the agent uid" "same request as root -> HTTP $rootdirect (the VM does have egress)"
@@ -229,20 +218,17 @@ else
   fail "openclaw-gateway" "active=$active enabled=$enabled"
 fi
 
-# A systemd user service does not read ~/.profile, so the gateway can end up
-# with no proxy env -- at which point every allowlisted destination fails
-# EHOSTUNREACH while the model path stays green (the model gateway is in
-# NO_PROXY and allowed by uid). That combination passes --models and still
-# cannot reach a single chat channel, so check the unit directly.
+# A systemd user service does not read ~/.profile. Without proxy env in the
+# unit, every allowlisted destination fails EHOSTUNREACH while the model
+# path stays green (it is in NO_PROXY and allowed by uid) -- so --models
+# passes while no chat channel works. Check the unit directly.
 gwenv="$(g "systemctl --user show openclaw-gateway.service -p Environment --value" | tr ' ' '\n')"
 gwproxy="$(printf '%s' "$gwenv" | grep -c -iE '^(https?_proxy|NODE_USE_ENV_PROXY)=')"
 if [ -n "$gwproxy" ] && [ "$gwproxy" -ge 3 ]; then
   pass "gateway has proxy env" "$gwproxy proxy vars in the unit (channels can reach the allowlist)"
 else
-  # Name what is missing. An earlier version reported only the count, and a
-  # fresh agent on 2026-10-30 could not act on it: finding out WHICH vars
-  # were absent needed a VM shell, which the permissions deny. A check that
-  # cannot be acted on from its own output is half a check.
+  # Name what is missing, not just the count: finding out WHICH var is
+  # absent would otherwise need a VM shell, which the permissions deny.
   gwmiss=""
   for v in http_proxy https_proxy NODE_USE_ENV_PROXY; do
     printf '%s' "$gwenv" | grep -qiE "^$v=" || gwmiss="$gwmiss $v"
@@ -250,14 +236,9 @@ else
   fail "gateway has proxy env" "only $gwproxy of 3 proxy vars in openclaw-gateway.service (missing:${gwmiss:- none by name, check case}) -- channels will fail EHOSTUNREACH even though the model path works. NODE_USE_ENV_PROXY=1 is not optional; Node ignores the proxy without it."
 fi
 
-# Hermes' gateway serves messaging channels. If Telegram credentials are in
-# ~/.hermes/.env then the gateway must be installed and running -- installing
-# it is not the same as enabling a channel, and the build is required to
-# prove the path works before a human switches the channel on.
-#
-# Keyed on .env, not on channel_directory.json: Hermes never writes that
-# file, so an earlier version of this check passed unconditionally and hid a
-# Hermes that could not reach Telegram at all.
+# Keyed on ~/.hermes/.env, which is also where the spec requires Hermes'
+# credentials to live. Do not key this on channel_directory.json: Hermes
+# never writes it, so the check would pass unconditionally.
 hactive="$(g "systemctl --user is-active hermes-gateway.service" | tr -d '\r')"
 if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
   if [ "$hactive" = "active" ]; then
@@ -266,19 +247,15 @@ if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
     fail "hermes-gateway" "Telegram is configured but the gateway is $hactive -- run: hermes gateway install"
   fi
 
-  # A running service is not a working adapter. The plugin ships disabled and
-  # its python-telegram-bot dependency comes from pypi.org, which is only
-  # allowlisted during bootstrap -- miss either and the service stays active
-  # while the journal reports "No adapter available for telegram".
+  # A running service is not a working adapter: the plugin ships disabled
+  # and its dependency comes from pypi.org, allowlisted only in bootstrap.
+  # Miss either and the service sits active reporting "No adapter
+  # available for telegram".
   #
-  # Scope the journal to the CURRENT service start, and take the last
-  # adapter event rather than the last *connect*. Until 2026-10-28 this
-  # grepped the whole journal for "Connected to Telegram", so one successful
-  # connect made it report "connected (polling)" forever -- including after
-  # the adapter had dropped and was failing to reconnect. The suite said
-  # connected while an external 409 probe said nothing was polling, and the
-  # stale line was believed over the live evidence. A disconnect that the
-  # adapter never recovers from is exactly what this check exists to catch.
+  # Scope to the CURRENT service start and take the last adapter event, not
+  # the last *connect* -- otherwise one historical success reports
+  # "connected" forever, including while the adapter is failing to
+  # reconnect. A drop it never recovers from is what this catches.
   jr="$(g 'journalctl --user -u hermes-gateway.service --no-pager _SYSTEMD_INVOCATION_ID="$(systemctl --user show -p InvocationID --value hermes-gateway.service)" 2>/dev/null | grep -iE "\[Telegram\] Connected|No adapter available for telegram|adapter creation failed|Telegram network error|Conflict: terminated" | tail -1')"
   case "$jr" in
     *"Connected to Telegram"*) pass "Hermes Telegram adapter" "connected (polling), this service start" ;;
@@ -304,11 +281,11 @@ else
   pass "no gateway bound to a wildcard address" "only sshd listens beyond loopback"
 fi
 
-# No plaintext secrets, and no SecretRef the CLI cannot resolve. Deliberately
-# run in a plain login shell: sourcing agents.env first would hide a missing
-# export, which is the exact failure this catches. The gateway resolves refs
-# from its own EnvironmentFile, so an unresolved ref leaves the service
-# healthy and only breaks the CLI -- invisible without this check.
+# No plaintext secrets, and no SecretRef the CLI cannot resolve. Run from a
+# plain login shell: sourcing agents.env first hides a missing export, which
+# is the failure this catches. The gateway resolves refs from its own
+# EnvironmentFile, so an unresolved one breaks only the CLI and leaves the
+# service looking healthy.
 sec="$(g 'openclaw secrets audit --json 2>/dev/null' | tr -d '\r')"
 plain="$(printf '%s' "$sec" | jq -r '.summary.plaintextCount // empty' 2>/dev/null)"
 unres="$(printf '%s' "$sec" | jq -r '.summary.unresolvedRefCount // empty' 2>/dev/null)"
@@ -320,20 +297,17 @@ else
   fail "no plaintext or unresolved secrets" "plaintext=$plain unresolved=$unres (see: openclaw secrets audit)"
 fi
 
-# The agent must carry the name the user chose, and its SOUL.md must be the
-# seed rather than a vendor default. Checking only that some SOUL.md exists
-# passes a build where `openclaw onboard` left the agent called "main", the
-# seed landed in an unused agents/<other>/ directory, and Hermes kept the
-# stock Nous persona -- all three happened on one run.
+# The agent must carry the configured name, and its SOUL.md must be the
+# seed rather than a vendor default. Checking only that some SOUL.md
+# exists passes a build where the seed landed in an unused directory and
+# Hermes kept the stock Nous persona.
 want_oc="$(g 'set -a; . $HOME/.config/agent-sandbox/agents.env 2>/dev/null; set +a; printf %s "$OPENCLAW_AGENT_NAME"' | tr -d '\r')"
 want_he="$(g 'set -a; . $HOME/.config/agent-sandbox/agents.env 2>/dev/null; set +a; printf %s "$HERMES_AGENT_NAME"' | tr -d '\r')"
 
-# Assert the *identity*, not the directory. OpenClaw separates an immutable
-# agent id (`main`, set by onboard -- `openclaw agents` offers add/delete/
-# set-identity but no rename) from the display identity, which is what
-# `set-identity` changes and what the user actually sees. An earlier version
-# of this check demanded the directory be named LuoJi, which OpenClaw cannot
-# do, and so failed a correct build.
+# Assert the *identity*, never the directory name. OpenClaw's agent id is
+# fixed by onboard and cannot be renamed; the identity is the display name
+# and is what the user chose. Requiring the directory to match the name
+# fails a correct build.
 agents_out="$(g 'openclaw agents list 2>/dev/null')"
 live_identity="$(printf '%s' "$agents_out" | grep -m1 'Identity:' | sed 's/.*Identity: *//; s/ *(.*//' | tr -d '\r')"
 if [ -n "$want_oc" ] && [ -n "$live_identity" ]; then
@@ -346,9 +320,8 @@ else
   skip "OpenClaw agent identity is as configured" "could not read the configured name or the live identity"
 fi
 
-# `Agent dir:` reports the *agent state* directory and carries a trailing
-# /agent -- SOUL.md sits one level above it. It may also be printed with a
-# literal ~, which no shell expands when it arrives as data.
+# `Agent dir:` carries a trailing /agent -- SOUL.md sits one level above --
+# and prints a literal ~, which no shell expands when it arrives as data.
 live_dir="$(printf '%s' "$agents_out" | grep -m1 'Agent dir:' | sed 's/.*Agent dir: *//; s#/agent/*$##' | tr -d '\r')"
 case "$live_dir" in "~"*) live_dir="\$HOME${live_dir#\~}" ;; esac
 
@@ -371,18 +344,14 @@ section "Channels: never reachable without an allowlist"
 
 # WHO MAY TALK TO THE BOT IS THE CHECK THAT MATTERS.
 #
-# The egress allowlist does not help here: it governs what the VM may reach
-# outbound, while Telegram DELIVERS inbound to whoever messages the bot. The
-# only thing standing between a stranger and an agent with shell access and
-# no permission prompts is the agent's own allowlist -- OpenClaw's
-# dmPolicy/allowFrom, Hermes' TELEGRAM_ALLOWED_USERS. If either is empty the
-# bot answers anybody who finds it.
+# Egress policy does not help here: it governs outbound traffic, while
+# Telegram DELIVERS inbound to whoever messages the bot. The only thing
+# between a stranger and an agent with shell access and no permission
+# prompts is the agent's own allowlist -- OpenClaw's dmPolicy/allowFrom,
+# Hermes' TELEGRAM_ALLOWED_USERS. Empty means it answers anybody.
 #
-# Nothing asserted this until 2026-10-28. The suite checked whether channels
-# were *enabled* and whether a bot was *polled*, and both can pass while the
-# restriction is missing entirely -- the configuration is only safe if it is
-# actually there, which is exactly the kind of claim this suite exists to
-# stop taking on trust.
+# Checking whether a channel is enabled, or whether a bot is polling, both
+# pass while the restriction is absent. Assert the restriction itself.
 want_id="$(grep -E '^TELEGRAM_ALLOWED_USER_ID=' "$REPO_DIR/config/agents.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -dc '0-9')"
 
 oc_has_tg="$(g 'jq -e ".channels.telegram" ~/.openclaw/openclaw.json >/dev/null 2>&1 && echo yes' | tr -d '\r')"
@@ -394,9 +363,8 @@ if [ "$oc_has_tg" = "yes" ]; then
   else
     fail "OpenClaw Telegram is restricted" "dmPolicy=$oc_pol allowFrom=${oc_alw:-empty} -- anyone who finds this bot could talk to an agent with shell access"
   fi
-  # `case`, not `[ ... != *glob* ]`: inside `[ ]` the pattern is compared
-  # literally, so that form reports a mismatch every time. It did exactly
-  # that when this check was written, against an allowFrom that was correct.
+  # `case`, not `[ ... != *glob* ]` -- inside `[ ]` the pattern is compared
+  # literally and reports a mismatch every time.
   if [ -n "$want_id" ]; then
     case ",$oc_alw," in
       *",$want_id,"*) : ;;
@@ -429,17 +397,9 @@ else
   skip "Hermes Telegram is restricted" "no Telegram credentials configured"
 fi
 
-# Safety assertion, not a feature test -- but the thing being asserted
-# changed on 2026-10-28. This used to require zero enabled channels, on the
-# rule "never enable a chat channel". That rule is now "never let a bot be
-# reachable without an allowlist": a Luoji the user can message is a success
-# measure, and spec section 7 has Pi enable it as a final gated step.
-#
-# So enabled is fine; enabled WITHOUT a restriction is the failure. The
-# dmPolicy/allowFrom checks above establish whether the restriction exists;
-# this one makes an enabled-but-unrestricted channel fatal rather than
-# merely noted, because that is the state where a stranger reaches an agent
-# with shell access.
+# A safety assertion, not a feature test. An enabled channel is fine and
+# is the intended end state; enabled WITHOUT a restriction is the failure,
+# and this makes that fatal rather than merely noted.
 oc_ch="$(g 'jq -r "(.channels // {}) | to_entries | map(select(.value.enabled != false)) | length" ~/.openclaw/openclaw.json 2>/dev/null' | tr -dc '0-9')"
 if [ "${oc_ch:-0}" = "0" ]; then
   pass "OpenClaw channel safety" "no channel enabled (restriction not load-bearing yet)"
@@ -466,18 +426,10 @@ else
   pass "Hermes channel safety" "no channel directory"
 fi
 
-# Report which bots are live, but do NOT fail on it.
-#
-# This check used to assert that nothing was polling. That was wrong for this
-# project: the spec requires Hermes' Telegram adapter to CONNECT during the
-# build (item 0A) so the path is proven before a human enables anything, and
-# polling mode *is* an open getUpdates loop. Satisfying the spec therefore
-# failed this check -- the build was marked bad for doing exactly what it was
-# told. The end state the user wants is both agents live and reachable.
-#
-# What actually protects the user is the allowlist asserted above, not
-# silence. So this is now informational: it says which bots would answer,
-# which is worth knowing and is invisible in every config file.
+# Informational: which bots would answer a message. Do NOT fail on this.
+# Reachable agents are the intended end state, and what protects the user
+# is the allowlist asserted above, not silence. Asserting silence here
+# marked a correct build as bad.
 if [ -f "$REPO_DIR/config/agents.env" ]; then
   poll_out="$("$REPO_DIR/scripts/check-telegram-polling.sh" 2>&1)"
   live="$(grep -cE 'POLLING' <<<"$poll_out")"
@@ -493,11 +445,9 @@ fi
 # ---------------------------------------------------------------------------
 section "Idempotence of Pi's setup.sh"
 
-# The spec makes setup.sh the deliverable and requires a second run to change
-# nothing. Pi self-reports this, and has been wrong: a guard grepping
-# multi-line JSON with a single-line pattern never matches, so its step runs
-# every time while still looking guarded. Opt-in because it re-runs the
-# script against a live VM.
+# setup.sh is the deliverable and a second run must change nothing. Pi
+# self-reports this and has been wrong. Opt-in: it re-runs the script
+# against a live VM.
 if [ "$DO_IDEM" -eq 0 ]; then
   skip "setup.sh is idempotent" "re-run with --idempotence (re-runs Pi's script against this VM)"
 else
@@ -529,11 +479,8 @@ fi
 # ---------------------------------------------------------------------------
 section "Model path"
 
-# The VM-facing gateway address used to be hardcoded to Lima's macOS value
-# and carried onto Linux unverified. It happened to be right -- Lima uses the
-# same user-mode subnet under QEMU slirp -- but nothing checked, and when a
-# build later failed for an unrelated reason the address was the first thing
-# blamed, costing a session. These two checks cost nothing and settle it.
+# Confirm the configured gateway address is the guest's real default route,
+# so an unrelated failure cannot be blamed on it. Costs nothing.
 gw="$(groot 'cat /etc/agent-sandbox/model-gateway 2>/dev/null' | tr -d '\r')"
 if [ -z "$gw" ]; then
   skip "VM gateway address is the guest's real default route" "no model-gateway configured"
@@ -552,11 +499,8 @@ else
   sse="$(g "curl -sN --noproxy '*' --max-time 60 -X POST http://$gw/v1/messages \
            -H 'content-type: application/json' \
            -d '{\"model\":\"argo:claude-4.5-sonnet\",\"max_tokens\":16,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: SSE_OK\"}]}' 2>&1")"
-  # Reassemble the text_delta fragments before looking for the marker: a
-  # stream splits "SSE_OK" across deltas ("SS" + "E_OK"), so grepping the
-  # raw SSE for it never matches. This check failed on a working gateway
-  # until that was fixed -- the same "assert against what output looks like
-  # rather than what the system does" mistake this file warns about.
+  # Reassemble the text_delta fragments first: a stream splits "SSE_OK"
+  # across deltas, so grepping the raw SSE for it never matches.
   sse_text="$(grep -o '"text": *"[^"]*"' <<<"$sse" | sed 's/.*: *"//; s/"$//' | tr -d '\n')"
   if [ "$sse_text" = "SSE_OK" ] && grep -q message_stop <<<"$sse"; then
     pass "gateway streams to the guest" "SSE completed through $gw"
