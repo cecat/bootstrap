@@ -33,6 +33,9 @@ MODEL="${PI_MODEL:-argo:claude-4.5-sonnet}"
 PROVIDER="${PI_PROVIDER:-argo}"
 LOGDIR="$REPO/logs"
 LAST="$LOGDIR/pi-last.log"
+# Seconds of no log output before a turn counts as hung. Generous: a long
+# model call or a slow install is silent for a while and is not stuck.
+PI_SILENCE="${PI_SILENCE:-300}"
 
 say()  { printf '\033[1m==>\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -63,21 +66,35 @@ pi_attempt() {
   # argument. Do not interpolate it -- a prompt containing a quote would
   # run as shell on the guest.
   #
-  # The deadline is a crude backstop. A silence-based watchdog would now
-  # work, since the log grows continuously, but 15m plus the retry below
-  # already recovers unattended. Build one only if hangs recur.
-  timeout "${PI_TIMEOUT:-15m}" \
+  # Silence is the hang signal, not elapsed time. Pi emits an event per
+  # line as it works, so a working turn never goes quiet -- while a
+  # wall-clock limit kills healthy ones: 15m once killed a build mid-way
+  # through writing an allowlist, 8,052 events in.
+  #
+  # Pi writes the log directly rather than through a pipe, so its pid
+  # stays killable; the progress view tails that file and stops with it.
+  : > "$log"
   limactl shell "$INSTANCE" -- bash -lc '
     cd ~/'"$WORKDIR"' || exit 1
     exec pi -p --mode json --session-id "$1" --provider "$2" --model "$3" -- "$4"
-  ' _ "$SESSION_ID" "$PROVIDER" "$MODEL" "$prompt" 2>&1 \
-  | tee "$log" | pi_progress
+  ' _ "$SESSION_ID" "$PROVIDER" "$MODEL" "$prompt" > "$log" 2>&1 &
+  local pid=$!
 
-  local rc=${PIPESTATUS[0]}
-  if [ "$rc" -eq 124 ]; then
-    say "turn exceeded ${PI_TIMEOUT:-15m} and was killed"
-    NO_WORK=1
-  fi
+  tail -f -n +1 --pid="$pid" "$log" | pi_progress &
+  local viewer=$!
+
+  local quiet=0
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 10
+    quiet=$(( $(date +%s) - $(stat -c %Y "$log" 2>/dev/null || date +%s) ))
+    [ "$quiet" -lt "$PI_SILENCE" ] && continue
+    say "no output for ${quiet}s -- killing a turn that has stopped working"
+    kill "$pid" 2>/dev/null || true
+    break
+  done
+
+  wait "$pid" 2>/dev/null; local rc=$?
+  wait "$viewer" 2>/dev/null
   ln -sfn "$(basename "$log")" "$LAST"
   say "transcript: ${log#"$REPO"/}  ($(wc -l <"$log" | tr -d ' ') events)"
 
