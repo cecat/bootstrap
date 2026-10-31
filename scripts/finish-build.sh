@@ -57,7 +57,11 @@ if [ "$PHASE_NOW" = "bootstrap" ]; then
   # single most confusing moment of its run, and said the emphatic prose
   # would have won over the check had it not read the full output.
   IDEM_OUT="$(AGENTS_VM="$INSTANCE" ./verify/verify.sh --idempotence 2>&1)" || true
-  printf '%s\n' "$IDEM_OUT"
+  # Only the idempotence result, never this pass's tally. It is a different
+  # run against a different egress phase, and printing its "N passed, M
+  # failed" above the real one put three disagreeing verdicts on one screen.
+  grep -E '^ +(PASS|FAIL|SKIP) +setup\.sh is idempotent' -A1 <<<"$IDEM_OUT" \
+    || printf '  (idempotence check produced no result)\n'
   if grep -qE '^ +FAIL +setup\.sh is idempotent' <<<"$IDEM_OUT"; then
     IDEM_RC=1
     warn "idempotence failed (above). Pi's setup.sh changes state on a second
@@ -103,6 +107,9 @@ cat <<EOF
   Still worth checking:
 
       ./verify/verify.sh --reboot        policy and gateways come back
+
+  Nothing automated covers the agents' own web access: message each bot and
+  ask it to fetch a page. Every other check has passed while that failed.
 
   Talk to the agents:
 

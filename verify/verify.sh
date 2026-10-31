@@ -298,12 +298,23 @@ if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
   # the last *connect* -- otherwise one historical success reports
   # "connected" forever, including while the adapter is failing to
   # reconnect. A drop it never recovers from is what this catches.
-  jr="$(g 'journalctl --user -u hermes-gateway.service --no-pager _SYSTEMD_INVOCATION_ID="$(systemctl --user show -p InvocationID --value hermes-gateway.service)" 2>/dev/null | grep -iE "\[Telegram\] Connected|No adapter available for telegram|adapter creation failed|Telegram network error|Conflict: terminated" | tail -1')"
+  #
+  # A long-poll drops and reconnects routinely, so a lone network error is
+  # only a failure if it persists: re-read after a pause and judge the
+  # second sample. Without that this check flapped PASS/FAIL/SKIP between
+  # runs minutes apart and failed whole builds over a transient.
+  adapter_event() {
+    g 'journalctl --user -u hermes-gateway.service --no-pager _SYSTEMD_INVOCATION_ID="$(systemctl --user show -p InvocationID --value hermes-gateway.service)" 2>/dev/null | grep -iE "\[Telegram\] Connected|No adapter available for telegram|adapter creation failed|Telegram network error|Conflict: terminated" | tail -1'
+  }
+  jr="$(adapter_event)"
+  case "$jr" in
+    *"network error"*) sleep 20; jr="$(adapter_event)" ;;
+  esac
   case "$jr" in
     *"Connected to Telegram"*) pass "Hermes Telegram adapter" "connected (polling), this service start" ;;
     "")                        skip "Hermes Telegram adapter" "no adapter activity since the service started" ;;
     *"Conflict: terminated"*)  skip "Hermes Telegram adapter" "another getUpdates consumer took the poll -- usually check-telegram-polling.sh running; the adapter reconnects on its own" ;;
-    *"network error"*)         fail "Hermes Telegram adapter" "$(printf '%s' "$jr" | sed 's/.*: //') -- connected earlier but dropped; it is not polling now" ;;
+    *"network error"*)         fail "Hermes Telegram adapter" "$(printf '%s' "$jr" | sed 's/.*: //') -- still down 20s later, so it is not reconnecting on its own" ;;
     *)                         fail "Hermes Telegram adapter" "$(printf '%s' "$jr" | sed 's/.*: //') -- check: hermes plugins enable telegram-platform, and that pypi was reachable when it first started" ;;
   esac
 else
