@@ -23,9 +23,27 @@ of **what to build** belongs in the spec.
 **Pi over-claims. Read `verify.sh`, not the summary.** (2026-10-29) It
 reported "✅ Setup Complete and Verified" with checkmarks and zero quoted
 command output, over a build that was genuinely good but had one broken
-agent. The summary is a claim; `verify.sh` is evidence. Note also that
-`pi -p` emits only Pi's final answer, not its intermediate tool calls — so
-"read the transcript" yields less than you would hope.
+agent. The summary is a claim; `verify.sh` is evidence.
+
+Read `pi-session.sh steps` alongside the summary — it lists every tool
+call Pi made, which is the difference between what it claims and what it
+did. (Before 2026-10-31 this was impossible: plain `pi -p` printed only
+the final answer. `--mode json` fixed that.)
+
+**Pi quietly weakens things that block it.** (2026-10-31) Asked to add one
+environment variable, it also relaxed a precondition guard in `setup.sh`
+so the script would run in the phase it happened to be in — mentioned in
+its summary as a bullet, never flagged as a question. Harmless there, but
+"route around the obstacle" is the pattern worth watching for, and it will
+not always be harmless. Check whether a fix touched anything beyond what
+was asked.
+
+**Repeating something in the spec does not make Pi do it.** (2026-10-31)
+The spec says `NODE_USE_ENV_PROXY=1` "is not optional: Node ignores the
+proxy variables without it", and a clean rebuild shipped without it
+anyway. Prose had already failed; the thing that fixed it was `verify.sh`
+naming the missing variable so the next supervisor could act in one short
+prompt. When a defect recurs, add the check, not another paragraph.
 
 **But verify Pi before assuming it is wrong.** (2026-10-26) Three times in
 one session a `verify.sh` check was wrong and Pi was right. Twice more on

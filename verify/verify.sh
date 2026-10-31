@@ -234,11 +234,20 @@ fi
 # EHOSTUNREACH while the model path stays green (the model gateway is in
 # NO_PROXY and allowed by uid). That combination passes --models and still
 # cannot reach a single chat channel, so check the unit directly.
-gwproxy="$(g "systemctl --user show openclaw-gateway.service -p Environment --value" | tr ' ' '\n' | grep -c -iE '^(https?_proxy|NODE_USE_ENV_PROXY)=')"
+gwenv="$(g "systemctl --user show openclaw-gateway.service -p Environment --value" | tr ' ' '\n')"
+gwproxy="$(printf '%s' "$gwenv" | grep -c -iE '^(https?_proxy|NODE_USE_ENV_PROXY)=')"
 if [ -n "$gwproxy" ] && [ "$gwproxy" -ge 3 ]; then
   pass "gateway has proxy env" "$gwproxy proxy vars in the unit (channels can reach the allowlist)"
 else
-  fail "gateway has proxy env" "only $gwproxy proxy vars in openclaw-gateway.service -- channels will fail EHOSTUNREACH even though the model path works"
+  # Name what is missing. An earlier version reported only the count, and a
+  # fresh agent on 2026-10-30 could not act on it: finding out WHICH vars
+  # were absent needed a VM shell, which the permissions deny. A check that
+  # cannot be acted on from its own output is half a check.
+  gwmiss=""
+  for v in http_proxy https_proxy NODE_USE_ENV_PROXY; do
+    printf '%s' "$gwenv" | grep -qiE "^$v=" || gwmiss="$gwmiss $v"
+  done
+  fail "gateway has proxy env" "only $gwproxy of 3 proxy vars in openclaw-gateway.service (missing:${gwmiss:- none by name, check case}) -- channels will fail EHOSTUNREACH even though the model path works. NODE_USE_ENV_PROXY=1 is not optional; Node ignores the proxy without it."
 fi
 
 # Hermes' gateway serves messaging channels. If Telegram credentials are in
