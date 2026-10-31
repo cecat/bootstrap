@@ -1,27 +1,24 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# Diagnostic: why do Pi and Hermes fail on a model path that curl proves good?
+# Run when an agent cannot reach the model but the gateway looks fine.
 #
 #   bash scripts/diag-stream.sh [instance]
 #
-# Settled on 2026-10-29, all PASSING from inside the VM, so do not re-litigate:
-#   * long streams (3000 tokens, 6.5s)      -- slirp/QEMU NAT is not the fault
-#   * the proxied path, NO_PROXY honoured   -- squid is not in the model path
-#   * the model id argo:claude-4.5-sonnet   -- not a model-name problem
-#   * an anonymous request, and one bearing x-api-key: $CREDENTIAL
+# It varies one thing at a time -- stream length, the proxy setting, the
+# model id, request size, which credential names resolve, and what a
+# deliberately bad credential does -- so a failure lands on a specific
+# cause instead of a theory.
 #
-# Still failing: Pi (3x, errors "ArgoAuthWarning" and "[Errno 104] Connection
-# reset by peer") and Hermes (empty after 180s). Both send a credential drawn
-# from their own config; every passing test above either sent none or sent
-# $CREDENTIAL by hand. So the suspect is now credential RESOLUTION in the
-# clients, not the network.
+# Test the agents' ACTUAL request, not a convenient approximation. Every
+# probe that bypasses the proxy or omits the credential can pass while
+# every real agent fails.
 #
-# Specifically: spec section 3 has Pi's models.json reference $ARGO_CREDENTIAL,
-# while install-config.sh exports CREDENTIAL. If the former is never exported,
-# Pi sends an unresolved or empty key -- and an auth failure is exactly what
-# ArgoAuthWarning reports.
+# Already ruled out on this host, do not re-litigate: QEMU slirp on long
+# streams, squid (not in the model path at all), the egress phase, request
+# size up to 90KB, and the model id form.
 #
-# Read-only. Prints no secret values, only lengths and whether a name resolves.
+# Read-only. Prints no secret values, only lengths and whether a name
+# resolves.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 

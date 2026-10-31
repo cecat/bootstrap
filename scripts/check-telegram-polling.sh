@@ -4,31 +4,24 @@
 #
 #   ./scripts/check-telegram-polling.sh
 #
-# "Configured but disabled" and "connected and polling" are different states,
-# and config files cannot tell them apart -- a gateway that has already opened
-# a long-poll keeps answering regardless of what a directory file says.
-#
-# Telegram settles it: only ONE getUpdates consumer is allowed per bot. If a
-# second call returns 409 Conflict, something else is holding the poll open,
-# which means the bot is live and would answer a message now.
+# "Configured but disabled" and "connected and polling" are different
+# states, and no config file can tell them apart. Telegram can: only ONE
+# getUpdates consumer is allowed per bot, so a 409 Conflict means something
+# else holds the poll and the bot would answer a message now.
 #
 # !! THIS PROBE IS NOT PASSIVE. !!
 #
-# The same rule that makes it work makes it disruptive: our getUpdates call
-# TAKES the poll from whoever held it. A live Hermes adapter logs
-# "Conflict: terminated by other getUpdates request" and drops into its
-# reconnect backoff for a few seconds. It recovers on its own, and the user
-# may see the bot miss a beat.
+# The call TAKES the poll from whoever held it. A live Hermes adapter logs
+# "Conflict: terminated by other getUpdates request" and drops into
+# reconnect backoff for a few seconds; the user may see the bot miss a
+# beat. It recovers on its own.
 #
-# So do not run this in a loop, and do not run it while someone is talking to
-# a bot. On 2026-10-28 repeated runs produced a cluster of Conflict errors in
-# the Hermes journal that were then misread as egress narrowing having broken
-# the adapter -- the diagnostic manufactured the symptom it was called to
-# investigate, and the wrong diagnosis was handed to Pi.
+# Do not run it in a loop, and not while someone is talking to a bot. Those
+# Conflict lines land in the journal and read like a broken adapter -- the
+# probe manufactures the symptom it was called to investigate.
 #
-# Reads tokens from the 0600 config file and passes them to curl on stdin,
-# never on the command line. Nothing here prints a token, and getUpdates with
-# timeout=0 consumes nothing.
+# Tokens are read from the 0600 config and passed to curl on stdin, never
+# on the command line. Nothing here prints a token.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -49,14 +42,11 @@ for var in OPENCLAW_TELEGRAM_BOT_TOKEN HERMES_TELEGRAM_BOT_TOKEN; do
     continue
   fi
 
-  # Sample several times, because the two answers are NOT symmetric. A 409
-  # proves a consumer is holding the poll open. A 200 proves only that nobody
-  # was holding it *at that instant* -- and a long-poll client reconnects in a
-  # loop, so there is a short gap between calls where a probe slips through and
-  # sees 200. On 2026-10-28 one run of this script said POLLING and the next
-  # five said idle, for a Hermes adapter that was polling the whole time.
-  # Treating a single 200 as "idle" is therefore a false pass on the one check
-  # that guards against a live bot. Any 409 in the window wins.
+  # Sample several times: the answers are not symmetric. A 409 proves a
+  # consumer holds the poll. A 200 proves only that nobody held it at that
+  # instant, and a long-poll client reconnecting in a loop leaves gaps a
+  # probe slips through -- so a single 200 is a false "idle" on the one
+  # check guarding against a live bot. Any 409 in the window wins.
   body=''
   for _ in 1 2 3 4 5 6; do
     body="$(printf 'url = "https://api.telegram.org/bot%s/getUpdates?timeout=0&limit=1"\n' "$tok" \

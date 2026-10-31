@@ -3,33 +3,32 @@
 #
 #   limactl start --name=agents lima/agents.yaml
 #
-# Host support: macOS (vz) is tested. Linux (qemu + KVM) is the intended
-# target but is UNVERIFIED -- read docs/spark-handoff.md before running this
-# on a DGX Spark or any other Linux box.
+# Host support: Linux (qemu + KVM) is verified. macOS (vz) passed an earlier
+# build and is stale -- see todo.md.
 #
-# Design notes:
-#   * No mounts at all. The guest cannot see the host filesystem. Config is
-#     pushed in afterwards with `limactl copy` (scripts/install-config.sh).
-#   * User-mode NAT networking only. No host port forwards are declared, so
-#     nothing in the guest is reachable from the host or the LAN.
-#   * Egress for the agent user is forced through a loopback squid proxy that
-#     allowlists destinations by domain. Enforcement is an iptables OUTPUT
-#     rule matched on the agent user's uid -- see /usr/local/sbin/agent-egress.
-#   * Provision scripts run on every boot, so all of them are idempotent.
+# The isolation, all of it:
+#   * No mounts. The guest cannot see the host filesystem. Config is pushed
+#     in afterwards with `limactl copy` (scripts/install-config.sh).
+#   * User-mode NAT only, no host port forwards: nothing in the guest is
+#     reachable from the host or the LAN.
+#   * Agent-user egress goes through a loopback squid proxy, enforced by an
+#     iptables OUTPUT rule matched on uid -- /usr/local/sbin/agent-egress.
 #
-# This file installs the *substrate* only: Node, Python, Tailscale, squid and
-# Pi. Pi then builds the agents from spec/pi-target-state.md.
+# Provision scripts re-run on every boot, so every one of them must be
+# idempotent.
+#
+# Substrate only: Node, Python, Tailscale, squid, Pi. Pi then builds the
+# agents from spec/pi-target-state.md.
+#
+# Editing this file does NOT change an existing VM. Lima froze a copy at
+# creation and re-reads that; use ./bootstrap.sh --rebuild.
 # ===========================================================================
 
 minimumLimaVersion: "1.0.0"
 
-# vmType is deliberately NOT set. Lima picks the right backend per host:
-#   macOS -> vz    (Apple Virtualization.framework)
-#   Linux -> qemu  (with KVM acceleration; see docs/spark-handoff.md)
-# Pinning "vz" would make this file macOS-only.
+# Do not set vmType or arch. Both follow the host, which is what keeps one
+# file working on an arm64 Mac, an arm64 Spark and an x86_64 Linux box.
 os: "Linux"
-# arch is deliberately NOT set either: it follows the host, so the same file
-# works on an arm64 Mac, an arm64 DGX Spark and an x86_64 Linux box.
 
 images:
   - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
@@ -72,12 +71,10 @@ provision:
 
       mkdir -p /etc/agent-sandbox
       # Remember which account the agents run as; the egress rules key off it.
-      #
-      # Do NOT infer this from the uid range. Lima gives the guest user the
-      # HOST's uid -- 502 on macOS -- so the usual ">= 1000" test matches
-      # nothing, and the next-best guess picks up a systemd system account.
-      # Getting this wrong applies the egress lockdown to the wrong uid, which
-      # fails silently and leaves the agents unconfined. Fail loudly instead.
+      # Do NOT infer it from a uid range -- Lima gives the guest the HOST's
+      # uid (502 on macOS), so ">= 1000" matches nothing and the next guess
+      # picks a system account. A wrong uid here disables the sandbox
+      # silently, so fail loudly instead.
       if [ ! -s /etc/agent-sandbox/agent-user ]; then
         # {{.User}} is Lima's own template variable for the guest user.
         agent_user='{{.User}}'
@@ -110,22 +107,18 @@ provision:
       node --version
 
   # -------------------------------------------------------------------------
-  # 2. Tailscale -- installed, deliberately NOT logged in.
-  #    Needed later to reach the DGX Spark's vLLM endpoint. UNVERIFIED: the
-  #    tailnet was unreachable when this repo was written. See docs/failover.md.
+  # 2. Tailscale -- installed, deliberately NOT logged in. Only needed for
+  #    the vLLM fallback, which is itself unverified (docs/failover.md).
   # -------------------------------------------------------------------------
   - mode: system
     script: |
       #!/bin/bash
-      set -uo pipefail   # deliberately not -e: Tailscale is best-effort.
+      # Not -e: Tailscale is best-effort. Some networks block tailscale.com
+      # outright, and that must not take the whole VM down with it.
+      set -uo pipefail
       #
-      # Tailscale only matters for reaching the Spark's vLLM fallback, which is
-      # already marked unverified. Some networks block tailscale.com outright
-      # (observed: SSL_ERROR_SYSCALL on the ANL network), and that must not
-      # take the whole VM down with it.
-      #
-      # Download then execute -- never pipe an installer into a shell. The same
-      # rule is imposed on Pi in spec/pi-target-state.md.
+      # Download then execute -- never pipe an installer into a shell. Pi is
+      # held to the same rule in spec/pi-target-state.md.
       SKIPMARK=/etc/agent-sandbox/tailscale-skipped
       rm -f "$SKIPMARK"
       if command -v tailscale >/dev/null 2>&1; then
@@ -219,11 +212,10 @@ provision:
         iptables -A "$CHAIN" -p udp --dport 53 -j ACCEPT
         iptables -A "$CHAIN" -p tcp --dport 53 -j ACCEPT
 
-        # The model gateway, when one is configured outside loopback. Off-site
-        # this is the host side of an SSH tunnel to an argo-proxy on an ANL
-        # machine, reached via Lima's host gateway. It bypasses squid because
-        # it is a single fixed host:port, not open egress -- squid would add
-        # nothing but a second hop. Written by scripts/install-config.sh.
+        # The model gateway, when one is configured outside loopback. It
+        # bypasses squid deliberately: a single fixed host:port is not open
+        # egress, and squid would add only a second hop. Written by
+        # scripts/install-config.sh.
         if [ -s /etc/agent-sandbox/model-gateway ]; then
           gw="$(cat /etc/agent-sandbox/model-gateway)"
           gw_host="${gw%%:*}"; gw_port="${gw##*:}"
@@ -247,10 +239,9 @@ provision:
         local src="$LISTS/allowlist-$phase.conf"
         [ -f "$src" ] || { echo "missing allowlist: $src" >&2; exit 1; }
 
-        # Validate BEFORE touching the running proxy. A rejected allowlist
-        # makes squid refuse to start, which would leave the agents with no
-        # proxy at all -- the opposite of what this command is for. Keep the
-        # previous list and restore it if the new one does not parse.
+        # Validate BEFORE touching the running proxy: a rejected allowlist
+        # makes squid refuse to start, leaving the agents with no proxy at
+        # all. Restore the previous list if the new one does not parse.
         cp -f "$ACTIVE" "$ACTIVE.prev" 2>/dev/null || true
         install -m 0644 "$src" "$ACTIVE"
         if ! squid -k parse >/tmp/squid-parse.log 2>&1; then
@@ -307,15 +298,11 @@ provision:
       systemctl daemon-reload
       systemctl enable agent-egress.service
 
-      # squid must not come up before an allowlist exists -- but ONLY on the
-      # first provision. Lima re-runs this script on every boot, after
-      # agent-egress.service has already applied the phase and started squid,
-      # so an unconditional disable stops the proxy a few seconds into every
-      # reboot. The symptom is subtle: iptables still blocks everything, so
-      # the sandbox stays fail-closed and `--reboot` reports a non-allowed
-      # domain as 000 (no connection) instead of squid's 403 -- while every
-      # ALLOWED destination is broken too. Once a phase exists, egress policy
-      # belongs to agent-egress.service; leave it alone.
+      # Only on the FIRST provision, and the condition is load-bearing.
+      # Lima re-runs this script on every boot, after agent-egress.service
+      # has already started squid, so an unconditional disable kills the
+      # proxy seconds into every reboot. Once a phase exists, egress policy
+      # belongs to agent-egress.service.
       if [ ! -f /etc/agent-sandbox/phase ]; then
         systemctl disable --now squid >/dev/null 2>&1 || true
       fi
@@ -343,10 +330,10 @@ provision:
           echo 'export https_proxy=http://127.0.0.1:3128'
           echo 'export NO_PROXY=127.0.0.1,localhost,192.168.5.2,host.lima.internal,spark-ts'
           echo 'export no_proxy=127.0.0.1,localhost,192.168.5.2,host.lima.internal,spark-ts'
-          echo '# Node ignores HTTP_PROXY by default -- its fetch/undici stack'
-          echo '# needs this or every request dies EHOSTUNREACH against the'
-          echo '# egress lockdown. Pi and OpenClaw are Node apps. Experimental'
-          echo '# in Node 22 (UNDICI-EHPA warning), stable in 24+.'
+          echo '# Node ignores HTTP_PROXY without this; every request then'
+          echo '# dies EHOSTUNREACH against the lockdown. Pi and OpenClaw'
+          echo '# are Node apps. The UNDICI-EHPA warning it prints on 22 is'
+          echo '# expected.'
           echo 'export NODE_USE_ENV_PROXY=1'
         } >> "$HOME/.profile"
       fi
@@ -403,8 +390,8 @@ message: |
   VM is up. Nothing is locked down yet and no agents exist.
 
   Next:
-    1. ./scripts/install-config.sh      push config, start argo-proxy, lock egress down
-    2. ./scripts/run-bootstrap.sh       hand spec/pi-target-state.md to Pi
+    1. ./scripts/install-config.sh      push config, lock egress down
+    2. ./scripts/pi-session.sh build    hand spec/pi-target-state.md to Pi
     3. ./verify/verify.sh               check the result
 
   Shell in with:  limactl shell {{.Name}}

@@ -4,10 +4,8 @@
 #
 #   ./scripts/install-config.sh [instance]      (default instance: agents)
 #
-# No model gateway is installed in the VM. The host already has a working path
-# to models -- on site that is Argo directly, off site an SSH tunnel to an
-# argo-proxy on an ANL machine. Detection recorded which, and the VM reaches
-# it through Lima's host gateway.
+# No model gateway runs in the VM. The host has one; detection recorded
+# where, and the VM reaches it through Lima's host gateway.
 #
 # The VM has no mounts, so everything crosses via `limactl copy` over SSH.
 # Idempotent: safe to re-run after editing anything in config/.
@@ -48,11 +46,10 @@ Bring up your SSH tunnel first (the one behind 'claude-argo-home'), then re-run.
 fi
 
 # --- 2. Generate what is derivable ----------------------------------------
-# The live allowlists are gitignored copies of the committed templates. Seed
-# them when absent -- but if a local copy has drifted from its template, say
-# so rather than silently using the stale one. An edit made to the template
-# after the copy exists would otherwise never take effect, and an edit made
-# only to the copy would vanish on a fresh clone. Both have happened.
+# The live allowlists are gitignored copies of the committed templates.
+# Seed when absent, and report drift rather than silently using a stale
+# copy: edits to the template would otherwise never take effect, and edits
+# to only the copy would vanish on a fresh clone.
 for phase in bootstrap runtime; do
   live="$CFG/allowlist-$phase.conf"
   tmpl="$live.example"
@@ -114,11 +111,10 @@ limactl shell "$INSTANCE" -- bash -eo pipefail -c '
 
   # Export the credentials that the SecretRefs above resolve against.
   #
-  # Delimited and rewritten in place rather than appended-once. The previous
-  # form guarded on "is ARGO_CREDENTIAL already present", which meant any
-  # later addition to this block -- a new channel token, say -- silently
-  # never reached a VM that had already been provisioned. Upgrades matter:
-  # install-config.sh is re-run whenever config changes.
+  # Delimited and rewritten in place, never appended-once. A guard like
+  # "is ARGO_CREDENTIAL already present" means later additions to this
+  # block never reach a VM that was already provisioned, and this script
+  # is re-run whenever config changes.
   PROFILE_BEGIN="# >>> agent-sandbox env >>>"
   PROFILE_END="# <<< agent-sandbox env <<<"
   touch "$HOME/.profile"

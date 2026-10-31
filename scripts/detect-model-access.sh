@@ -77,18 +77,14 @@ if [ -n "$SETTINGS_SRC" ]; then
 fi
 
 # --- 3. Loopback endpoints are a host gateway, not an error ----------------
-# Off-site, the working model path is an SSH tunnel on the host to an
-# argo-proxy running on an ANL machine (see `claude-argo-home`). The VM cannot
-# reach the host's 127.0.0.1, but it CAN reach the host through Lima's
-# user-mode networking gateway. So a loopback endpoint is recorded as a
-# gateway to bridge, not rejected.
+# The VM cannot reach the host's 127.0.0.1 but can reach the host through
+# Lima's user-mode gateway, so a loopback endpoint is a gateway to bridge,
+# not an error.
 #
-# ASK THE GUEST rather than hardcode the address. 192.168.5.2 is Lima's
-# user-mode gateway and has held under both vz and QEMU slirp so far -- but
-# it is a property of the running VM, not a constant, and a wrong value here
-# is invisible until Pi fails deep in a build with an unrelated-looking
-# error. The guest's default route is the authority; the constant is only a
-# fallback for when no VM exists yet.
+# ASK THE GUEST rather than hardcode the address. 192.168.5.2 is a property
+# of the running VM, not a constant, and a wrong value stays invisible
+# until Pi fails deep in a build with an unrelated-looking error. The
+# constant is only a fallback for when no VM exists yet.
 BASE_HOST="$(printf '%s' "$BASE_URL" | sed -E 's|^[a-z]+://||; s|[:/].*$||')"
 BASE_PORT="$(printf '%s' "$BASE_URL" | sed -nE 's|^[a-z]+://[^:/]+:([0-9]+).*|\1|p')"
 

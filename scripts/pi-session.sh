@@ -54,27 +54,18 @@ pi_attempt() {
   log="$LOGDIR/pi-$stamp.log"
   NO_WORK=0
 
-  # --mode json, not plain -p. Pi emits one JSON event per line AS IT WORKS:
-  # turn_start, tool_execution_start with the actual command, tool results,
-  # errors. Plain -p prints nothing until the final summary, which made a
-  # healthy build and a hung one look identical from outside -- a 4m12s
-  # build sat at 0 bytes for 4m11s. Two whole sessions went into theories
-  # about that silence before anyone ran `pi --help`.
+  # --mode json, never plain -p: Pi emits one event per line as it works,
+  # where -p prints nothing until the final summary and leaves a healthy
+  # turn indistinguishable from a hung one. Raw events to the log, the
+  # interesting ones to the terminal.
   #
-  # The raw stream goes to the log; the terminal gets the interesting lines.
-  # Single-quoted guest command with the prompt as a positional argument,
-  # never interpolated: a prompt containing a quote would otherwise run as
-  # shell on the guest.
+  # The guest command is single-quoted with the prompt as a positional
+  # argument. Do not interpolate it -- a prompt containing a quote would
+  # run as shell on the guest.
   #
-  # The deadline is a crude backstop, nothing cleverer. It was once argued
-  # for at length on the grounds that a wall clock was the ONLY option,
-  # because a buffered Pi made a working turn and a hung one look alike.
-  # That argument died with --mode json: the log now grows continuously, so
-  # silence genuinely means stalled and a silence-based watchdog would
-  # work. It is deliberately not built. Four hangs is a thin basis for more
-  # machinery, the event log will show exactly where the next one stops,
-  # and 15m plus the retry below already recovers without a human. Revisit
-  # if the logs show hangs recurring -- not before.
+  # The deadline is a crude backstop. A silence-based watchdog would now
+  # work, since the log grows continuously, but 15m plus the retry below
+  # already recovers unattended. Build one only if hangs recur.
   timeout "${PI_TIMEOUT:-15m}" \
   limactl shell "$INSTANCE" -- bash -lc '
     cd ~/'"$WORKDIR"' || exit 1
@@ -90,19 +81,17 @@ pi_attempt() {
   ln -sfn "$(basename "$log")" "$LAST"
   say "transcript: ${log#"$REPO"/}  ($(wc -l <"$log" | tr -d ' ') events)"
 
-  # Did Pi do anything, or just fail to start? With json this is a question
-  # about events rather than bytes: a turn that ran tools produced work,
-  # whatever happened afterwards. Only a turn that never got going is worth
-  # retrying -- repeating one that acted would double its side effects.
+  # Did Pi do anything, or just fail to start? Only a turn that reached no
+  # tool call is worth retrying; repeating one that acted would double its
+  # side effects.
   if [ "$rc" -ne 0 ] && ! grep -q '"type":"tool_execution_start"' "$log" 2>/dev/null; then
     NO_WORK=1
   fi
   return "$rc"
 }
 
-# Turn the event stream into something a human can watch. Everything is kept
-# in the log; this is the filter, not the record. Without jq (not guaranteed
-# on the host) the matching stays deliberately crude.
+# A watchable view of the event stream. The log is the record; this is
+# only the filter, so the matching stays crude rather than requiring jq.
 pi_progress() {
   local t0=$SECONDS
   while IFS= read -r line; do
@@ -122,15 +111,14 @@ pi_progress() {
   done
 }
 
-# Pi's closing summary, pulled out of the json log. `transcript` shows the
-# events; this shows what Pi claims it did -- which is the thing to read
-# sceptically against verify.sh.
+# Pi's closing summary -- what it CLAIMS it did, to be read against
+# verify.sh rather than trusted.
 pi_summary() {
   local log="$1" last
   last="$(grep '"type":"turn_end"' "$log" 2>/dev/null | tail -1)"
   [ -n "$last" ] || { echo "(no turn_end in the log -- the turn did not finish)"; return; }
-  # python, not sed: the text is JSON-escaped and may contain braces,
-  # quotes and newlines. A sed version shipped a stray closing brace.
+  # python, not sed: the text is JSON-escaped and contains braces, quotes
+  # and newlines that a sed version gets wrong.
   printf '%s' "$last" | python3 -c '
 import json, sys
 try:
@@ -143,17 +131,14 @@ for block in msg.get("content", []):
 '
 }
 
-# Retry a turn that produced no work at all. These are transient often enough
-# that a supervisor re-running by hand was the single biggest time sink on
-# 2026-10-29: three consecutive no-work failures sent a session chasing slirp,
-# squid and credential-resolution theories, and the next attempt worked with
-# nothing changed. It earned its place on the next rebuild, killing a real
-# hang unattended; attempt 2 then built the entire target state in 4m12s.
+# Retry a turn that produced no work at all. These are transient often
+# enough that re-running by hand was the biggest time sink in this repo's
+# history -- three in a row once sent a session chasing network theories,
+# and the next attempt worked with nothing changed.
 #
-# Only no-work failures retry. A turn where Pi actually did something and then
-# failed is a real result -- repeating it would double the side effects of a
-# script that may not be idempotent yet, which is exactly what we are asking
-# Pi to prove.
+# Only no-work failures retry. A turn that did something and then failed
+# is a real result; repeating it would double the side effects of a script
+# whose idempotence is the thing being tested.
 PI_MAX_TRIES="${PI_MAX_TRIES:-5}"
 pi_turn() {
   local prompt="$1" rc=0 try=1
@@ -210,14 +195,10 @@ scripts/install-config.sh first."
   say)
     [ $# -ge 2 ] || fail "usage: $0 say \"<message>\""
     shift
-    # Re-copy the spec every turn. The supervision loop is "Pi gets it wrong
-    # -> fix spec/pi-target-state.md -> push back", so by the time you run
-    # `say` the host spec has usually changed. Until 2026-10-28 only `build`
-    # copied it, leaving Pi reading the version it was first given: a message
-    # saying "re-read rule 2, it has changed" pointed at a file where it had
-    # not. Pi noticed and asked rather than guessing, which is the only
-    # reason this was caught instead of producing a build against a spec
-    # nobody had.
+    # Re-copy the spec every turn. The supervision loop edits the spec and
+    # then pushes back, so by the time `say` runs the host copy has usually
+    # changed -- and a message like "re-read rule 2" must not point at the
+    # version Pi was first given.
     if [ -f "$REPO/spec/pi-target-state.md" ]; then
       limactl copy "$REPO/spec/pi-target-state.md" "$INSTANCE:$WORKDIR/AGENTS.md" \
         || fail "could not refresh the spec in the VM."
@@ -232,9 +213,8 @@ scripts/install-config.sh first."
     pi_summary "$LOGDIR/$(readlink "$LAST")"
     ;;
 
-  # What Pi DID -- every tool call in order, with timings. The answer to
-  # "where did it actually go wrong", and the thing plain -p could never
-  # show: its output was one final blob with the work invisible.
+  # What Pi DID -- every tool call in order. Read this against `summary`
+  # when a claim looks thin.
   steps)
     [ -e "$LAST" ] || fail "no Pi run yet."
     grep '"type":"tool_execution_start"' "$LOGDIR/$(readlink "$LAST")" 2>/dev/null \
