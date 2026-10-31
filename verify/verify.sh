@@ -608,10 +608,12 @@ else
     fi
     # iptables rules are not persistent on their own; agent-egress.service
     # re-applies them. A reboot that comes back unlocked is the worst case,
-    # because everything else still looks healthy.
-    rcode="$(g 'curl -sS -m 15 -o /dev/null -w "%{http_code}" --proxy http://127.0.0.1:3128 http://example.com/ 2>/dev/null')"
-    [ "$rcode" = "403" ] && pass "egress still enforced after reboot" "example.com -> 403" \
-                         || fail "egress still enforced after reboot" "example.com -> ${rcode:-000}, expected 403"
+    # because everything else still looks healthy. Test the boundary that
+    # exists -- the private network -- not the public web, which the agents
+    # are meant to reach.
+    rcode="$(g 'curl -sS -m 15 -o /dev/null -w "%{http_code}" --proxy http://127.0.0.1:3128 http://169.254.169.254/ 2>/dev/null')"
+    [ "$rcode" = "403" ] && pass "egress still enforced after reboot" "link-local -> 403" \
+                         || fail "egress still enforced after reboot" "link-local -> ${rcode:-000}, expected squid's 403"
   fi
 fi
 
