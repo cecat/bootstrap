@@ -202,16 +202,16 @@ todo.md                 what is unfinished
 
 Verified end to end on **Linux arm64** (DGX Spark, Lima with QEMU+KVM): the
 VM and every generated config deleted, then rebuilt from nothing. Pi
-installed both agents from the committed spec unaided and
-`verify/verify.sh --models` passed, including the egress block confirmed at
-both layers and both agents answering real completions over Telegram.
+installed both agents from the committed spec with no supervisor
+intervention, and `verify.sh --models --reboot` passed 38 checks — egress
+blocked at both layers, both agents completing, and policy intact across a
+reboot. Both bots were then messaged by hand and fetched a web page.
 
 First built on **macOS arm64** (Lima with Apple's Virtualization.framework),
 where it passed an earlier, smaller suite.
 
 Known gaps, with detail in `todo.md`: the macOS run is stale; only Argo is
-implemented as a model provider; the vLLM fallback is unverified; and the
-squid-after-reboot fix is written but unproven.
+implemented as a model provider; and the vLLM fallback is unverified.
 
 ## Credit
 

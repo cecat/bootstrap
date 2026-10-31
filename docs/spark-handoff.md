@@ -36,10 +36,9 @@ a precondition the two earlier runs had masked, because the spec told it to
 curl `UPSTREAM_BASE_URL` — the *host's* `127.0.0.1:<port>` — which from inside
 the VM is nothing. Use `VM_BASE_URL`.
 
-What is still unproven on Linux: `--reboot` persistence, and a Telegram
-channel actually carrying a message after being enabled (they are configured
-and deliberately left disabled). The traps that cost time are in sections 1
-and 5 below — read them.
+Both have since been proven: `--reboot` persistence passes, and both bots
+answer on Telegram, restricted to one user id. The traps that cost time are
+in sections 1 and 5 below — read them.
 
 ---
 
