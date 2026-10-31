@@ -6,8 +6,8 @@ Code looks for `CLAUDE.md`. Same content either way.)*
 
 ## What this is
 
-A Lima VM that cannot see the host filesystem and cannot reach the internet
-except through a domain allowlist. Inside it live an OpenClaw agent and a
+A Lima VM that cannot see the host filesystem and cannot reach the host or
+its local network. Inside it live an OpenClaw agent and a
 Hermes agent, reaching the same models you are using right now — installed
 not by you but by **Pi**, a coding agent running *inside* the VM, working
 from `spec/pi-target-state.md`.
@@ -80,10 +80,10 @@ scripts hand you a VM shell; that is deliberate.
 
 **Never let a bot be reachable without an allowlist.** Not the same as
 "never enable a channel" — a reachable agent is a success measure. But a
-live agent has shell access and no permission prompts, and
-`api.telegram.org` is allowlisted in both phases, so a stranger who reaches
-it can read `agents.env` and send the credentials back out the same way. The
-allowlist is the control; silence is not.
+live agent has shell access and no permission prompts, and the agents can
+reach the public web, so a stranger who gets to one can read `agents.env`
+and send the credentials straight out. Who may *message* the bot is the
+control; silence is not.
 
 **Never write a token into a config file or echo one into a chat.** Use env
 SecretRefs; `verify.sh` asserts `plaintext=0, unresolved=0`.
@@ -126,7 +126,7 @@ and give them one short line. If a denial stops you, say so and ask.
 | | |
 |---|---|
 | `bootstrap.sh` | preflight, detect model access, start the VM, push config, lock egress. Stops before Pi. |
-| `lima/agents.yaml` | the VM and the sandbox: squid allowlist, uid-scoped iptables, `agent-egress`. |
+| `lima/agents.yaml` | the VM and the sandbox: squid, uid-scoped iptables, `agent-egress`. |
 | `spec/pi-target-state.md` | what Pi builds. Keep it short — it is a prompt, and length costs. |
 | `scripts/pi-session.sh` | drive Pi headlessly. Retries transients, times out hangs. |
 | `scripts/finish-build.sh` | idempotence (needs the bootstrap allowlist), narrow egress, verify. |

@@ -157,21 +157,36 @@ provision:
       install -d -m 0755 /etc/agent-sandbox/allowlists
 
       cat > /etc/squid/squid.conf <<'SQUID'
-      # Allowlisting forward proxy for the sandboxed agents.
-      # No TLS interception: HTTPS is allowlisted on the CONNECT hostname.
+      # Forward proxy for the sandboxed agents. No TLS interception.
+      #
+      # The agents are allowed the public web: an agent limited to its
+      # training data cannot answer a question about today. What they are
+      # NOT allowed is the private network around them -- the host, its
+      # other services, the LAN -- which is the direction in which an agent
+      # could damage its own infrastructure.
+      #
+      # allowlist.active still exists and is still consulted. It now names
+      # destinations reachable on OTHER ports (see Safe_ports below), and
+      # anything a future phase wants to permit explicitly.
       http_port 127.0.0.1:3128
 
       acl allowed_domains dstdomain "/etc/agent-sandbox/allowlist.active"
       acl SSL_ports  port 443
       acl Safe_ports port 80
       acl Safe_ports port 443
-      acl Safe_ports port 8000      # vLLM on the Spark
+      acl Safe_ports port 8000      # vLLM fallback over Tailscale
       acl CONNECT method CONNECT
 
+      # The private ranges, plus this machine. Denied first, so no later
+      # allow rule can reach them.
+      acl private dst 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16
+      acl private dst 127.0.0.0/8 ::1 fc00::/7 fe80::/10
+
+      http_access deny private
       http_access deny !Safe_ports
       http_access deny CONNECT !SSL_ports
       http_access allow allowed_domains
-      http_access deny all
+      http_access allow all
 
       # A proxy, not a cache.
       cache deny all

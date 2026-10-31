@@ -11,7 +11,8 @@
 # Rules for anything added here:
 #
 #   * Assert the negative. A check that only exercises the allowed path
-#     proves nothing about the boundary.
+#     proves nothing about the boundary. The boundary here is the private
+#     network, not the internet: agents are meant to browse the web.
 #   * Only a completion proves the model path. /health and /v1/models
 #     answer 200 from local state with a dead upstream.
 #   * Negative egress tests use PLAIN HTTP. Over HTTPS a refusal reports
@@ -157,21 +158,44 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-section "Egress enforcement (the part that actually proves something)"
+section "Egress enforcement: public web yes, private network no"
 
-# 1. Through the proxy, to a destination NOT on the allowlist. A 403 is
-#    self-validating -- only squid can send it, so it proves squid is both
-#    reachable and denying. A connection error means squid is down instead.
-code="$(g 'curl -sS -m 15 -o /dev/null -w "%{http_code}" --proxy http://127.0.0.1:3128 http://example.com/ 2>/dev/null')"
+# 1. The public web is REACHABLE. An agent limited to its training data
+#    cannot answer a question about today, so this is a feature test: the
+#    boundary is the private network, not the internet.
+code="$(g 'curl -sS -m 20 -o /dev/null -w "%{http_code}" --proxy http://127.0.0.1:3128 http://example.com/ 2>/dev/null')"
 case "$code" in
-  403) pass "non-allowed domain is DENIED by squid" "http://example.com -> 403" ;;
-  200) fail "non-allowed domain is DENIED by squid" "got 200 -- example.com is reachable. The allowlist is not being enforced." ;;
-  *)   fail "non-allowed domain is DENIED by squid" "got '${code:-no response}', expected 403. Is squid listening on 127.0.0.1:3128?" ;;
+  200|30*) pass "public web is reachable through squid" "http://example.com -> $code" ;;
+  403)     fail "public web is reachable through squid" "squid returned 403 -- it is still running an allowlist-only policy. The agents cannot browse." ;;
+  *)       fail "public web is reachable through squid" "got '${code:-no response}'. Is squid listening on 127.0.0.1:3128?" ;;
 esac
 
-# 2. Around the proxy entirely; the iptables chain rejects it. The reject
-#    is icmp-admin-prohibited, so this fails fast -- a timeout instead of
-#    an immediate refusal means something else is wrong.
+# 2. The private network is DENIED. This is the boundary that matters: the
+#    threat is an agent harming the host it depends on, not an agent
+#    reading the news. 403 is self-validating -- only squid sends it.
+#
+#    Hits the host's own gateway address, which is the most consequential
+#    thing in reach and the one a confused agent is most likely to find.
+hostip="$(g 'ip route show default 2>/dev/null' | sed -nE 's/^default via ([0-9.]+).*/\1/p' | head -1)"
+if [ -n "$hostip" ]; then
+  pcode="$(g "curl -sS -m 15 -o /dev/null -w '%{http_code}' --proxy http://127.0.0.1:3128 http://$hostip/ 2>/dev/null")"
+  case "$pcode" in
+    403)     pass "private network is DENIED by squid" "http://$hostip (the host) -> 403" ;;
+    # 000 means the connection failed before squid ruled on it -- nothing is
+    # listening there. That is not a denial, and reporting it as one would
+    # be a green light for a policy that was never exercised.
+    000|'')  skip "private network is DENIED by squid" "http://$hostip -> no response; nothing is listening, so squid never ruled on it. Inconclusive, not a pass." ;;
+    *)       fail "private network is DENIED by squid" "http://$hostip -> $pcode, expected 403. An agent can reach the host and whatever else runs on this LAN." ;;
+  esac
+else
+  skip "private network is DENIED by squid" "could not read the guest's default route"
+fi
+
+# 3. Around the proxy entirely; the iptables chain rejects it. This is what
+#    makes the proxy policy binding rather than advisory -- an agent that
+#    ignores http_proxy reaches nothing. The reject is
+#    icmp-admin-prohibited, so it fails fast; a timeout means something
+#    else is wrong.
 t0=$SECONDS
 direct="$(g 'curl -sS -m 15 -o /dev/null -w "%{http_code}" --noproxy "*" http://1.1.1.1/ 2>/dev/null')"
 dt=$((SECONDS - t0))
@@ -181,7 +205,7 @@ else
   fail "direct bypass is BLOCKED by iptables" "got HTTP $direct -- the agent can reach the internet without the proxy"
 fi
 
-# 3. The control for test 2, which would pass equally well if the VM had no
+# 4. The control for test 3, which would pass equally well if the VM had no
 #    network at all. The rule is uid-scoped, so root must SUCCEED here.
 rootdirect="$(groot 'curl -sS -m 15 -o /dev/null -w "%{http_code}" --noproxy "*" http://1.1.1.1/ 2>/dev/null')"
 if [ "$rootdirect" != "000" ] && [ -n "$rootdirect" ]; then
@@ -192,7 +216,7 @@ else
   fail "lockdown is scoped to the agent uid" "root -> ${rootdirect:-000}"
 fi
 
-# 4. Positive control: the model gateway bypasses squid by design, via one
+# 5. Positive control: the model gateway bypasses squid by design, via one
 #    narrow ACCEPT rule. It must still be reachable.
 gw="$(groot 'cat /etc/agent-sandbox/model-gateway 2>/dev/null' | tr -d '\r')"
 if [ -n "$gw" ]; then

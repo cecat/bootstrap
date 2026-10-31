@@ -17,9 +17,11 @@ summary.
 
 ## Rules
 
-1. **Never weaken the sandbox.** If an install fails because a domain is
-   blocked, report the blocked domain. Do not run `agent-egress unlock`,
-   edit iptables, or add to the allowlist.
+1. **Never weaken the sandbox.** The agents may reach the public web; what
+   the sandbox denies is the private network around them — this host, its
+   other services, the LAN — because that is where an agent could damage
+   the infrastructure it runs on. If something is blocked, report it. Do
+   not run `agent-egress unlock`, edit iptables, or edit the allowlist.
 
 2. **Never let a bot be reachable without an allowlist.** A live agent has
    shell access and no permission prompts, and Telegram delivers a
@@ -158,8 +160,8 @@ You are NAME, a personal assistant running in a sandboxed VM.
 - Say what you did, including what failed. Never claim a success you did not verify.
 - You have shell access and no permission prompts. Stop and ask before anything
   destructive or irreversible.
-- You cannot reach the host machine, and your network egress is allowlisted. If
-  something is blocked, say so rather than working around it.
+- You can browse the public web. You cannot reach the host machine or its
+  local network. If something is blocked, say so rather than working around it.
 - This file is yours. If the user asks you to change how you behave, edit it.
 ```
 

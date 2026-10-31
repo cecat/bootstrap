@@ -1,24 +1,30 @@
-# Squid dstdomain allowlist -- RUNTIME phase (narrow).
+# Squid dstdomain allowlist -- RUNTIME phase.
 #
-# This is the steady state the agents run under. Everything not listed here is
-# refused by the proxy, and the agent user has no route to the internet except
-# through the proxy. verify/test-egress.sh asserts both halves of that.
+# The agents are allowed the public web. An agent confined to its training
+# data cannot answer a question about today, which is most of the point of
+# running one.
+#
+# What they are denied is the private network around them -- the host, its
+# other services, the LAN, link-local. That denial is an ACL on destination
+# ADDRESS in squid.conf, not a line in this file, and it is what stops an
+# agent damaging the infrastructure it runs on.
+#
+# So this file is no longer the boundary. It names destinations that need a
+# non-standard port, plus anything worth permitting explicitly. Everything
+# on 80/443 is already reachable.
 #
 # Activate with:  sudo agent-egress runtime
 # A leading dot matches subdomains. One entry per line.
 
 # --- Models -----------------------------------------------------------------
-# Argo, via argo-proxy on 127.0.0.1:44497.
 apps.inside.anl.gov
 
 # --- Local fallback model ---------------------------------------------------
-# DGX Spark vLLM endpoint over Tailscale. UNVERIFIED -- see docs/failover.md.
+# DGX Spark vLLM over Tailscale, port 8000. UNVERIFIED -- docs/failover.md.
 spark-ts
 
 # --- Chat channels ----------------------------------------------------------
-# Telegram is part of the base system, so the domain is allowed here. Note
-# what this does and does not mean: the agents can *reach* Telegram, but no
-# channel is enabled until a human turns one on. spec/pi-target-state.md
-# requires Pi to configure channels disabled and stop, and verify.sh asserts
-# zero live channels. Reachability and being switched on are separate things.
+# Who may MESSAGE a bot is the control that matters, and it is not this file:
+# it is dmPolicy/allowFrom in OpenClaw and TELEGRAM_ALLOWED_USERS in Hermes.
+# verify.sh fails the build on a live channel with an empty allowlist.
 api.telegram.org
