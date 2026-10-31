@@ -35,7 +35,10 @@ again, so re-running setup will not revert anything you have changed.
 ## Escape hatch
 
 When an agent is too broken to talk to — a mangled `SOUL.md`, or a bad edit
-made while running on the degraded fallback model:
+made while running on the degraded fallback model — **you** can shell in and
+fix the file. A coding agent cannot: `limactl shell agents -- <anything>` is
+denied to it, because a VM repaired by hand looks like success while the repo
+still produces the failure for the next person.
 
 ```sh
 limactl shell agents -- openclaw agents list     # get the id first
@@ -43,5 +46,5 @@ limactl shell agents -- nano ~/.openclaw/agents/<agent-id>/SOUL.md
 limactl shell agents -- nano ~/.hermes/SOUL.md
 ```
 
-For anything worse than a bad paragraph, restore the VM snapshot rather than
-repairing by hand. See `docs/snapshots.md`.
+For anything worse than a bad paragraph, rebuild. The agents are cheap to
+recreate and a snapshot is not a reliable undo — see `docs/snapshots.md`.
