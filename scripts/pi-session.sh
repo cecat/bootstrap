@@ -4,7 +4,9 @@
 #
 #   ./scripts/pi-session.sh build               start the build
 #   ./scripts/pi-session.sh say "<message>"     continue the same session
-#   ./scripts/pi-session.sh transcript [n]      last n lines of the last run
+#   ./scripts/pi-session.sh summary             what Pi claimed it did
+#   ./scripts/pi-session.sh steps [n]           what Pi actually did
+#   ./scripts/pi-session.sh transcript [n]      the raw event stream
 #
 # This exists so a supervising coding agent can oversee Pi without a human
 # sitting at a TUI. Pi makes mistakes and over-claims -- the documented
@@ -52,53 +54,83 @@ pi_attempt() {
   log="$LOGDIR/pi-$stamp.log"
   NO_WORK=0
 
-  # Single-quoted guest command with the prompt passed as a positional
-  # argument, never interpolated: a prompt containing a quote would
-  # otherwise run as shell on the guest.
-  # timeout, because a stalled turn does not fail -- it waits forever. On
-  # 2026-10-29 two turns sat with an idle VM (~5% of one core) and an empty
-  # log: a model stream that opened and then delivered nothing, with no
-  # client-side deadline to end it. An error can be retried; a hang just
-  # consumes the session.
+  # --mode json, not plain -p. Pi emits one JSON event per line AS IT WORKS:
+  # turn_start, tool_execution_start with the actual command, tool results,
+  # errors. Plain -p prints nothing until the final summary, which made a
+  # healthy build and a hung one look identical from outside -- a 4m12s
+  # build sat at 0 bytes for 4m11s. Two whole sessions went into theories
+  # about that silence before anyone ran `pi --help`.
   #
-  # 15m is a wall clock, and it has to be, because `pi -p` BUFFERS: it
-  # writes nothing until its final summary, so a healthy run and a hung one
-  # both show an empty log throughout. On 2026-10-30 the successful build
-  # sat at 0 bytes for 4m11s and then wrote 3141 bytes at once. Anything
-  # that watches the log for silence would kill that build every time.
-  #
-  # The signal that actually separates the two is guest CPU -- a working
-  # build holds qemu near 40% of a core, a hang sits around 5% -- but that
-  # is a host-side observation a supervisor can make, not something this
-  # script can read portably. So: a plain deadline, set from measurement.
-  # A full cold build took 4m12s; the longest honest turn seen is minutes.
+  # The raw stream goes to the log; the terminal gets the interesting lines.
+  # Single-quoted guest command with the prompt as a positional argument,
+  # never interpolated: a prompt containing a quote would otherwise run as
+  # shell on the guest.
   timeout "${PI_TIMEOUT:-15m}" \
   limactl shell "$INSTANCE" -- bash -lc '
     cd ~/'"$WORKDIR"' || exit 1
-    exec pi -p --session-id "$1" --provider "$2" --model "$3" -- "$4"
-  ' _ "$SESSION_ID" "$PROVIDER" "$MODEL" "$prompt" 2>&1 | tee "$log"
+    exec pi -p --mode json --session-id "$1" --provider "$2" --model "$3" -- "$4"
+  ' _ "$SESSION_ID" "$PROVIDER" "$MODEL" "$prompt" 2>&1 \
+  | tee "$log" | pi_progress
 
   local rc=${PIPESTATUS[0]}
-  # 124 is timeout's "deadline hit". Treat a hang that produced nothing as a
-  # no-work failure so it retries like any other transient.
   if [ "$rc" -eq 124 ]; then
     say "turn exceeded ${PI_TIMEOUT:-15m} and was killed"
-    [ "$(wc -c <"$log")" -lt 2000 ] && NO_WORK=1
+    NO_WORK=1
   fi
   ln -sfn "$(basename "$log")" "$LAST"
-  printf '\n' >&2
-  say "transcript: ${log#"$REPO"/}"
+  say "transcript: ${log#"$REPO"/}  ($(wc -l <"$log" | tr -d ' ') events)"
 
-  # A transcript that is only an upstream API error means Pi never started --
-  # not a build that went wrong. Seen as "ArgoAuthWarning", "[Errno 104]
-  # Connection reset by peer", and an empty stream; a rejected credential
-  # kills a stream mid-flight rather than returning 401, so these read as
-  # network faults and are not.
-  if [ "$rc" -ne 0 ] && [ "$(wc -c <"$log")" -lt 2000 ] \
-     && grep -q '"type": *"error"' "$log" 2>/dev/null; then
+  # Did Pi do anything, or just fail to start? With json this is a question
+  # about events rather than bytes: a turn that ran tools produced work,
+  # whatever happened afterwards. Only a turn that never got going is worth
+  # retrying -- repeating one that acted would double its side effects.
+  if [ "$rc" -ne 0 ] && ! grep -q '"type":"tool_execution_start"' "$log" 2>/dev/null; then
     NO_WORK=1
   fi
   return "$rc"
+}
+
+# Turn the event stream into something a human can watch. Everything is kept
+# in the log; this is the filter, not the record. Without jq (not guaranteed
+# on the host) the matching stays deliberately crude.
+pi_progress() {
+  local t0=$SECONDS
+  while IFS= read -r line; do
+    case "$line" in
+      *'"type":"tool_execution_start"'*)
+        local tool cmd
+        tool="$(sed -n 's/.*"toolName":"\([^"]*\)".*/\1/p' <<<"$line")"
+        cmd="$(sed -n 's/.*"command":"\([^"]*\)".*/\1/p' <<<"$line" | cut -c1-90)"
+        printf '  [%4ds] %s %s\n' "$((SECONDS-t0))" "${tool:-tool}" "${cmd:-}" >&2 ;;
+      *'"type":"turn_start"'*)
+        printf '  [%4ds] --- turn ---\n' "$((SECONDS-t0))" >&2 ;;
+      *'"type":"error"'*|*'"error":'*)
+        printf '  [%4ds] ERROR %.200s\n' "$((SECONDS-t0))" "$line" >&2 ;;
+      *'"role":"assistant"'*'"type":"text"'*)
+        : ;;  # prose; it is in the log and the final summary repeats it
+    esac
+  done
+}
+
+# Pi's closing summary, pulled out of the json log. `transcript` shows the
+# events; this shows what Pi claims it did -- which is the thing to read
+# sceptically against verify.sh.
+pi_summary() {
+  local log="$1" last
+  last="$(grep '"type":"turn_end"' "$log" 2>/dev/null | tail -1)"
+  [ -n "$last" ] || { echo "(no turn_end in the log -- the turn did not finish)"; return; }
+  # python, not sed: the text is JSON-escaped and may contain braces,
+  # quotes and newlines. A sed version shipped a stray closing brace.
+  printf '%s' "$last" | python3 -c '
+import json, sys
+try:
+    msg = json.load(sys.stdin).get("message", {})
+except Exception:
+    sys.exit("(could not parse the final event)")
+for block in msg.get("content", []):
+    if block.get("type") == "text":
+        print(block.get("text", "").strip())
+'
 }
 
 # Retry a turn that produced no work at all. These are transient often enough
@@ -177,9 +209,34 @@ scripts/install-config.sh first."
     pi_turn "$*"
     ;;
 
+  # What Pi SAID -- its closing summary, which is the claim to read against
+  # verify.sh. This is what you usually want after a build.
+  summary)
+    [ -e "$LAST" ] || fail "no Pi run yet."
+    pi_summary "$LOGDIR/$(readlink "$LAST")"
+    ;;
+
+  # What Pi DID -- every tool call in order, with timings. The answer to
+  # "where did it actually go wrong", and the thing plain -p could never
+  # show: its output was one final blob with the work invisible.
+  steps)
+    [ -e "$LAST" ] || fail "no Pi run yet."
+    grep '"type":"tool_execution_start"' "$LOGDIR/$(readlink "$LAST")" 2>/dev/null \
+      | sed -n 's/.*"toolName":"\([^"]*\)".*/\1/p' | sort | uniq -c | sort -rn
+    echo
+    grep '"type":"tool_execution_start"' "$LOGDIR/$(readlink "$LAST")" 2>/dev/null \
+      | sed 's/.*"toolName":"\([^"]*\)".*"command":"\([^"]*\)".*/  \1: \2/' \
+      | cut -c1-120 | tail -n "${2:-40}"
+    ;;
+
+  # The raw event stream, for when the filtered views are not enough.
   transcript)
     [ -e "$LAST" ] || fail "no Pi run yet."
     tail -n "${2:-200}" "$LOGDIR/$(readlink "$LAST")"
+    ;;
+
+  capabilities)
+    limactl shell "$INSTANCE" -- bash -lc 'pi --help 2>&1' | head -80
     ;;
 
   *)
