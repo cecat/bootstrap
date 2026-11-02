@@ -10,103 +10,147 @@ They are installed not by a script but by **Pi**, a coding agent living
 agent supervising it. The agents end up using the same models your coding
 agent already uses; nothing to look up.
 
+## Quickstart
+
 ```sh
 git clone <this repo> && cd bootstrap
-cp config/agents.env.example config/agents.env
-$EDITOR config/agents.env          # two names, two bot tokens, your user id
-./bootstrap.sh                     # ~10 minutes, no prompts
+./bootstrap.sh
 ```
+
+It stops almost immediately and asks you to fill in `config/agents.env` —
+two agent names, a Telegram bot token for each, and your numeric Telegram
+user id. Put them in with an editor, not into a chat with an agent.
 
 Then open a coding agent in this directory and tell it:
 
-> Read AGENTS.md and build this.
+> Read README.md and build this.
 
-It drives Pi, checks the result, and finishes the build — about twenty
-minutes. Developed and tested with Claude Code.
-
----
+It runs the rest: about thirty-five minutes, mostly unattended. It will
+come back to you once, to ask you to message each bot. Developed and
+tested with Claude Code.
 
 ## Before you start
 
-### A coding agent
+**A coding agent** — Claude Code, Codex, Cursor or similar, able to open
+this directory. This is required: `bootstrap.sh` does the deterministic
+half and stops, because what remains — supervising Pi, reading what it did
+against what it claims — is a coding agent's job.
 
-Claude Code, Codex, Cursor or similar, able to open this directory. This is
-**required**: `bootstrap.sh` does the deterministic half and stops, because
-what remains — supervising Pi, reading what it did against what it claims —
-is a coding agent's job.
+It needs permission to run this repo's scripts, or it will work out what to
+do and then ask you to type each command. Claude Code reads the
+`.claude/settings.json` shipped here; you may have to trust project
+settings once. Don't reach for a blanket bypass flag — that list also
+*denies* a few things, and the denials are load-bearing.
 
-**It needs permission to run this repo's scripts**, or it will work out what
-to do and then ask you to type each command, which is the opposite of the
-point. Claude Code reads the `.claude/settings.json` shipped here; you may
-have to trust project settings once. For other tools the list is in
-`AGENTS.md`.
+**Two Telegram bots.** Part of the base build, not an extra: blank tokens
+give you mute agents. Message **@BotFather**, send `/newbot`, and do it
+twice — one bot per agent, because Telegram allows one connection per bot
+and a shared token means the gateways fight over it. Then message
+**@userinfobot** for your numeric user id, the only account they will
+answer.
 
-Don't reach for a blanket bypass flag. That list also *denies* a few things
-— shelling into the VM to fix it by hand, deleting the instance, unlocking
-the sandbox — and those denials are load-bearing.
+**Shared model access.** The agents use the same endpoint and credential
+your coding agent uses right now; `bootstrap.sh` reads your live
+`ANTHROPIC_BASE_URL` and `~/.claude/settings*.json` and copies it in.
+**They will spend against it** — the sandbox limits where a key can be
+sent, not what it can spend. Your host must be on whatever network the
+endpoint needs; the VM inherits your host's networking.
 
-### Sharing your model access
+**Software** — Lima (macOS: `brew install lima`; Linux: the release binary
+from [lima-vm/lima](https://github.com/lima-vm/lima/releases), since distro
+packages are often older than the required 1.0.0, plus QEMU and a usable
+`/dev/kvm`), and `jq`, `openssl`, `curl`. On Linux read
+`docs/spark-handoff.md` first. The VM uses 8 GiB of RAM and up to 60 GiB of
+disk.
 
-The agents will use the same model endpoint and credential your coding agent
-uses right now. `bootstrap.sh` reads your live `ANTHROPIC_BASE_URL` and
-`~/.claude/settings*.json`, resolves the credential, and copies it in.
+---
 
-**They will spend against it.** The sandbox limits where a key can be sent;
-it does nothing about what it can spend. If your provider offers a
-spend-capped key, put it in `config/model-access.env` as `CREDENTIAL=…`
-after detection runs.
+# Building it — for the coding agent
 
-Your host must be on whatever network the endpoint needs — the VM inherits
-your host's networking, so if you cannot reach it, neither can the VM.
+**Read `AGENTS.md` first.** It is the brief — the sequence of commands,
+how to orient yourself if a VM already exists, how to supervise Pi, and
+the permissions and rules. It is not repeated here. This section is the
+procedure around it, and everything below is something `AGENTS.md` does
+not say.
 
-### Telegram bots
+Work inside `tmux` from the start (`docs/tmux.md`). A dropped SSH session
+killed a build twice on 2026-10-31.
 
-Optional; skip it and you talk to the agents from a shell in the VM. Two
-minutes in the Telegram app:
+## Three places it goes wrong
 
-1. Message **@BotFather**, send `/newbot`, give it a name and a username
-   ending in `bot`. It replies with a token.
-2. **Do it twice** — each agent needs its own bot. Telegram allows one
-   connection per bot, so a shared token means the two gateways fight over
-   it and neither stays up.
-3. Message **@userinfobot** for your numeric user id. That is the only
-   account the bots will answer.
+**`./bootstrap.sh --rebuild` destroys the VM**, both agents and everything
+they have learned, and deletes `config/agents.env`. There is no undo —
+`limactl snapshot` has twice lost snapshots it had confirmed, so do not
+offer one as a safety net. Only use it if the user asks for a rebuild.
 
-### Software
+**`finish-build.sh` exiting 1 is a result, not a blocker.** It runs
+`verify.sh` internally and prints *"Fix the script or the spec... and
+re-run"*. Report the failures and continue to the next command. Do not
+re-run it: it bundles idempotence, the egress narrowing and a full verify,
+so repeating it redoes work that already succeeded.
 
-| | |
-|---|---|
-| **Lima** | macOS: `brew install lima`. Linux: the release binary from [lima-vm/lima](https://github.com/lima-vm/lima/releases) — distro packages are often older than the required 1.0.0 — plus QEMU and a usable `/dev/kvm`. |
-| **jq, openssl, curl** | macOS: `brew install jq`. Linux: `sudo apt-get install jq openssl curl` |
+**The silence watchdog.** `pi-session.sh` kills a turn after `PI_SILENCE`
+seconds (default 600) with no log output at all. If you see `no output for
+Ns -- killing a turn that has stopped working`, record it and say what Pi
+was doing — it has not yet fired across a healthy build, so the first time
+it does is worth knowing about.
 
-On Linux read `docs/spark-handoff.md` first. The VM uses 8 GiB of RAM and up
-to 60 GiB of disk.
+## The check nothing automated covers
 
-## What happens
+**Ask the user to message each agent on Telegram and have it fetch a web
+page.** This is not optional and no script substitutes for it. On
+2026-10-31 every automated check passed while one agent could not reach the
+web at all; `verify.sh` can see that a bot is being polled, which is not
+the same as an agent that answers.
 
-`bootstrap.sh` detects your model access, provisions the VM (Node, squid,
-iptables tooling, Pi), copies your config in over SSH, locks egress to a wide
-installation-time allowlist, and stops. It never prompts; if
-`config/agents.env` is missing it creates one from the example, tells you to
-fill it in, and exits.
+Record each agent's exact words. If one mentions a workaround, a fallback,
+a reader proxy, or rate-limiting, quote it — an agent reporting success by
+routing around a block is a finding, not a pass.
 
-Your coding agent then does the rest with `scripts/pi-session.sh`: hands Pi
-the spec, watches it install both agents and write a setup script that must
-run twice unchanged, reads what it actually did, and argues where it
-over-claimed. Then `scripts/finish-build.sh` proves idempotence, narrows
-egress to the steady-state allowlist, and verifies with real completions.
+## When it fails
 
-Telegram channels are enabled only as a final step, and only once the
-allowlist restricting them has been read back from the config.
+`AGENTS.md` has the rules; these are the three that get broken under
+pressure, when something is red and a fix looks close.
 
-If something fails, fix what it reported and re-run `./bootstrap.sh` — it
-resumes. **Don't go into the VM and fix things by hand**: a VM repaired by
-hand looks like success while the repo still produces failure for the next
-person who clones it.
+- **One retry, then stop.** `pi-session.sh` retries transient model errors
+  itself; let it. If a step fails for another reason, run it once more. If
+  it fails again, stop and report.
+- **Don't theorise.** Report the symptom and the exact command output. A
+  previous session lost hours to five successive wrong theories before Pi
+  found the real cause in one short turn. Read `docs/gotchas.md` before
+  debugging anything.
+- **Don't improvise past a blocker.** Stopping with a clear account is a
+  good outcome. Grinding to a green result by working around the
+  documentation is not, and neither is reaching into the VM — a VM
+  repaired by hand looks like success while the repo still produces
+  failure for the next person who clones it.
+
+## What to tell the user at the end
+
+The final tally from `verify.sh`, every failing check quoted with its
+message, and — separately — whether each agent fetched a web page over
+Telegram, in its own words. Then anything you had to decide for yourself,
+anywhere the documentation left you guessing, and anything Pi claimed that
+the evidence contradicts. Never put a token, credential or user id in
+whatever you write.
+
+If you were running this as a rebuild test, write that up as
+`REBUILD-RESULT.md`. It is gitignored on purpose: don't commit it, and
+don't go looking for an earlier one — past runs are in `archive/`, and
+reading one would tell you what to expect.
+
+---
+
+# Reference
+
+## Re-running and starting over
+
+`./bootstrap.sh` resumes and is safe to re-run; if something fails, fix
+what it reported and run it again. Two flags:
 
 ```sh
+./bootstrap.sh --dry-run   # preflight and model detection only, writes nothing
 ./bootstrap.sh --rebuild   # destroy the VM and generated config, start over
-./bootstrap.sh --dry-run   # preflight and detection only, writes nothing
 ```
 
 ## Checking it worked
@@ -115,16 +159,15 @@ person who clones it.
 ./verify/verify.sh                 # structure, policy and egress — costs nothing
 ./verify/verify.sh --models        # + one real completion per agent
 ./verify/verify.sh --idempotence   # + re-runs Pi's setup.sh, asserts no change
-./verify/verify.sh --all           # + reboot persistence
+./verify/verify.sh --reboot        # + reboot persistence
+./verify/verify.sh --all           # everything
 ```
 
-A plain run checks about thirty things, including that a **non-allowed
+A plain run checks about forty things, including that a **non-allowed
 destination is actually blocked** — a check that only confirms the allowed
-path proves nothing.
-
-It does not prove the model path, and says so. A gateway can be up with a
-dead endpoint behind it; only a real completion settles it, which is what
-`--models` costs quota to do.
+path proves nothing. It does not prove the model path, and says so: a
+gateway can be up with a dead endpoint behind it, which is what `--models`
+costs quota to settle.
 
 ## Using the agents
 
@@ -136,22 +179,14 @@ openclaw chat
 hermes -z "what can you do?"
 ```
 
-### Changing an agent's personality
-
-**Talk to the agent.** Each keeps its character in its own `SOUL.md` inside
-the VM and can edit it on request:
-
-> show me your SOUL.md
->
-> add a paragraph saying you prefer short answers
-
-There is nothing in this repo to edit. The VM has no mounts, so there is no
-host path to point at, and Hermes rewrites its own memory and skills as it
-goes — a repo-tracked copy would fight the product. The repo seeds a starter
-`SOUL.md` once and never touches it again, so rebuilding will not revert a
-personality you have changed. See `docs/personality.md`.
-
-### Starting and stopping
+**To change an agent's personality, talk to the agent.** Each keeps its
+character in its own `SOUL.md` inside the VM and can edit it on request
+("show me your SOUL.md"; "add a paragraph saying you prefer short
+answers"). There is nothing in this repo to edit — the VM has no mounts, so
+there is no host path to point at, and Hermes rewrites its own memory and
+skills as it goes. The repo seeds a starter `SOUL.md` once and never
+touches it again, so rebuilding will not revert a personality you have
+changed. See `docs/personality.md`.
 
 ```sh
 limactl stop agents
@@ -159,24 +194,25 @@ limactl start agents    # gateways and egress policy come back by themselves
 ```
 
 On a laptop the VM sleeps when the machine sleeps, so the agents are not
-truly always-on. That is the main reason to run this on a machine that stays
-up.
+truly always-on. That is the main reason to run this on a machine that
+stays up.
 
 ## What "sandboxed" means here
 
-- **No filesystem access.** The VM has no mounts. Your home directory is not
-  visible to anything inside it.
+- **No filesystem access.** The VM has no mounts. Your home directory is
+  not visible to anything inside it.
 - **Nothing reachable from outside.** User-mode NAT, no port forwards. The
   gateways listen on the VM's loopback only, not on your LAN.
 - **Egress is allowlisted by domain**, through a squid proxy inside the VM.
-- **Enforced, not merely configured.** An iptables rule matched on the agent
-  user's uid means an agent that ignores the proxy settings reaches nothing.
-  The verification suite tests this by trying.
+- **Enforced, not merely configured.** An iptables rule matched on the
+  agent user's uid means an agent that ignores the proxy settings reaches
+  nothing. The verification suite tests this by trying.
 - **One deliberate hole:** the model endpoint, a single fixed host and port.
 
-The threat model is a misbehaving or manipulated agent, not a hostile kernel.
-A live agent has shell access and no permission prompts, which is why the
-Telegram allowlist — who may message it — matters as much as the egress one.
+The threat model is a misbehaving or manipulated agent, not a hostile
+kernel. A live agent has shell access and no permission prompts, which is
+why the Telegram allowlist — who may message it — matters as much as the
+egress one.
 
 ## Where things are
 
@@ -191,6 +227,7 @@ config/                 your local config; only *.example is committed
 docs/
   gotchas.md            read before debugging anything
   spark-handoff.md      read FIRST if you are on Linux
+  tmux.md               surviving a dropped SSH session
   personality.md        how SOUL.md works
   snapshots.md          backup and recovery
   failover.md           the vLLM fallback (unverified)
@@ -201,17 +238,21 @@ todo.md                 what is unfinished
 ## Status
 
 Verified end to end on **Linux arm64** (DGX Spark, Lima with QEMU+KVM): the
-VM and every generated config deleted, then rebuilt from nothing. Pi
-installed both agents from the committed spec with no supervisor
-intervention, and `verify.sh --models --reboot` passed 38 checks — egress
-blocked at both layers, both agents completing, and policy intact across a
-reboot. Both bots were then messaged by hand and fetched a web page.
+VM and every generated config deleted, then rebuilt from nothing by a
+coding agent with no prior context. Pi installed both agents from the
+committed spec with no supervisor intervention — zero messages to Pi, zero
+retries — and `verify.sh --models --reboot` passed 39 checks with none
+failing: egress blocked at both layers, both agents completing, and policy
+intact across a reboot. Both bots were then messaged by hand and fetched a
+web page, neither reporting a workaround.
 
 First built on **macOS arm64** (Lima with Apple's Virtualization.framework),
 where it passed an earlier, smaller suite.
 
 Known gaps, with detail in `todo.md`: the macOS run is stale; only Argo is
-implemented as a model provider; and the vLLM fallback is unverified.
+implemented as a model provider; the vLLM fallback is unverified; and the
+Hermes Telegram adapter check has reported FAIL and SKIP minutes apart on
+an adapter that was working.
 
 ## Credit
 
