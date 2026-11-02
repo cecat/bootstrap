@@ -389,7 +389,11 @@ check_soul() {
     pass "$label SOUL.md" "present and names $want"
   fi
 }
-[ -n "$live_dir" ] && check_soul "OpenClaw" "$live_dir/SOUL.md" "$want_oc"
+if [ -n "$live_dir" ]; then
+  check_soul "OpenClaw" "$live_dir/SOUL.md" "$want_oc"
+else
+  skip "OpenClaw SOUL.md" "could not read the agent dir from 'openclaw agents', so there is nothing to check -- absent, not passing"
+fi
 check_soul "Hermes" '$HOME/.hermes/SOUL.md' "$want_he"
 
 # ---------------------------------------------------------------------------
@@ -479,17 +483,22 @@ else
   pass "Hermes channel safety" "no channel directory"
 fi
 
-# Informational: which bots would answer a message. Do NOT fail on this.
+# Informational: which bots are being polled. Do NOT fail on this.
 # Reachable agents are the intended end state, and what protects the user
 # is the allowlist asserted above, not silence. Asserting silence here
 # marked a correct build as bad.
+#
+# Polling is not answering. This check reads the Telegram API, not the
+# agent behind it: on 2026-11-02 a bot polled, took delivery of a message
+# (two blue ticks) and never replied, while this line passed. Only a human
+# messaging the bot closes that gap -- say so rather than implying it.
 if [ -f "$REPO_DIR/config/agents.env" ]; then
   poll_out="$("$REPO_DIR/scripts/check-telegram-polling.sh" 2>&1)"
   live="$(grep -cE 'POLLING' <<<"$poll_out")"
   if [ "${live:-0}" = "0" ]; then
     pass "Telegram reachability is known" "no bot is being polled; nothing would answer a message yet"
   else
-    pass "Telegram reachability is known" "$live bot(s) polling and would answer -- allowed senders are asserted above"
+    pass "Telegram reachability is known" "$live bot(s) polling -- NOT proof any of them answers. Message one and watch it fetch a web page; nothing automated covers that."
   fi
 else
   skip "Telegram reachability is known" "config/agents.env not present"

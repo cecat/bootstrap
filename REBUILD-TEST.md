@@ -64,7 +64,7 @@ though follow the repo rather than this summary if they differ:
 ./bootstrap.sh --rebuild            # destroys the VM and both agents
 ./bootstrap.sh                      # again, once agents.env is filled in
 ./scripts/pi-session.sh build       # ~30 minutes
-./scripts/pi-session.sh transcript
+./scripts/pi-session.sh summary     # Pi's claim; `steps` for what it did
 ./scripts/finish-build.sh
 ./verify/verify.sh --models --reboot
 ```

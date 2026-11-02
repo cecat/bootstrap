@@ -17,7 +17,8 @@ You are the supervisor. Pi builds; you check.
 ```sh
 ./bootstrap.sh                      # deterministic steps; stops before Pi
 ./scripts/pi-session.sh build       # Pi builds, headless, ~30 min
-./scripts/pi-session.sh transcript  # what it actually did
+./scripts/pi-session.sh summary     # what Pi claims it did
+./scripts/pi-session.sh steps       # what it actually did, tool call by tool call
 ./scripts/pi-session.sh say "..."   # push back, same session
 ./scripts/finish-build.sh           # idempotence, narrow egress, verify
 ./verify/verify.sh --models         # the evidence

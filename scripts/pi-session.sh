@@ -76,7 +76,13 @@ pi_attempt() {
   #
   # Pi writes the log directly rather than through a pipe, so its pid
   # stays killable; the progress view tails that file and stops with it.
+  #
+  # Point pi-last.log at this run before starting it, not after it ends.
+  # Updating it afterwards left `steps` reading a previous session's log
+  # for the whole build -- printing nothing and exiting 1 while 2.7 MB of
+  # live events went to a file it was not looking at.
   : > "$log"
+  ln -sfn "$(basename "$log")" "$LAST"
   limactl shell "$INSTANCE" -- bash -lc '
     cd ~/'"$WORKDIR"' || exit 1
     exec pi -p --mode json --session-id "$1" --provider "$2" --model "$3" -- "$4"
@@ -98,7 +104,6 @@ pi_attempt() {
 
   wait "$pid" 2>/dev/null; local rc=$?
   wait "$viewer" 2>/dev/null
-  ln -sfn "$(basename "$log")" "$LAST"
   say "transcript: ${log#"$REPO"/}  ($(wc -l <"$log" | tr -d ' ') events)"
 
   # Did Pi do anything, or just fail to start? Only a turn that reached no
