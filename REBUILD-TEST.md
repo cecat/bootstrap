@@ -109,6 +109,10 @@ primary result of this run, pass or fail.
 ## What to report
 
 Write `REBUILD-RESULT.md` in the repo root. That file is the deliverable.
+It is gitignored on purpose: do not commit it, and do not go looking for
+an earlier one. Past runs are filed under `archive/`, which rule 4 puts
+out of bounds — reading one would tell you what to expect, and expecting
+is what this run is supposed to avoid.
 
 **Outcome** — the final tally from `verify.sh --models --reboot`, and every
 failing check quoted with its message. Then, separately, whether each agent

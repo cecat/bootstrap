@@ -18,6 +18,12 @@ secrets/
 debug-notes/
 auth.json
 
+# Output of a rebuild test run. Evidence for the run that produced it and
+# stale the moment the repo changes -- and a committed one is the next
+# fresh-context agent's first read, which is the opposite of the point.
+# Keep them in archive/ if you want them.
+REBUILD-RESULT*.md
+
 # Agent + VM state that must never be committed
 .pi/
 .hermes/
