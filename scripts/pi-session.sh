@@ -33,9 +33,12 @@ MODEL="${PI_MODEL:-argo:claude-4.5-sonnet}"
 PROVIDER="${PI_PROVIDER:-argo}"
 LOGDIR="$REPO/logs"
 LAST="$LOGDIR/pi-last.log"
-# Seconds of no log output before a turn counts as hung. Generous: a long
-# model call or a slow install is silent for a while and is not stuck.
-PI_SILENCE="${PI_SILENCE:-300}"
+# Seconds of no log output before a turn counts as hung. Pi emits nothing
+# between starting a tool and that tool returning, so this must clear the
+# slowest legitimate one. Measured over a day of builds: longest real tool
+# call 327s (a gateway teardown), longest model call 237s, everything else
+# under 110s. 600 leaves room for a cold package cache on a slower host.
+PI_SILENCE="${PI_SILENCE:-600}"
 
 say()  { printf '\033[1m==>\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
