@@ -120,22 +120,52 @@ if [ ! -f config/agents.env ]; then
     || fail "config/agents.env.example is missing."
   cat >&2 <<EOF
 
-  config/agents.env has been created from the example. Fill it in before
-  continuing -- it wants two agent names, and optionally a Telegram bot
-  token per agent plus your numeric Telegram user id (ask @userinfobot).
+  STOP -- this is your turn, and the build waits here until you take it.
+  Nothing else will prompt you later: this message is the only cue, and
+  re-running the script is how you say you are done.
+
+  config/agents.env has been created from the example. Open it in an
+  editor and fill in four things:
 
       \$EDITOR config/agents.env
 
-  Telegram is optional: leave the tokens blank and the agents simply have
-  no chat channel. Then run ./bootstrap.sh again.
+    OPENCLAW_AGENT_NAME          two names you choose; the shipped
+    HERMES_AGENT_NAME            defaults are fine
+
+    OPENCLAW_TELEGRAM_BOT_TOKEN  one dedicated bot per agent from
+    HERMES_TELEGRAM_BOT_TOKEN    @BotFather (/newbot), never a personal
+                                 account
+
+    TELEGRAM_ALLOWED_USER_ID     your own numeric id from @userinfobot --
+                                 digits, not an @handle
+
+  Telegram is part of the base build, not an extra. Leave those blank and
+  the agents come up mute: no chat channel, and the one check no script
+  can perform -- messaging an agent and watching it fetch a web page --
+  cannot be done at all.
+
+  Leave OPENCLAW_GATEWAY_TOKEN blank. It is generated here, fresh per
+  build, on the next run. It is the script's line, not yours.
+
+  You can re-edit this file whenever you like afterwards and re-run; an
+  existing value is kept as you wrote it. The exception is --rebuild,
+  which deletes the file and brings you back to this message.
+
+  Then: ./bootstrap.sh
 
 EOF
   exit 2
 fi
 chmod 600 config/agents.env
 
-# A generated value, so generate it rather than asking.
-if ! grep -qE '^OPENCLAW_GATEWAY_TOKEN=.+' config/agents.env; then
+# A generated value, so generate it rather than asking. Read it the way the
+# shell will, not with a regex: OPENCLAW_GATEWAY_TOKEN="" is two quote
+# characters to grep but an empty string to everything that consumes it, and
+# that mismatch shipped a build whose gateway token was never generated.
+# shellcheck disable=SC1091
+cur_tok="$( set -a; . config/agents.env 2>/dev/null; set +a
+            printf %s "${OPENCLAW_GATEWAY_TOKEN:-}" )"
+if [ -z "$cur_tok" ]; then
   tok="$(openssl rand -hex 32)"
   if grep -qE '^OPENCLAW_GATEWAY_TOKEN=' config/agents.env; then
     sed -i.bak "s|^OPENCLAW_GATEWAY_TOKEN=.*|OPENCLAW_GATEWAY_TOKEN=$tok|" config/agents.env

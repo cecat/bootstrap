@@ -23,11 +23,22 @@ You are the supervisor. Pi builds; you check.
 ./verify/verify.sh --models         # the evidence
 ```
 
-`bootstrap.sh` never prompts. It stops once, early, if `config/agents.env`
-needs filling in — two agent names, optionally a Telegram bot token per
-agent and a numeric user id. **That file is the user's to edit.** Never ask
-for a secret in conversation; a token pasted into a chat is a token in a
-transcript.
+`bootstrap.sh` never prompts. It stops once, early, with exit 2 if
+`config/agents.env` needs filling in — two agent names, a Telegram bot
+token per agent, and a numeric user id. Telegram is part of the base
+build: blank tokens give you mute agents and make the one manual check
+(message an agent, watch it fetch a web page) impossible.
+
+**That file is the user's to edit, and relaying the stop is your job.**
+Nothing else will cue them. When you hit that exit, say plainly that the
+build is paused and waiting on them, name the four values, point at
+`config/agents.env`, and then *stop and wait* — do not fill it in, do not
+guess names, and do not carry on to the next command. Re-running
+`./bootstrap.sh` is how they tell you they are done.
+
+Never ask for a secret in conversation; a token pasted into a chat is a
+token in a transcript. Ask them to type it into the file, in an editor,
+where you will not see it.
 
 ## Work out where you are first
 
