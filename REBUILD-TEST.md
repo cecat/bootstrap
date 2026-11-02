@@ -80,6 +80,15 @@ into a chat is a secret in a transcript.
 
 If `verify.sh` reports failures, **report them. Do not fix them.**
 
+`finish-build.sh` runs `verify.sh` internally and exits 1 on any failure,
+printing *"Fix the script or the spec that caused each failure and re-run
+-- not the VM."* **That advice is for an engineer, not for you.** A
+non-zero exit there is a result: record it and continue to the next
+command in the list. Do not re-run `finish-build.sh` — rule 5's one retry
+is for a step that failed to *run*, and this one bundles idempotence, the
+egress narrowing and a full verify, so repeating it re-does work that
+already succeeded.
+
 Supervising Pi is in scope: read its summary sceptically and check it
 against `verify.sh`. But if Pi gets something wrong, note it and stop. Do
 not start a repair loop, and keep any message to Pi to a few sentences —

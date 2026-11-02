@@ -303,6 +303,15 @@ if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
   # only a failure if it persists: re-read after a pause and judge the
   # second sample. Without that this check flapped PASS/FAIL/SKIP between
   # runs minutes apart and failed whole builds over a transient.
+  #
+  # The flapping is damped, not cured: on 2026-11-02 this reported FAIL
+  # under finish-build.sh and SKIP minutes later, on an adapter the user
+  # then found answering on Telegram. Two causes are in play and neither
+  # is the agent being broken -- a reconnect this samples mid-drop, and
+  # the Conflict branch below, which names check-telegram-polling.sh as
+  # the rival getUpdates consumer while verify.sh runs that very script
+  # later in this same file. Treat a FAIL or SKIP here as "unproven, go
+  # message the bot", never as "the agent is down".
   adapter_event() {
     g 'journalctl --user -u hermes-gateway.service --no-pager _SYSTEMD_INVOCATION_ID="$(systemctl --user show -p InvocationID --value hermes-gateway.service)" 2>/dev/null | grep -iE "\[Telegram\] Connected|No adapter available for telegram|adapter creation failed|Telegram network error|Conflict: terminated" | tail -1'
   }

@@ -243,7 +243,8 @@ cat <<EOF
   then drive these:
 
       ./scripts/pi-session.sh build        # Pi builds; ~30 minutes
-      ./scripts/pi-session.sh transcript   # what it actually did
+      ./scripts/pi-session.sh summary      # what Pi claims it did
+      ./scripts/pi-session.sh steps        # what it actually did
       ./scripts/pi-session.sh say "..."    # push back, same session
       ./scripts/finish-build.sh            # idempotence, narrow egress, verify
 

@@ -35,7 +35,7 @@ ok()   { printf '%s  ok%s  %s\n' "$G" "$Z" "$*"; }
 limactl shell "$INSTANCE" -- bash -lc 'test -x "$HOME/agent-bootstrap/setup.sh"' 2>/dev/null \
   || fail "~/agent-bootstrap/setup.sh does not exist in the VM, so Pi has not
 produced its setup script yet. The spec makes that script the deliverable.
-Run ./scripts/pi-session.sh transcript to see where it stopped."
+Run ./scripts/pi-session.sh steps to see where it stopped."
 
 # ===========================================================================
 step "Idempotence -- before egress narrows"
