@@ -18,10 +18,12 @@ build was verified with an assertion that would now fail there too.
 
 Treat macOS as unproven until someone runs `./bootstrap.sh --rebuild` on one.
 
-For that run, reuse the harness the Linux rebuilds used: a fresh-context
-agent, no repo fixes, every gap recorded rather than patched. It is at
-`archive/REBUILD-TEST.md` locally and in git history at `9758e12`
-(`archive/` is not committed). Its header says what to re-check first.
+`MACOS-TEST.md` is the harness for that run: hand it to a coding agent on
+a Mac. It is derived from the Linux rebuild harness
+(`archive/REBUILD-TEST.md` locally, or git history at `9758e12`) but
+differs in one way that matters — on macOS you *may* fix what you find,
+as long as you fix the repo rather than the VM and write down every
+change.
 
 ## 2. vLLM failover is unverified
 

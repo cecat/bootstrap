@@ -23,6 +23,7 @@ auth.json
 # fresh-context agent's first read, which is the opposite of the point.
 # Keep them in archive/ if you want them.
 REBUILD-RESULT*.md
+MACOS-RESULT*.md
 
 # Agent + VM state that must never be committed
 .pi/
