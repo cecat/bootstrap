@@ -18,6 +18,11 @@ build was verified with an assertion that would now fail there too.
 
 Treat macOS as unproven until someone runs `./bootstrap.sh --rebuild` on one.
 
+For that run, reuse the harness the Linux rebuilds used: a fresh-context
+agent, no repo fixes, every gap recorded rather than patched. It is at
+`archive/REBUILD-TEST.md` locally and in git history at `9758e12`
+(`archive/` is not committed). Its header says what to re-check first.
+
 ## 2. vLLM failover is unverified
 
 `docs/failover.md` describes a fallback to a local model over Tailscale. The
