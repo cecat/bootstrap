@@ -1,0 +1,15 @@
+# Artifacts frozen against platform ports -- see scripts/check-frozen.sh.
+#
+# These converged over weeks of build-fail-adjust cycles and cannot be
+# re-derived by reading them. A second platform (macOS) is being brought up
+# against this same repo; changes for it belong in a uname branch in the
+# host-side scripts, never in here.
+#
+# Nothing macOS-specific can legitimately go in the spec anyway: the VM has
+# no mounts, so Pi cannot see the host, and it runs the same Ubuntu 24.04
+# either way.
+#
+# Regenerate deliberately with: ./scripts/check-frozen.sh --update
+
+6f215b7595af5c3751778913fbe93c73491f06c956652d2d33a9d03c21daf40d  spec/pi-target-state.md
+4483f260f650797be81fd8512922a30a9822a9d98e926edc5a7674198cd97289  lima/agents.yaml

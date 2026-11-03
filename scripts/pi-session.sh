@@ -49,6 +49,20 @@ command -v limactl >/dev/null 2>&1 || fail "limactl not found."
 
 mkdir -p "$LOGDIR"
 
+# Last-modified time of a file, in epoch seconds, on both GNU and BSD.
+#
+# GNU first, and this order is not cosmetic: BSD's `stat -f %m` on GNU stat
+# exits 1 but still writes to stdout, so trying it first captures an error
+# string as the timestamp. Discarding stderr is not enough.
+#
+# The fallback matters too. This feeds the silence watchdog, and `date +%s`
+# makes the computed quiet time 0 forever -- a watchdog that can never fire,
+# with no sign that anything is wrong. That is what `stat -c %Y` alone did on
+# macOS.
+log_mtime() {
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || date +%s
+}
+
 # Run one Pi turn. Output goes to the terminal AND to the log, because the
 # supervising agent reads the log while the user watches the stream.
 # One attempt. Returns pi's exit code; sets NO_WORK=1 if the whole transcript
@@ -95,7 +109,7 @@ pi_attempt() {
   local quiet=0
   while kill -0 "$pid" 2>/dev/null; do
     sleep 10
-    quiet=$(( $(date +%s) - $(stat -c %Y "$log" 2>/dev/null || date +%s) ))
+    quiet=$(( $(date +%s) - $(log_mtime "$log") ))
     [ "$quiet" -lt "$PI_SILENCE" ] && continue
     say "no output for ${quiet}s -- killing a turn that has stopped working"
     kill "$pid" 2>/dev/null || true

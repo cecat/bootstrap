@@ -19,13 +19,34 @@ procedure, and `AGENTS.md` is the brief. This file adds three things:
 what to watch on macOS specifically, that you should **record rather
 than silently work around**, and what to write at the end.
 
-**You may fix what you find.** Unlike the Linux rebuild harness this was
-derived from, the goal here is a working macOS build, not an untouched
-measurement. But fix the *repo* — a script, the spec, a document — and
-never the VM by hand. A VM repaired by hand looks like success while the
-repo still produces failure for the next person. Record every fix in the
-write-up, because each one is a portability defect that was invisible
-before today.
+**You may fix what you find — within bounds.** Unlike the Linux rebuild
+harness this was derived from, the goal here is a working macOS build,
+not an untouched measurement. Record every fix in the write-up: each one
+is a portability defect that was invisible before today.
+
+The bounds exist because Linux took dozens of sessions over several
+weeks to converge, and that work is not visible in the files. The
+requirement is that after all the macOS work, **Linux still builds**.
+
+1. **`spec/pi-target-state.md` and `lima/agents.yaml` are off limits.**
+   `./scripts/check-frozen.sh` enforces this and `bootstrap.sh` warns if
+   either drifts. If you believe macOS needs a change there, that is a
+   finding to report, not a change to make. Nothing macOS-specific
+   belongs in the spec anyway: the VM has no mounts, so Pi cannot see
+   the host, and it runs the same Ubuntu 24.04 either way.
+
+2. **Every other fix must be bounded.** Add a `uname -s` branch that
+   introduces a macOS path and leaves the Linux path byte-identical.
+   Never rewrite shared logic so that both platforms take your new code
+   — that is how fixing one platform breaks the other. `bootstrap.sh`
+   has the pattern already, at the `/dev/kvm` preflight.
+
+3. **Never fix the VM by hand.** A VM repaired by hand looks like
+   success while the repo still produces failure for the next person.
+
+4. **Work on a branch, and Linux is the merge gate.** Nothing reaches
+   `main` until `./verify/verify.sh --models` passes on a Linux host. A
+   macOS fix that cannot survive that has not been bounded properly.
 
 **Do not theorise about a failure before measuring it.** Report the
 symptom and the exact command output first. A previous session lost
@@ -40,8 +61,20 @@ it fails again, stop and report rather than improvising past it.
 
 ## What is known to be different on macOS
 
-Four things, each with a specific check. Finding one of these is
+Five things, each with a specific check. Finding one of these is
 expected; finding something else is the interesting case.
+
+**BSD coreutils, not GNU — the likeliest source of silent failures.**
+Host-side scripts run on your Mac, where `stat`, `sed`, `date` and
+friends take different flags. The dangerous ones fail *quietly*: the Pi
+silence watchdog used `stat -c %Y`, which on macOS fell through to a
+fallback that made the measured quiet time permanently zero, so the
+watchdog could never fire and nothing said so. That one is fixed
+(`log_mtime` in `pi-session.sh`); assume there are others. Anything
+in-guest is safe — that is Ubuntu on both platforms — so only host-side
+code is at risk. When you find one, fix it the way `log_mtime` does:
+try the GNU form first, because BSD's `stat -f` on GNU exits non-zero
+*but still prints to stdout*, so the obvious ordering captures garbage.
 
 **The hypervisor.** macOS uses Apple's Virtualization.framework (`vz`);
 Linux uses QEMU+KVM. `lima/agents.yaml` deliberately does not pin
@@ -104,7 +137,9 @@ reporting success by routing around a block is a finding, not a pass.
   a different amount of time, or needed a different command. Including
   "nothing did" for a step, which is also a result.
 - **Every repo change you made**, with the reason and the symptom that
-  prompted it.
+  prompted it, and whether each one is bounded — i.e. whether a Linux
+  host still takes exactly the code it took before. Run
+  `./scripts/check-frozen.sh` and report the result.
 - **Where the documentation failed you** — any point where you were
   unsure what to do next, had to guess, or looked for something that was
   not there. Quote the passage. Note that `README.md` and

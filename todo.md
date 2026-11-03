@@ -21,9 +21,11 @@ Treat macOS as unproven until someone runs `./bootstrap.sh --rebuild` on one.
 `MACOS-TEST.md` is the harness for that run: hand it to a coding agent on
 a Mac. It is derived from the Linux rebuild harness
 (`archive/REBUILD-TEST.md` locally, or git history at `9758e12`) but
-differs in one way that matters — on macOS you *may* fix what you find,
-as long as you fix the repo rather than the VM and write down every
-change.
+allows fixing what it finds, under bounds that protect the Linux build:
+`spec/pi-target-state.md` and `lima/agents.yaml` are frozen
+(`./scripts/check-frozen.sh`), every other change must be a `uname`
+branch leaving the Linux path byte-identical, and nothing merges until
+`verify.sh --models` passes on Linux.
 
 ## 2. vLLM failover is unverified
 

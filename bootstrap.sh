@@ -55,6 +55,12 @@ as distro packages lag badly. Then see docs/gotchas.md."
 done
 ok "jq, curl, openssl, diff, lima $(limactl --version 2>&1 | head -1 | awk '{print $NF}')"
 
+# Warn, never fail: a frozen artifact may legitimately change on the platform
+# that owns it, and wedging a build over a hash would be worse than the drift.
+# Saying it out loud every run is the point -- see scripts/check-frozen.sh.
+./scripts/check-frozen.sh >/dev/null 2>&1 \
+  || warn "a platform-frozen artifact has changed -- run ./scripts/check-frozen.sh"
+
 if [ "$(uname -s)" = "Linux" ]; then
   [ -e /dev/kvm ] || fail "/dev/kvm does not exist; QEMU would fall back to
 emulation, which is far too slow to use."
