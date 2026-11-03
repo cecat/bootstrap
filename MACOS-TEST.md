@@ -35,11 +35,20 @@ requirement is that after all the macOS work, **Linux still builds**.
    belongs in the spec anyway: the VM has no mounts, so Pi cannot see
    the host, and it runs the same Ubuntu 24.04 either way.
 
-2. **Every other fix must be bounded.** Add a `uname -s` branch that
-   introduces a macOS path and leaves the Linux path byte-identical.
-   Never rewrite shared logic so that both platforms take your new code
-   — that is how fixing one platform breaks the other. `bootstrap.sh`
-   has the pattern already, at the `/dev/kvm` preflight.
+2. **Every other fix must be bounded.** The test, which you can apply by
+   reading your own diff: *after this change, does a Linux host execute
+   the same instructions it did before?* If yes, the fix is bounded. If
+   no, you are changing shared behaviour and it does not go in.
+
+   In practice that means adding a branch rather than editing one.
+   `bootstrap.sh:58` has the pattern — `if [ "$(uname -s)" = "Linux" ]`
+   around the `/dev/kvm` preflight, which a Mac simply never enters.
+   (`uname -s` prints `Darwin` on macOS, not `macOS`.) A fallback chain
+   works too, where the existing command stays first and yours runs only
+   when it fails: see `log_mtime()` in `scripts/pi-session.sh`, added
+   for exactly this reason. What is *not* allowed is rewriting a shared
+   function so both platforms take your new version, however much
+   cleaner it looks — that is how fixing one platform breaks the other.
 
 3. **Never fix the VM by hand.** A VM repaired by hand looks like
    success while the repo still produces failure for the next person.

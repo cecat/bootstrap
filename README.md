@@ -247,7 +247,10 @@ intact across a reboot. Both bots were then messaged by hand and fetched a
 web page, neither reporting a workaround.
 
 First built on **macOS arm64** (Lima with Apple's Virtualization.framework),
-where it passed an earlier, smaller suite.
+where it passed an earlier, smaller suite. Everything that raised the Linux
+number landed after that run and has never been executed on a Mac, so treat
+macOS as unproven. If you are bringing it back up, `MACOS-TEST.md` is the
+harness — it protects the Linux build while you do.
 
 Known gaps, with detail in `todo.md`: the macOS run is stale; only Argo is
 implemented as a model provider; the vLLM fallback is unverified; and the
