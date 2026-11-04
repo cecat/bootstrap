@@ -184,7 +184,7 @@ fi
 
 # Validate without printing a single value.
 # shellcheck disable=SC1091
-( set -a; . config/agents.env 2>/dev/null; set +a
+( set -a; . config/agents.env; set +a
   for n in OPENCLAW_AGENT_NAME HERMES_AGENT_NAME; do
     v="$(eval "printf %s \"\${$n:-}\"")"
     case "$v" in
