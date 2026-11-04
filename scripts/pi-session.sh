@@ -108,12 +108,19 @@ pi_attempt() {
   # view died instantly and the whole build ran blind. The Linux branch is
   # the original line, untouched; the fallback tails without --pid and is
   # killed below instead. See MACOS-TEST.md.
-  local viewer viewer_needs_kill=0
+  local viewer tailpid_file="" viewer_needs_kill=0
   if [ "$(uname -s)" = "Linux" ]; then
     tail -f -n +1 --pid="$pid" "$log" | pi_progress &
     viewer=$!
   else
-    tail -f -n +1 "$log" | pi_progress &
+    # `wait` on a backgrounded pipeline waits for the WHOLE job, and the
+    # no---pid tail never ends -- so killing pi_progress alone left the
+    # script blocked in `wait "$viewer"` forever, after Pi had finished.
+    # That is the 2026-11-04 hang: the build completed at 379s and the
+    # wrapper never returned. Kill the tail instead; pi_progress then sees
+    # EOF, exits, and the job completes.
+    tailpid_file="$log.tailpid"
+    { tail -f -n +1 "$log" & echo $! >"$tailpid_file"; wait; } 2>/dev/null | pi_progress &
     viewer=$!
     viewer_needs_kill=1
   fi
@@ -133,7 +140,8 @@ pi_attempt() {
   # last events before the pipe is cut, so the final tool calls still print.
   if [ "$viewer_needs_kill" -eq 1 ]; then
     sleep 1
-    kill "$viewer" 2>/dev/null || true
+    kill "$(cat "$tailpid_file" 2>/dev/null)" 2>/dev/null || true
+    rm -f "$tailpid_file"
   fi
   wait "$viewer" 2>/dev/null
   say "transcript: ${log#"$REPO"/}  ($(wc -l <"$log" | tr -d ' ') events)"
