@@ -23,7 +23,12 @@ auth.json
 # fresh-context agent's first read, which is the opposite of the point.
 # Keep them in archive/ if you want them.
 REBUILD-RESULT*.md
-MACOS-RESULT*.md
+
+# MACOS-RESULT*.md is deliberately NOT ignored. It was, and that was wrong:
+# the macOS run happens on a different machine from the review, so the
+# report has to travel through git to be read at all. The contamination
+# argument above does not apply either -- a macOS run is not trying to be a
+# blind re-measurement of a question Linux already answered.
 
 # Agent + VM state that must never be committed
 .pi/

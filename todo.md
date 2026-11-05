@@ -6,7 +6,7 @@ Open items only. Things that went wrong once and were fixed live in
 
 ---
 
-## 1. macOS: built from scratch, not yet merge-proven
+## 1. macOS: built from scratch and merged
 
 **A from-scratch macOS build works.** On 2026-11-04/05 a Mac (Darwin
 25.6.0, arm64, Lima 2.2.1 from Homebrew) ran `./bootstrap.sh --rebuild`
@@ -24,12 +24,16 @@ as under QEMU slirp; `brew install lima` gives a version above the floor;
 guest-side GNU-isms are safe because the guest is Ubuntu either way;
 egress survives a reboot with the runtime phase and lockdown intact.
 
-**What is not.** Nothing has been re-run on Linux since, so the merge gate
-is open: `verify.sh --models` must pass on a Linux host before
-`macos-port` reaches `main`. Both host-side changes were made to be safe
-there — one is a `uname` branch leaving the Linux path byte-identical,
-the other removes a `2>/dev/null` on an already-failing path — but
-"designed to be safe" is not "measured".
+**The merge gate passed.** On 2026-11-05 the branch was run on the Spark
+before merging: **37 passed, 1 failed, 3 skipped**, identical to `main`'s
+baseline the same day, same single failure (the Hermes adapter check),
+both completions passing. Each change was also checked on its own — the
+`uname` branch leaves the Linux `tail -f --pid=` line verbatim, and the
+`bootstrap.sh` change produces zero stderr on a valid `agents.env` while
+naming the offending line on a broken one. Merged in `abf09e7`.
+
+`MACOS-RESULT.md` is now on `main`; it is the fullest account of how the
+port went and what it cost.
 
 **What a clean build still needed.** Two host-side fixes, both BSD-vs-GNU:
 a `tail`/`wait` interaction that hung the whole build *after* Pi had

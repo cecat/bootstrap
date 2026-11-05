@@ -99,12 +99,17 @@ The preflight `/dev/kvm` check in `bootstrap.sh` is guarded by
 
 **The host gateway address.** The VM reaches your model endpoint at
 `192.168.5.2`, Lima's user-mode subnet. It is the same under `vz` and
-QEMU slirp, which is why this worked on both — but it is load-bearing
-and worth confirming before Pi builds anything:
+QEMU slirp, which is why this worked on both — but it is load-bearing,
+so confirm it rather than assuming. `verify.sh` asserts it for you:
 
 ```sh
-limactl shell agents -- ip route | grep default     # expect via 192.168.5.2
+./verify/verify.sh     # expect: VM gateway address matches the guest's default route
 ```
+
+This file used to say `limactl shell agents -- ip route`, which
+`.claude/settings.json` denies — only two named read-only probes are
+allowed in the VM, and that is not one of them. A strict agent would
+have stalled on an instruction the permissions forbid.
 
 **Homebrew versus release binaries.** `README.md` tells Linux users to
 take the Lima release binary because distro packages lag. On macOS
@@ -129,15 +134,36 @@ on Linux while one agent could not reach the web at all; `verify.sh` can
 see that a bot is being polled, which is not the same as an agent that
 answers.
 
+On 2026-11-04 this was the *only* signal that caught a mute agent:
+`verify.sh` read 37 passed, 0 failed both while one agent could not
+answer at all and after it was fixed. Nothing in 41 checks could tell
+the difference.
+
+Run it after `finish-build.sh`, and do not be put off by how that reads:
+narrowing egress to three domains sounds like it would make a web fetch
+impossible. It does not. The public web stays open on 80/443, and
+`config/allowlist-runtime.conf` only names hosts on non-standard ports —
+its own header says so.
+
+**Ask for something from the page body.** A previous run asked for the
+items in a nav menu, which `web_fetch`'s Readability extraction strips
+by design, so neither agent could answer with the tool the spec requires
+and the exchange took three rounds to settle a simple question.
+
 Record each agent's exact words. If one mentions a workaround, a
 fallback, a reader proxy, or rate-limiting, quote it — an agent
 reporting success by routing around a block is a finding, not a pass.
+One agent did exactly that and was right; the other had the same
+fallback available and asked permission first. That difference is worth
+reporting.
 
 ---
 
 ## What to write
 
-`MACOS-RESULT.md` in the repo root. It is gitignored; do not commit it.
+`MACOS-RESULT.md` in the repo root. **Commit and push it** — the review
+happens on a Linux host, so the report only reaches a reviewer through
+git. Commit it alongside your changes so they arrive together.
 
 - **Outcome** — the final tally from `verify.sh --models --reboot`, every
   failing check quoted with its message, and separately whether each
