@@ -7,9 +7,8 @@
 destroyed first, so this is a from-scratch build driven only by the
 committed documents.
 
-*(Status: the build is up and green on a plain run. Marked PENDING below:
-`--idempotence` re-check after Pi's fix, `--reboot`, and the Telegram
-web-fetch check. Everything else is final.)*
+*(Status: complete. One item is permanently unverifiable and says so:
+`--idempotence` cannot be run once egress has narrowed.)*
 
 ---
 
@@ -23,12 +22,33 @@ Verify tallies in order, so the shape of the run is visible:
 | After Pi's build (`--models`) | 35 | 2 | 4 |
 | After Pi's Hermes fix | 35 | 1 | 5 |
 | After `finish-build.sh` | 37 | 1 | 3 |
-| Current, plain run | 35 | 0 | 6 |
+| After the OpenClaw Telegram fix | 37 | 0 | 4 |
+| **Final, `--models --reboot`** | **39** | **1** | **2** |
+| Plain run 18s later | 36 | 0 | 5 |
 
 `--models` passed both agent completions: *"OpenClaw answers a completion
 — model path verified end to end"* and the same for Hermes.
 
-Final `--models --reboot` tally: **PENDING.**
+**Final `--models --reboot`: 39 passed, 1 failed, 2 skipped.** The Linux
+reference is 39 passed, 0 failed, 3 skipped, so this host reaches parity
+on count. The single failure is a defect in the *check*, demonstrated
+below, not in the build.
+
+Reboot persistence passed outright, which is the result that matters most
+here because Pi's original Hermes process would not have survived it:
+
+```
+PASS  survives a reboot
+      phase=runtime lockdown=active openclaw=up hermes=active
+PASS  egress still enforced after reboot
+      link-local -> 403
+```
+
+The two skips are `setup.sh is idempotent` (cannot run in the runtime
+phase — see below) and *"private network is DENIED by squid -- http://
+192.168.5.2 -> no response; nothing is listening, so squid never ruled on
+it. Inconclusive, not a pass."* — the suite declining to claim a pass it
+did not earn, which is the right behaviour.
 
 ### Failures seen, each quoted
 
@@ -46,7 +66,9 @@ Final `--models --reboot` tally: **PENDING.**
    SecretRef... Setting OpenClaw proxy configuration...|Setting Telegram
    allowFrom to [...]"*. Real defect. Pi had reported this in its own
    summary as *"Minor non-idempotent behaviors (safe, cosmetic only)"* —
-   it is a verify failure, not cosmetic. Pi's fix: PENDING.
+   it is a verify failure, not cosmetic. Pi edited `setup.sh` to read
+   current state before each step and claims a second run is now clean.
+   **That claim is unverifiable** — see *The idempotence trap* below.
 
 3. **`egress phase`** — *"still 'bootstrap' (wide allowlist)"*. Not a
    defect; expected before `finish-build.sh` narrows it. Passed as
@@ -61,7 +83,65 @@ Final `--models --reboot` tally: **PENDING.**
 
 ### Telegram web-fetch check
 
-PENDING — the one thing no script covers.
+This check justified itself completely. **The automated suite read 37
+passed, 0 failed while one of the two agents could not answer a message
+at all**, and read the same after it was fixed. For the channel path the
+manual check is not a supplement to `verify.sh` — it is the only signal.
+
+**Cheetah (OpenClaw): silent, then fixed, then correct.** The first
+attempt got no reply whatsoever. Root cause, found by Pi in one short
+turn: OpenClaw's `--use-env` reads `TELEGRAM_BOT_TOKEN`, but the systemd
+unit carried only `OPENCLAW_TELEGRAM_BOT_TOKEN` from `agents.env`, so the
+adapter had no token and never started polling. Corroborated
+independently of Pi's own logs: when the adapter finally started, the
+user's **earlier** messages all arrived at once — a `getUpdates` backlog
+draining, which is exactly what a never-started poller produces.
+
+After the fix it answered, hit the broken browser tool, and refused to
+guess:
+
+> *"Both extraction modes (markdown and text) strip out the actual HTML
+> nav structure — they only return article-style body content via
+> Readability, not header/nav markup. Without a working browser on this
+> host, I can't visually inspect the horizontal nav bar at the top of
+> tpc.dev.*
+>
+> *I don't have a reliable way to answer this accurately right now — the
+> browser tool failed with "No supported browser found," and web_fetch's
+> readability extraction discards navigation menus by design. I won't
+> guess at what's in the nav bar.*
+>
+> *If you want, I could try fetching the raw HTML directly via curl to
+> grep for nav/header tags — want me to try that?"*
+
+Asked afterwards for a sentence from the page body, it returned a valid
+one. **`web_fetch` works.**
+
+**Puma (Hermes): correct answer, via a disclosed workaround.**
+
+> *"The text extract didn't capture the nav menu structure clearly (it's
+> mostly content/calendar). Let me check the actual rendered page for the
+> nav. Browser tool isn't working here (missing system library), so let
+> me pull it from the raw HTML instead."*
+
+It then returned the six nav items. I verified them against the live
+page independently: **Home, About TPC, Participating Organizations,
+Events, Seminars, Blog** — exact match, correct order. Not from memory.
+
+**Both agents reached the public web. Both hit a broken browser tool.**
+The brief says to flag an agent that reports success by routing around a
+block, and Puma did route around one — but it said so plainly, and its
+answer was right. The more interesting divergence is the opposite one:
+Cheetah *had the same fallback available and asked permission first*.
+Same spec, same build, opposite disposition on autonomy. Given these
+agents have shell access and no permission prompts, Cheetah's instinct is
+the safer one, and the reviewer should decide whether that variance is
+acceptable or should be pinned down.
+
+**A flaw in the test question, mine not theirs.** I asked for the nav
+menu; Readability strips nav markup by design. Neither agent could answer
+it with the tool the spec actually requires. Body text would have been
+the fair question from the start.
 
 ---
 
@@ -111,7 +191,8 @@ The brief predicted more of these and it was right to.
 - Pi's build, attempt 1: **308s, aborted, built nothing** (below).
 - Pi's build, attempt 2: **24m 28s**, 14,359 events, zero model errors.
   Squarely in the expected ~30-minute band.
-- Pi's Hermes fix: ~4m. Pi's idempotence fix: PENDING.
+- Pi's Hermes fix ~4m; idempotence fix ~6m (interrupted); OpenClaw
+  Telegram fix ~5m; browser diagnosis ~4m.
 - `finish-build.sh`: ~3m 40s.
 - **Nothing hung.** The silence watchdog did not fire at any point, and
   after the fix below, no turn needed it to.
@@ -158,9 +239,43 @@ the build. All are platform-neutral.
    speak. It does not distinguish "no summary" from "no turn_end", which
    it has a message for. **Not fixed.**
 
-3. **`Hermes Telegram adapter` asserts more than it measures.** Quoted
-   above: 20 seconds of failure is reported as *"it is not reconnecting
-   on its own"*, and it was reconnecting. **Not fixed.**
+3. **`Hermes Telegram adapter` asserts more than it measures — twice.**
+   It declares *"still down 20s later, so it is not reconnecting on its
+   own"* and has been wrong both times it said so: once after egress
+   narrowed, once after the reboot, where the very next run 18 seconds
+   later read *"PASS — connected (polling), this service start"*. Twenty
+   seconds does not support that conclusion after any disruption, and
+   this is the sole failure in the headline `--models --reboot` tally.
+   Its message also renders an empty error — `httpx.ConnectError: --`
+   with nothing after the colon. **Not fixed.**
+
+5. **`Telegram reachability is known` passes while reporting failure.**
+   Verbatim: *"PASS Telegram reachability is known / no bot is being
+   polled; nothing would answer a message yet"*. A check that passes
+   while announcing that no bot would answer a message is misleading
+   however its name is read. `docs/gotchas.md` already records that the
+   polling probe steals the poll it measures, so the underlying state may
+   be fine — the pass verdict is the problem. **Not fixed.**
+
+6. **`verify.sh` cannot see the channel path at all.** It read 37 passed,
+   0 failed with Cheetah completely mute, and 37 passed, 0 failed once it
+   answered. Nothing in 41 checks distinguished a working agent from a
+   dead one. This is the single most important finding in the run: the
+   manual Telegram check is load-bearing, not decorative, and `README.md`
+   and `AGENTS.md` are right to insist on it.
+
+7. **The idempotence trap.** `verify.sh --idempotence` refuses outside the
+   bootstrap phase — *"needs the bootstrap allowlist; currently
+   'runtime'"* — which is correct behaviour, declining rather than
+   reporting a false failure. But `install-config.sh:189` is the only
+   thing that sets the phase back to `bootstrap`, and it re-pushes all
+   config; `finish-build.sh` is the only thing that narrows to `runtime`,
+   and `README.md` says explicitly not to re-run it. Nothing in
+   `README.md`, `AGENTS.md` or `docs/` documents returning to the
+   bootstrap phase. **Consequence: any idempotence fix made after
+   `finish-build.sh` is unverifiable through documented commands.** Pi's
+   fix is in exactly that position. Not worked around, because the only
+   route available was reaching into the VM by hand.
 
 4. **`MACOS-TEST.md` says this report "is gitignored; do not commit it".
    It is neither.** `git check-ignore` finds no rule, and attempt 1's
@@ -170,6 +285,61 @@ the build. All are platform-neutral.
    should be corrected either way.
 
 ---
+
+## One judgment call by Pi the reviewer should rule on
+
+Fixing the mute OpenClaw adapter, Pi created a new file —
+`~/.config/agent-sandbox/openclaw.env` — mapping
+`OPENCLAW_TELEGRAM_BOT_TOKEN` to the `TELEGRAM_BOT_TOKEN` name the
+adapter reads, and referenced it from the systemd unit with
+`EnvironmentFile=-`. systemd does no variable expansion in those files,
+so this is almost certainly a **second plaintext copy of the bot token**
+in the VM, at 0600.
+
+`verify.sh` still reports *"no plaintext or unresolved secrets —
+openclaw secrets audit: plaintext=0 unresolved=0"*, but that audit covers
+OpenClaw's own config, not a file Pi invented outside it. It is the same
+exposure class as `agents.env`, which already holds the token at 0600, so
+I do not read it as a rule violation. What it is: Pi expanded the secret
+footprint to clear an obstacle and did not flag it as a decision — the
+*"quietly weakens things that block it"* pattern, in a mild form. Flagged
+here rather than reverted, because the fix is correct and the alternative
+is unclear.
+
+## The browser tools: two separate defects, neither in scope
+
+Both agents advertise a browser tool; neither can use it. Pi diagnosed
+this read-only, changing nothing:
+
+- **OpenClaw** drives a *system-installed* Chrome-family browser over CDP
+  and bundles none. None is installed, so: `No supported browser found
+  (Chrome/Brave/Edge/Chromium on macOS, Linux, or Windows)`.
+- **Hermes** ships its own Chromium at `~/.hermes/tools/chromium-1208/`,
+  which exits 127 on `libatk-1.0.so.0: cannot open shared object file`.
+  At least twelve runtime libraries are missing — `libatk-1.0`,
+  `libatk-bridge-2.0`, `libcups`, `libatspi`, `libXcomposite`,
+  `libXdamage`, `libXfixes`, `libXrandr`, `libgbm`, `libcairo`,
+  `libpango-1.0`, `libasound`.
+
+So the two error strings really did point at different states: one has no
+browser, the other has a browser it cannot load.
+
+**This is not a macOS defect and not a Pi failure.** The spec never
+mentions a browser — it names `web_fetch` specifically, at line 169 — and
+a Linux host on the same Ubuntu 24.04 aarch64 image would behave
+identically. What the run exposed is a mismatch between the agents'
+advertised toolset and the VM's contents, discoverable only by asking an
+agent to use the tool.
+
+**Not fixed, deliberately.** A durable fix is a spec change, and
+`spec/pi-target-state.md` is frozen for this test; patching `setup.sh`
+would not survive a rebuild, since `setup.sh` is regenerated from the
+spec. Installing a browser plus a dozen libraries also needs apt, which
+the runtime allowlist does not carry — the same phase trap as
+idempotence. **Recommendation for the reviewer:** decide whether a
+browser belongs in the spec at all. If it does not, the agents'
+browser tools should be disabled so they stop offering a capability the
+sandbox cannot provide.
 
 ## Repo changes made
 
