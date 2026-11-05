@@ -372,6 +372,18 @@ else
   fail "no plaintext or unresolved secrets" "plaintext=$plain unresolved=$unres (see: openclaw secrets audit)"
 fi
 
+# That audit only sees OpenClaw's own config. On 2026-11-04 Pi fixed a mute
+# adapter by inventing ~/.config/agent-sandbox/openclaw.env holding a second
+# plaintext copy of the bot token, and the audit reported plaintext=0 while
+# it sat there. Count the copies directly. agents.env is the sanctioned one;
+# anything else beside it is a footprint nobody decided to add.
+tokdup="$(g 'grep -rlE "[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}" $HOME/.config/agent-sandbox/ 2>/dev/null | grep -v "/agents.env$" | tr "\n" " "')"
+if [ -z "$(printf '%s' "$tokdup" | tr -d '[:space:]')" ]; then
+  pass "bot tokens live in one file only" "nothing beside agents.env carries a bot token"
+else
+  fail "bot tokens live in one file only" "also in: $tokdup -- a second plaintext copy the secrets audit cannot see. Give the service the variable name it wants without duplicating the value."
+fi
+
 # The agent must carry the configured name, and its SOUL.md must be the
 # seed rather than a vendor default. Checking only that some SOUL.md
 # exists passes a build where the seed landed in an unused directory and

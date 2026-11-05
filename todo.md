@@ -52,7 +52,25 @@ idempotence fix made after that point is unverifiable. And `verify.sh`
 read 37 passed, 0 failed while one agent was completely mute on Telegram,
 which is why the manual check in `README.md` is load-bearing.
 
-## 2. vLLM failover is unverified
+## 2. No browser in the VM, by decision
+
+Both agents ship a browser tool and neither can use it: OpenClaw drives a
+system Chrome that is not installed, Hermes bundles a Chromium that exits
+127 on `libatk-1.0.so.0` with at least twelve runtime libraries missing.
+Found on macOS 2026-11-04, but the guest is the same Ubuntu either way, so
+Linux behaves identically.
+
+**Deliberately not fixed.** Installing Chromium means a dozen apt packages,
+probably `--no-sandbox` inside a VM whose whole point is confinement, and
+the largest single addition anyone has proposed to a spec that is a prompt
+and pays for length. `web_fetch` is what the spec requires, it works, and
+both agents answered real web questions with it.
+
+The SOUL seed now tells agents to use `web_fetch` and that no browser is
+installed, so they stop reaching for a tool that always fails. Revisit only
+if something genuinely needs JavaScript-rendered pages.
+
+## 3. vLLM failover is unverified
 
 `docs/failover.md` describes a fallback to a local model over Tailscale. The
 config syntax was never confirmed for any of the three agents and the
@@ -60,7 +78,7 @@ tailnet was down when it was written. Spec section 4 tells Pi to skip it
 unless `VLLM_BASE_URL` is set, and to write nothing it cannot source from
 current documentation. A guessed failover config is worse than none.
 
-## 3. Other providers
+## 4. Other providers
 
 Only the Argo path is implemented. The structure generalises — one
 translation proxy serving `/v1/messages` and `/v1/chat/completions` — and

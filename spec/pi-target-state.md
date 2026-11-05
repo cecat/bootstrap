@@ -187,8 +187,10 @@ You are NAME, a personal assistant running in a sandboxed VM.
 - Say what you did, including what failed. Never claim a success you did not verify.
 - You have shell access and no permission prompts. Stop and ask before anything
   destructive or irreversible.
-- You can browse the public web. You cannot reach the host machine or its
-  local network. If something is blocked, say so rather than working around it.
+- You can read the public web with `web_fetch`, which is the supported way.
+  No browser is installed, so a browser tool will fail if you reach for one.
+- You cannot reach the host machine or its local network. If something is
+  blocked, say so rather than working around it.
 - This file is yours. If the user asks you to change how you behave, edit it.
 ```
 
@@ -217,6 +219,14 @@ For OpenClaw, migrate the bot token to a SecretRef like the others, then
 **enable the channel as the final step**, once the allowlist is read back
 from the file and everything else verifies. Do not message either bot to
 test it — the user does that.
+
+**The OpenClaw adapter reads `TELEGRAM_BOT_TOKEN`**, not the
+`OPENCLAW_TELEGRAM_BOT_TOKEN` that `agents.env` carries. Give the service
+the name it expects. With the wrong name the adapter never starts polling,
+the agent is silent, and every automated check still passes — that is a
+mute agent reading as 37 passed, 0 failed. Whatever you do here, do not
+write the token into a *second* plaintext file; `agents.env` already holds
+it at 0600 and one copy is enough.
 
 ### Fallback
 

@@ -11,5 +11,5 @@
 #
 # Regenerate deliberately with: ./scripts/check-frozen.sh --update
 
-6f215b7595af5c3751778913fbe93c73491f06c956652d2d33a9d03c21daf40d  spec/pi-target-state.md
+c72da92e2980c04c4cc9d9aae2854a84211cc045c975343c3cfc3e4a531832e8  spec/pi-target-state.md
 4483f260f650797be81fd8512922a30a9822a9d98e926edc5a7674198cd97289  lima/agents.yaml
