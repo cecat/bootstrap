@@ -152,6 +152,21 @@ pi_attempt() {
   if [ "$rc" -ne 0 ] && ! grep -q '"type":"tool_execution_start"' "$log" 2>/dev/null; then
     NO_WORK=1
   fi
+
+  # Pi can abort and still exit 0. On 2026-11-04 three consecutive model
+  # calls died with stopReason "error" 22s in; Pi had made tool calls, so
+  # the test above did not arm, and the wrapper returned success over a
+  # build that installed nothing. A supervisor trusting the exit code goes
+  # straight to finish-build.sh and wastes the next hour.
+  #
+  # Say so rather than changing the exit code: the retry logic above is
+  # tuned to a different question, and a turn that really did abort is
+  # usually the documented transient, which a plain re-run fixes.
+  if [ "$rc" -eq 0 ] && grep -q '"stopReason":"error"' "$log" 2>/dev/null; then
+    say "WARNING: exit 0, but the log carries stopReason \"error\" -- Pi may have
+  aborted mid-turn. Check 'summary' and 'steps' before trusting this build;
+  if nothing was installed, re-run. This is often the documented transient."
+  fi
   return "$rc"
 }
 
@@ -190,9 +205,18 @@ try:
     msg = json.load(sys.stdin).get("message", {})
 except Exception:
     sys.exit("(could not parse the final event)")
-for block in msg.get("content", []):
-    if block.get("type") == "text":
-        print(block.get("text", "").strip())
+blocks = [b.get("text", "").strip() for b in msg.get("content", [])
+          if b.get("type") == "text"]
+blocks = [b for b in blocks if b]
+if blocks:
+    print("\n".join(blocks))
+else:
+    # A turn_end with no text is not the same as no turn_end, and printing
+    # nothing leaves the supervisor'"'"'s primary signal silent in exactly the
+    # case it most needs to speak -- that is what happened on 2026-11-04
+    # over an aborted build.
+    print("(the turn ended with an empty summary -- Pi stopped without\n"
+          "writing one, which an aborted turn does. Run: pi-session.sh steps)")
 '
 }
 

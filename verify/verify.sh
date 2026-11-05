@@ -315,16 +315,29 @@ if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
   adapter_event() {
     g 'journalctl --user -u hermes-gateway.service --no-pager _SYSTEMD_INVOCATION_ID="$(systemctl --user show -p InvocationID --value hermes-gateway.service)" 2>/dev/null | grep -iE "\[Telegram\] Connected|No adapter available for telegram|adapter creation failed|Telegram network error|Conflict: terminated" | tail -1'
   }
+  # A transient needs a long enough window to recover in, and 20s was not
+  # it. This check has claimed "not reconnecting on its own" three times
+  # about an adapter that was reconnecting: twice on Linux, once on macOS
+  # right after a reboot, where the very next run 18 seconds later read
+  # PASS. Sample for up to two minutes and stop at the first success.
   jr="$(adapter_event)"
   case "$jr" in
-    *"network error"*) sleep 20; jr="$(adapter_event)" ;;
+    *"network error"*)
+      for _ in 1 2 3 4 5 6; do
+        sleep 20
+        jr="$(adapter_event)"
+        case "$jr" in *"Connected to Telegram"*) break ;; esac
+      done ;;
   esac
+  # `sed 's/.*: //'` renders "httpx.ConnectError: " as nothing at all, which
+  # printed a failure message with an empty reason. Keep the whole line.
+  jr_msg="$(printf '%s' "$jr" | sed 's/^.*\] //')"
   case "$jr" in
     *"Connected to Telegram"*) pass "Hermes Telegram adapter" "connected (polling), this service start" ;;
     "")                        skip "Hermes Telegram adapter" "no adapter activity since the service started" ;;
     *"Conflict: terminated"*)  skip "Hermes Telegram adapter" "another getUpdates consumer took the poll -- usually check-telegram-polling.sh running; the adapter reconnects on its own" ;;
-    *"network error"*)         fail "Hermes Telegram adapter" "$(printf '%s' "$jr" | sed 's/.*: //') -- still down 20s later, so it is not reconnecting on its own" ;;
-    *)                         fail "Hermes Telegram adapter" "$(printf '%s' "$jr" | sed 's/.*: //') -- check: hermes plugins enable telegram-platform, and that pypi was reachable when it first started" ;;
+    *"network error"*)         skip "Hermes Telegram adapter" "${jr_msg:-network error} -- still down after 2 minutes. Long-polls drop and reconnect, and this check has been wrong about it before, so: message the bot. That settles it and nothing here can." ;;
+    *)                         fail "Hermes Telegram adapter" "${jr_msg:-unrecognised adapter state} -- check: hermes plugins enable telegram-platform, and that pypi was reachable when it first started" ;;
   esac
 else
   pass "hermes-gateway" "no Telegram credentials in ~/.hermes/.env; gateway not required"
@@ -505,7 +518,13 @@ if [ -f "$REPO_DIR/config/agents.env" ]; then
   poll_out="$("$REPO_DIR/scripts/check-telegram-polling.sh" 2>&1)"
   live="$(grep -cE 'POLLING' <<<"$poll_out")"
   if [ "${live:-0}" = "0" ]; then
-    pass "Telegram reachability is known" "no bot is being polled; nothing would answer a message yet"
+    # Not a pass. On 2026-11-04 an OpenClaw adapter never started -- its
+    # unit carried OPENCLAW_TELEGRAM_BOT_TOKEN while --use-env reads
+    # TELEGRAM_BOT_TOKEN -- and the agent was mute while the suite read
+    # 37 passed, 0 failed. Still not a fail: tokens may be deliberately
+    # blank, and this probe steals the poll it measures, so a live
+    # adapter can read as absent. Skip is the honest verdict.
+    skip "Telegram reachability is known" "no bot is being polled -- if you configured tokens, no agent will answer a message. A mute agent has read as 37 passed, 0 failed here before: message one and see."
   else
     pass "Telegram reachability is known" "$live bot(s) polling -- NOT proof any of them answers. Message one and watch it fetch a web page; nothing automated covers that."
   fi
@@ -525,7 +544,7 @@ else
   if ! g 'test -x ~/agent-bootstrap/setup.sh' >/dev/null 2>&1; then
     skip "setup.sh is idempotent" "~/agent-bootstrap/setup.sh not found"
   elif [ "$phase" != "bootstrap" ]; then
-    skip "setup.sh is idempotent" "needs the bootstrap allowlist; currently '$phase'"
+    skip "setup.sh is idempotent" "needs the bootstrap allowlist; currently '$phase'. To re-check after a fix: ./scripts/install-config.sh (returns the VM to the bootstrap phase), then ./verify/verify.sh --idempotence, then ./scripts/finish-build.sh to narrow egress again."
   else
     idem="$(g 'cd ~/agent-bootstrap && ./setup.sh 2>&1')"
     # Count announced actions that are NOT immediately retracted by an
