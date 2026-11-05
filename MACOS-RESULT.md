@@ -249,7 +249,7 @@ the build. All are platform-neutral.
    Its message also renders an empty error — `httpx.ConnectError: --`
    with nothing after the colon. **Not fixed.**
 
-5. **`Telegram reachability is known` passes while reporting failure.**
+4. **`Telegram reachability is known` passes while reporting failure.**
    Verbatim: *"PASS Telegram reachability is known / no bot is being
    polled; nothing would answer a message yet"*. A check that passes
    while announcing that no bot would answer a message is misleading
@@ -257,14 +257,14 @@ the build. All are platform-neutral.
    polling probe steals the poll it measures, so the underlying state may
    be fine — the pass verdict is the problem. **Not fixed.**
 
-6. **`verify.sh` cannot see the channel path at all.** It read 37 passed,
+5. **`verify.sh` cannot see the channel path at all.** It read 37 passed,
    0 failed with Cheetah completely mute, and 37 passed, 0 failed once it
    answered. Nothing in 41 checks distinguished a working agent from a
    dead one. This is the single most important finding in the run: the
    manual Telegram check is load-bearing, not decorative, and `README.md`
    and `AGENTS.md` are right to insist on it.
 
-7. **The idempotence trap.** `verify.sh --idempotence` refuses outside the
+6. **The idempotence trap.** `verify.sh --idempotence` refuses outside the
    bootstrap phase — *"needs the bootstrap allowlist; currently
    'runtime'"* — which is correct behaviour, declining rather than
    reporting a false failure. But `install-config.sh:189` is the only
@@ -277,7 +277,7 @@ the build. All are platform-neutral.
    fix is in exactly that position. Not worked around, because the only
    route available was reaching into the VM by hand.
 
-4. **`MACOS-TEST.md` says this report "is gitignored; do not commit it".
+7. **`MACOS-TEST.md` says this report "is gitignored; do not commit it".
    It is neither.** `git check-ignore` finds no rule, and attempt 1's
    copy is tracked and committed in `ae8df83`. Committed deliberately
    this time, on the user's instruction, so the reviewing agent gets
@@ -429,6 +429,49 @@ definition, or anything in-guest.
   document throughout.
 
 ---
+
+## Where I got it wrong
+
+Recorded because a reviewer checking my reasoning should not have to
+find these for themselves.
+
+1. **I asked both agents the one question their working tool cannot
+   answer.** The test was "the items on the horizontal nav menu"; the
+   `web_fetch` Readability extraction strips nav markup by design. Body
+   text was the fair question and would have settled web access in one
+   exchange instead of three. Neither agent failed this — my question
+   did.
+
+2. **I conflated two different kinds of blindness.** I told the user
+   "`verify.sh` cannot see any of this" about both the mute agent and the
+   broken browser. Those are not the same: the channel path is a check
+   that passes over a thing it purports to cover (finding 5, serious),
+   while the browser is simply uncovered ground that was never in scope
+   (not a check defect at all). Running them together overstated the
+   second.
+
+3. **Five supervisor theories were avoided, one was not needed.** The
+   attempt-1 hang was diagnosed by a 40-second probe rather than
+   argument, and the Pi abort was settled by `diag-stream.sh` rather than
+   speculation. Noted only because `MACOS-TEST.md` warns that a previous
+   session lost hours to successive wrong theories; measuring first
+   worked, and cost minutes.
+
+## Not done — Linux is the merge gate
+
+**Nothing here has been re-run on Linux, so none of it should reach
+`main` yet.** `AGENTS.md` and `MACOS-TEST.md` both require
+`./verify/verify.sh --models` to pass on a Linux host first. Both repo
+changes were written to be safe there — one is a `uname` branch leaving
+the Linux path byte-identical, the other removes a `2>/dev/null` on a
+path that was already failing and exiting non-zero — but *designed to be
+safe* is not *measured safe*, and the second one is explicitly not
+bounded. A Linux run is the next step, not an optional one.
+
+Also outstanding, and not blockers for the merge but open questions for
+the reviewer: whether a browser belongs in the spec at all, whether the
+seven check defects above are worth fixing before the next build, and
+whether Pi's second plaintext token copy should stand.
 
 ## Blocked
 
