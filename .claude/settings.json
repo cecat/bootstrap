@@ -3,10 +3,7 @@
     "allow": [
       "Bash(git *)",
       "Bash(./bootstrap.sh*)",
-      "Bash(./scripts/pi-session.sh *)",
-      "Bash(./scripts/finish-build.sh*)",
-      "Bash(./scripts/detect-model-access.sh --dry-run)",
-      "Bash(./scripts/check-telegram-tokens.sh)",
+      "Bash(./scripts/*.sh*)",
       "Bash(./verify/verify.sh*)",
       "Bash(limactl list*)",
       "Bash(limactl shell agents -- cat /etc/agent-sandbox/phase)"
