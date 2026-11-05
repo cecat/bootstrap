@@ -6,26 +6,47 @@ Open items only. Things that went wrong once and were fixed live in
 
 ---
 
-## 1. macOS is stale
+## 1. macOS: built from scratch, not yet merge-proven
 
-**Open, and the repo overstates its portability.**
+**A from-scratch macOS build works.** On 2026-11-04/05 a Mac (Darwin
+25.6.0, arm64, Lima 2.2.1 from Homebrew) ran `./bootstrap.sh --rebuild`
+and reached **39 passed, 1 failed, 2 skipped** on
+`verify.sh --models --reboot` — parity with the Linux reference of 39/0/3.
+The one failure is a check defect, not a build defect. Both agents answer
+on Telegram and both fetch the public web. Full account in
+`MACOS-RESULT.md` on branch `macos-port`. The old "25 checks" figure in
+this item was obsolete and is gone.
 
-macOS was the original host and passed 25 checks. Linux (DGX Spark) is
-verified from scratch. But everything that raised the Linux number landed
-after the Mac run and has never been executed there — including a check that
-called an OpenClaw gateway method which no longer exists, meaning the macOS
-build was verified with an assertion that would now fail there too.
+**What is proven.** `vz` and aarch64 both follow the host with
+`lima/agents.yaml` pinning neither; the `/dev/kvm` preflight correctly
+does not fire; the `192.168.5.2` gateway address holds under `vz` exactly
+as under QEMU slirp; `brew install lima` gives a version above the floor;
+guest-side GNU-isms are safe because the guest is Ubuntu either way;
+egress survives a reboot with the runtime phase and lockdown intact.
 
-Treat macOS as unproven until someone runs `./bootstrap.sh --rebuild` on one.
+**What is not.** Nothing has been re-run on Linux since, so the merge gate
+is open: `verify.sh --models` must pass on a Linux host before
+`macos-port` reaches `main`. Both host-side changes were made to be safe
+there — one is a `uname` branch leaving the Linux path byte-identical,
+the other removes a `2>/dev/null` on an already-failing path — but
+"designed to be safe" is not "measured".
 
-`MACOS-TEST.md` is the harness for that run: hand it to a coding agent on
-a Mac. It is derived from the Linux rebuild harness
-(`archive/REBUILD-TEST.md` locally, or git history at `9758e12`) but
-allows fixing what it finds, under bounds that protect the Linux build:
-`spec/pi-target-state.md` and `lima/agents.yaml` are frozen
-(`./scripts/check-frozen.sh`), every other change must be a `uname`
-branch leaving the Linux path byte-identical, and nothing merges until
-`verify.sh --models` passes on Linux.
+**What a clean build still needed.** Two host-side fixes, both BSD-vs-GNU:
+a `tail`/`wait` interaction that hung the whole build *after* Pi had
+finished (the silence watchdog cannot catch this — its loop has already
+exited), and `bootstrap.sh` discarding bash's diagnosis of a syntax error
+in `agents.env`. Pi also needed three push-backs: Hermes running as a
+standalone `--idle-exit` process that would not survive reboot, a
+non-idempotent `setup.sh`, and an OpenClaw Telegram adapter that never
+started because `--use-env` wants `TELEGRAM_BOT_TOKEN` and the unit only
+had `OPENCLAW_TELEGRAM_BOT_TOKEN`.
+
+**Two gaps worth their own items if they are not fixed soon.**
+`verify.sh --idempotence` cannot run once `finish-build.sh` has narrowed
+egress, and nothing documents a way back to the bootstrap phase — so any
+idempotence fix made after that point is unverifiable. And `verify.sh`
+read 37 passed, 0 failed while one agent was completely mute on Telegram,
+which is why the manual check in `README.md` is load-bearing.
 
 ## 2. vLLM failover is unverified
 

@@ -103,8 +103,27 @@ pi_attempt() {
   ' _ "$SESSION_ID" "$PROVIDER" "$MODEL" "$prompt" > "$log" 2>&1 &
   local pid=$!
 
-  tail -f -n +1 --pid="$pid" "$log" | pi_progress &
-  local viewer=$!
+  # GNU tail stops itself with --pid when the turn ends. BSD tail has no
+  # such option -- it rejects the flag outright, so on macOS the progress
+  # view died instantly and the whole build ran blind. The Linux branch is
+  # the original line, untouched; the fallback tails without --pid and is
+  # killed below instead. See MACOS-TEST.md.
+  local viewer tailpid_file="" viewer_needs_kill=0
+  if [ "$(uname -s)" = "Linux" ]; then
+    tail -f -n +1 --pid="$pid" "$log" | pi_progress &
+    viewer=$!
+  else
+    # `wait` on a backgrounded pipeline waits for the WHOLE job, and the
+    # no---pid tail never ends -- so killing pi_progress alone left the
+    # script blocked in `wait "$viewer"` forever, after Pi had finished.
+    # That is the 2026-11-04 hang: the build completed at 379s and the
+    # wrapper never returned. Kill the tail instead; pi_progress then sees
+    # EOF, exits, and the job completes.
+    tailpid_file="$log.tailpid"
+    { tail -f -n +1 "$log" & echo $! >"$tailpid_file"; wait; } 2>/dev/null | pi_progress &
+    viewer=$!
+    viewer_needs_kill=1
+  fi
 
   local quiet=0
   while kill -0 "$pid" 2>/dev/null; do
@@ -117,6 +136,13 @@ pi_attempt() {
   done
 
   wait "$pid" 2>/dev/null; local rc=$?
+  # Only the no---pid fallback needs this; the sleep lets tail flush the
+  # last events before the pipe is cut, so the final tool calls still print.
+  if [ "$viewer_needs_kill" -eq 1 ]; then
+    sleep 1
+    kill "$(cat "$tailpid_file" 2>/dev/null)" 2>/dev/null || true
+    rm -f "$tailpid_file"
+  fi
   wait "$viewer" 2>/dev/null
   say "transcript: ${log#"$REPO"/}  ($(wc -l <"$log" | tr -d ' ') events)"
 
