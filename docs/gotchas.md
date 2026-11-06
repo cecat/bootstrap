@@ -129,9 +129,30 @@ than what the system does.
 its step runs unconditionally while looking guarded. Use `jq -e`.
 
 **Watch for skips reading as passes.** In a thirty-line run `SKIP` looks
-like `PASS`. `--idempotence` skips under the runtime allowlist because Pi's
-`setup.sh` needs pypi.org, which is why `finish-build.sh` runs it before
-narrowing egress.
+like `PASS`. `--idempotence` skips unless the phase is `bootstrap`, which is
+why `finish-build.sh` runs it before narrowing egress.
+
+That skip is a phase check in `verify.sh`, not a thing egress makes
+impossible — worth knowing before you debug the wrong layer. (2026-11-06)
+Since the squid change of 2026-10-31, `http_access allow all` follows the
+private-range denial, so the whole public web on 80/443 — pypi.org
+included — is reachable in **both** phases. What the bootstrap allowlist
+still buys is nothing on those ports; the two lists now differ only in
+hosts needed on other ports. Measured on a runtime-phase VM: "public web is
+reachable through squid".
+
+Consequence: a `pip install` failing under the runtime phase is a real
+failure, not an egress one, so do not reach for `install-config.sh` to
+widen the allowlist.
+
+Two places still carry the older reasoning. The README, under *Four places
+it goes wrong*, says idempotence is bootstrap-only "because Pi's `setup.sh`
+fetches from pypi.org" — the behaviour it describes is right and the way
+back it gives is right, only the stated cause is stale.
+`spec/pi-target-state.md` tells Pi the same thing. That one is frozen and
+it is Pi's prompt, so it is left alone deliberately: editing it changes the
+next build, and all it costs is Pi sequencing its work more conservatively
+than it needs to.
 
 **Mind your own pipes.** (2026-10-29) Piping `finish-build.sh` through
 `tail` reported tail's exit code, so a run that printed "The build is NOT
