@@ -1,20 +1,138 @@
 # Google Workspace for the Hermes agent
 
 An **optional add-on**. The base build does not need it, does not know about
-it, and is not modified by it. Nothing here runs unless you run it.
+it, and is not modified by it. Nothing here runs unless you ask for it.
 
 It gives the **Hermes agent only** access to one Google account's Gmail,
 Calendar, Drive and Forms. OpenClaw gets nothing.
 
-```sh
-./bootstrap.sh && ./scripts/pi-session.sh build   # the base system, first
-./scripts/finish-build.sh
-./verify/verify.sh                                 # clean before you start
+> **Build the base system first.** Follow the repo's top-level `README.md`
+> and come back when `./verify/verify.sh` reports no failures. That document
+> is the only instructions for the base build; this one does not repeat them
+> and deliberately does not summarise them. If the base is not finished and
+> verifying, `install` below refuses to run.
 
-./scripts/addon-google-workspace.sh auth           # one browser consent
-./scripts/addon-google-workspace.sh install        # build it
-./scripts/addon-google-workspace.sh verify --live  # the evidence
+## Your part, then your agent's
+
+Steps 1–3 are yours, because they need a browser and a secret that must not
+pass through a chat. Then you hand over at step 4, and step 5 is the one
+check at the end that no script can do. Everything between is the agent's.
+
+Budget about fifteen minutes of your attention, most of it in the Google
+Cloud Console.
+
+### 1. Set up a Google OAuth client (browser, about ten minutes)
+
+At <https://console.cloud.google.com/>:
+
+1. Create a project, or pick one you already have.
+2. Enable four APIs: **Gmail**, **Google Calendar**, **Google Drive**,
+   **Google Forms**.
+3. Configure the OAuth consent screen. Choose **External** unless you
+   administer a Workspace domain, and add your own address as a user.
+4. **Publish it** — set publishing status to **In production**. This matters
+   more than it looks; see the warning below.
+5. Create credentials → **OAuth client ID** → application type **Desktop
+   app**. Keep the client ID and client secret on screen for the next step.
+
+> **Leave the consent screen in "Testing" and this add-on breaks every seven
+> days.** Google expires refresh tokens issued by an unpublished app after a
+> week. The failure looks like the agent suddenly being unable to see your
+> mail, with `invalid_grant` buried in a log. An External app that requests
+> no sensitive scopes for *other people's* accounts does not need Google's
+> verification review to be published for your own use.
+
+### 2. Put those two values in a file
+
+```sh
+./scripts/addon-google-workspace.sh install
 ```
+
+The first run creates `config/google.env` from a template, tells you what it
+needs, and stops with exit 2 — the same handshake `bootstrap.sh` uses. Open
+that file in an editor and fill in `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET`.
+
+**Type them into the file, never into a chat with your coding agent.** A
+secret pasted into a conversation is a secret in a transcript you do not
+control.
+
+### 3. Consent, in a browser
+
+```sh
+./scripts/addon-google-workspace.sh auth
+```
+
+This opens Google's consent page, catches the result on `127.0.0.1:8731`,
+and writes the refresh token into `config/google.env` (0600) plus a
+credential file beside it. You do not type or copy either one.
+
+If this machine has no browser — a headless host over SSH, which is the
+common case — the command says so and waits ten minutes. It writes the
+consent URL to `config/google-consent-url.txt` and prints an `ssh -L` line
+to run from a machine that *does* have one:
+
+```sh
+ssh -L 8731:127.0.0.1:8731 you@this-host
+```
+
+Open the URL there, consent, and the waiting command finishes on its own.
+Google redirects to `127.0.0.1:8731`, which has to mean *this* machine —
+that is what the forwarded port is for.
+
+### 4. Hand over to your coding agent
+
+Now switch. Open your coding agent in this directory and tell it:
+
+> Read `addons/google-workspace/README.md` and install the Google Workspace
+> add-on.
+
+It takes over from here, and will come back to you once at the end with the
+one check no script can perform.
+
+### 5. The check nothing automated covers
+
+When the agent reports it is done, **message the Hermes bot on Telegram and
+ask it what is on your calendar today.** Every automated check in this repo
+has passed at some point while an agent sat mute, so this one is yours and
+it is not optional.
+
+---
+
+# Installing it — for the coding agent
+
+The human has done steps 1–3 above: `config/google.env` holds a client ID,
+a client secret and a refresh token, and a `google-credentials-*.json` sits
+beside it. Your job is the rest.
+
+```sh
+./scripts/addon-google-workspace.sh install        # preconditions, push, drive Pi
+./scripts/pi-session.sh summary                    # what Pi claims it did
+./scripts/addon-google-workspace.sh verify --live --base
+```
+
+`install` checks its preconditions and refuses rather than half-installing:
+the base build must be present and verifying, and the Hermes Telegram
+allowlist must not be empty. It then pushes the pinned requirements and the
+credential store into the VM and hands Pi the spec in
+`addons/google-workspace/spec.md`, through the ordinary
+`./scripts/pi-session.sh say`.
+
+Supervise Pi exactly as `AGENTS.md` describes for the base build: its
+summary is a claim, `verify.sh` is the evidence, and `pi-session.sh say` is
+how you push back. Pi's deliverable is
+`~/agent-bootstrap/setup-google.sh` — a second, standalone idempotent
+script, never `setup.sh`, so base idempotence stays a measurement of the
+base build.
+
+`verify --live` makes one real Google call (it reads a Gmail label and
+writes nothing), because a registered tool list proves nothing about the
+credentials. `--base` re-runs the base suite to confirm this add-on broke
+nothing. Then tell the user to do step 5.
+
+---
+
+# Reference
 
 ## What this installs
 
@@ -107,36 +225,16 @@ squid". Those base files are left alone here deliberately — this add-on
 changes nothing in the base system — but the install does not need the
 bootstrap phase, and you should not switch to it.
 
-## Before you start
+## What `install` refuses to do
 
-The base system must be built and verifying, and the Hermes bot must have a
-non-empty Telegram allowlist. `install` checks both and refuses otherwise.
+It stops rather than half-installing if the base build is missing or
+failing, if there is no refresh token yet, or if the Hermes bot has an empty
+`TELEGRAM_ALLOWED_USERS`.
 
-That second one is not bureaucracy. Once this add-on is in place, whoever can
-message the Hermes bot can read your mail. The allowlist is the only thing
-deciding who that is.
-
-## One-time setup in Google Cloud Console
-
-This is the part only you can do. It is all in a browser, and you do it once.
-
-1. Create a project at <https://console.cloud.google.com/>.
-2. Enable four APIs: **Gmail**, **Google Calendar**, **Google Drive**,
-   **Google Forms**.
-3. Configure the OAuth consent screen. Choose **External** unless you are a
-   Workspace admin, add your own address as the account, and then —
-   importantly — **publish it**. Set publishing status to **In production**.
-4. Create credentials → **OAuth client ID** → application type **Desktop
-   app**. Copy the client ID and client secret.
-5. Put those two values into `config/google.env`. Run `install` once with no
-   config and it will create that file from the template and tell you.
-
-> **Leave the consent screen in "Testing" and this add-on breaks every seven
-> days.** Google expires refresh tokens issued by an unpublished app after one
-> week. The failure looks like the agent suddenly being unable to see your
-> mail, with `invalid_grant` buried in a journal. Publishing is the fix. An
-> External app requesting no sensitive scopes for *other people's* accounts
-> does not need Google's verification review to be published for your own use.
+That last one is not bureaucracy. Once this add-on is in place, whoever can
+message the Hermes bot can read your mail, so the allowlist stops being a
+configuration detail and becomes the whole exposure. If the Hermes channel
+is deliberately off, either turn it on or leave this add-on uninstalled.
 
 ## Where the credentials live
 
