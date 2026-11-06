@@ -192,6 +192,36 @@ for t in search_gmail_messages get_gmail_message_content send_gmail_message \
   pass "tool present: $t"
 done
 
+# Everything above asks the SERVER what it registers, by running it
+# directly. That passed 40 checks on 2026-11-06 while Hermes had parked
+# the server after a bad path and the agent had no Google tools at all --
+# the user found out by asking it, which is the one thing no script was
+# doing. So ask the gateway what it actually holds.
+section "Hermes can actually see the tools"
+
+park="$(g 'journalctl --user -u hermes-gateway.service --since "-24h" --no-pager 2>/dev/null | grep -icE "google-workspace.*(parked|permanent error|missing executable)"' | tr -dc '0-9')"
+livetools="$(g 'hermes tools list 2>/dev/null | grep -ci "google_workspace\|google-workspace"' | tr -dc '0-9')"
+
+if [ "${livetools:-0}" -gt 0 ]; then
+  pass "the gateway lists the Google tools" "$livetools entries in hermes tools list"
+elif [ "${park:-0}" -gt 0 ]; then
+  fail "the gateway lists the Google tools" \
+       "the MCP server is PARKED -- Hermes hit a permanent error (usually a wrong
+        command path) and does not retry. The agent has no Google tools however
+        healthy the server looks when run by hand. Fix the path, then restart:
+        systemctl --user restart hermes-gateway.service"
+else
+  fail "the gateway lists the Google tools" \
+       "hermes tools list shows none -- the agent cannot call them, whatever the server reports"
+fi
+
+# A parked server is invisible to every other check here, so say so even
+# when the tools did show up: a park earlier in the same session means
+# the gateway needed a restart to recover, which is worth knowing.
+if [ "${park:-0}" -gt 0 ] && [ "${livetools:-0}" -gt 0 ]; then
+  printf '        %s(the journal shows an earlier park; it recovered)%s\n' "$Y" "$Z"
+fi
+
 # The whole Drive promise in one assertion. If a later edit adds a delete
 # tool back, this is what catches it.
 #

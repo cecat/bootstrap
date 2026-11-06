@@ -49,7 +49,12 @@ try to re-authenticate if something fails.
 
 Make the venv **at** `~/.local/share/agent-sandbox/google-mcp` — so the
 interpreter is `~/.local/share/agent-sandbox/google-mcp/bin/python`, not
-`.../google-mcp/venv/bin/python` — and
+`.../google-mcp/venv/bin/python`. The directory is **agent-sandbox**, the
+same one holding `.config/agent-sandbox`; `agent-bootstrap` is a
+different thing and is where your own setup scripts live. Writing the
+wrong one into the config is not a typo you will notice: Hermes parks the
+server on a missing executable and never retries, so the gateway stays up,
+every check still passes, and only the agent knows it has no tools. Then
 `pip install -r ~/google-mcp-src/requirements.txt` into it. Do not install
 into Hermes' own venv: the add-on must be removable without disturbing the
 base build.
@@ -125,7 +130,18 @@ needs bridging; if you think it does, re-read the file first.
 
 ### 4. Restart and prove it works
 
+Before restarting, run the `command:` path from the config and confirm it
+is executable — `test -x` on the exact string you wrote, not on the path
+you meant. A wrong path parks the server permanently.
+
 Restart the Hermes gateway, then prove each of these from evidence:
+
+- **`hermes tools list` shows the Google tools.** This is the one that
+  matters: it is what the agent can actually call. A server that runs
+  fine when you start it by hand proves nothing, because Hermes parks a
+  server that failed to start once and does not retry it. Grep the
+  journal for `parked` and `permanent error` before believing anything
+  else;
 
 - the server process started and registered its tools — quote the journal
   line;
