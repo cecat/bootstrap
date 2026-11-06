@@ -143,7 +143,7 @@ cmd_install() {
 EOF
     exit 2
   }
-  ok "credentials present in $ENVFILE"
+  ok "credentials present in $ENVFILE -- consent already done, not repeated"
 
   vm_running || fail "instance '$INSTANCE' is not running. Build the base system first."
 

@@ -122,6 +122,13 @@ secret in a conversation is a secret in a transcript you do not control.
 > yours again immediately. The URL is printed in full for you to select —
 > no file to open, nothing to scp, nothing to retype.
 >
+> **You do this once, ever.** The refresh token it produces does not
+> expire once the consent screen is published, and it survives re-running
+> `install`, rebuilding the add-on, and `remove`. If a later step fails and
+> you have to start over, `auth` sees the existing token and exits without
+> doing any of this again. Only `auth --force` repeats it, and only
+> revoking access at Google makes that necessary.
+>
 > Do them in that order. Approving before the tunnel exists fails *after*
 > you have consented, and the grant is spent — you would re-run `auth` and
 > do it again.
