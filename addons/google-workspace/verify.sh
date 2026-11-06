@@ -197,6 +197,19 @@ done
 # the server after a bad path and the agent had no Google tools at all --
 # the user found out by asking it, which is the one thing no script was
 # doing. So ask the gateway what it actually holds.
+# httplib2 proxies only when PySocks is importable: its isgood() is
+# `return socks and ...`, so without it the Google client connects
+# DIRECT and dies at the uid lockdown with Errno 113 -- while every
+# proxy variable reads correctly and squid stays silent, because the
+# request never arrives. Assert the condition, not the symptom.
+pysocks="$(g "$VENV/bin/python -c 'import httplib2; print(\"SOCKS_OK\" if httplib2.socks else \"SOCKS_MISSING\")' 2>/dev/null | tail -1")"
+case "$pysocks" in
+  *SOCKS_OK*)      pass "httplib2 can actually use the proxy" "PySocks present, so isgood() is true" ;;
+  *SOCKS_MISSING*) fail "httplib2 can actually use the proxy" \
+                        "PySocks is missing, so httplib2 silently ignores the proxy and every Google call fails with Errno 113" ;;
+  *)               skip "httplib2 can actually use the proxy" "could not import httplib2 in the add-on venv" ;;
+esac
+
 section "Hermes can actually see the tools"
 
 park="$(g 'journalctl --user -u hermes-gateway.service --since "-24h" --no-pager 2>/dev/null | grep -icE "google-workspace.*(parked|permanent error|missing executable)"' | tr -dc '0-9')"
