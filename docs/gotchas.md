@@ -117,6 +117,24 @@ apt repos, which looks alarming during `apt-get update` and is irrelevant.
 **The host must be on the network its model endpoint needs.** The VM
 inherits host NAT.
 
+## Pi grinding on a failure
+
+**Pi will retry a hopeless command dozens of times unless told not to.**
+(2026-11-06) Two add-on runs spent 56 and 45 attempts on one failing
+call, roughly a third of each turn. Both failures were defects in the
+*spec*, not in Pi's work — so no number of retries could have fixed
+either, and the supervisor could have fixed both in a minute.
+
+Give any spec a stopping rule: three failures of the same thing, then
+stop and write up what was proved, what was ruled out, and what you would
+try next. That hand-back is a result. A supervising agent can read the
+host, the repo and the upstream source, none of which Pi can reach.
+
+Watch for the other half of this too. Having failed, Pi explained itself
+with a confident wrong root cause ("httplib2 ignores proxy environment
+variables" — it does not). An invented cause is worse than an impasse,
+because it reads like a finding and gets believed.
+
 ## Writing scripts people wait on
 
 **Any wait longer than about 30 seconds must say how long it will be.**

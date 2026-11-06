@@ -47,7 +47,9 @@ try to re-authenticate if something fails.
 
 ### 1. A venv of its own
 
-Create `~/.local/share/agent-sandbox/google-mcp/`, make a venv there, and
+Make the venv **at** `~/.local/share/agent-sandbox/google-mcp` — so the
+interpreter is `~/.local/share/agent-sandbox/google-mcp/bin/python`, not
+`.../google-mcp/venv/bin/python` — and
 `pip install -r ~/google-mcp-src/requirements.txt` into it. Do not install
 into Hermes' own venv: the add-on must be removable without disturbing the
 base build.
@@ -136,9 +138,42 @@ Restart the Hermes gateway, then prove each of these from evidence:
   service proves nothing** — the credentials are only exercised on a real
   call, and a dead refresh token looks exactly like a live one until then.
 
-If the live call fails with `invalid_grant`, stop. That is a host-side
-problem with the Google consent screen and you cannot fix it from in here.
-Report it.
+## When something will not work: stop and hand it back
+
+**Three failures of the same thing is the limit.** Not thirty. If a
+command fails the same way three times, you have the information you are
+going to get by running it again, and everything after that is cost
+without evidence. Two runs of this spec spent 56 and 45 attempts on one
+failing call; neither attempt number 4 nor number 45 told anyone anything
+that attempt 3 had not.
+
+When you hit that limit, **stop and write up what you know**, in your
+summary rather than in more commands:
+
+- what you ran and the exact error;
+- the narrowest thing you proved works, and the narrowest that does not
+  (e.g. *"curl through the proxy reaches the host; the library call from
+  the same shell does not"*);
+- what you ruled out, and the evidence that ruled it out;
+- what you would try next if you had another layer to look at.
+
+A supervising coding agent reads that and can check things you cannot
+reach from in here — the host, the repo, the upstream source, this spec
+itself. It can also change the spec, which is usually where the real bug
+is: both failures above were defects in these instructions, not in your
+work. Handing back a clear impasse is a result. Grinding on is not.
+
+**Do not invent a root cause to explain a failure you could not fix.**
+One run concluded the HTTP library ignores proxy environment variables.
+It does not, and the wrong explanation cost more than the failure. If you
+do not know, say you do not know and give the evidence.
+
+Two specific cases, so you do not spend the three attempts finding out:
+
+- `invalid_grant` — the refresh token is dead. Host-side, about the
+  Google consent screen, unfixable from in here. Report it immediately.
+- `No route to host` / `Errno 113` — something is not using the proxy.
+  Report which process, and stop.
 
 ## Idempotence
 

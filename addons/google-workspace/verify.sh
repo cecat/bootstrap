@@ -45,7 +45,17 @@ groot() { limactl shell "$VM" -- sudo bash -c "$1" 2>&1; }
 [ "$(limactl list --format '{{.Status}}' "$VM" 2>/dev/null | head -1 || true)" = "Running" ] || {
   echo "instance '$VM' is not running." >&2; exit 1; }
 
-VENV='$HOME/.local/share/agent-sandbox/google-mcp/venv'
+# The spec says "create ~/.local/share/agent-sandbox/google-mcp/ and make
+# a venv there", which reads two ways: the venv AT that path, or inside
+# it. Pi chose the first and was not wrong. Accept either rather than
+# failing a sound build on a layout detail -- what matters is that the
+# venv is under the add-on's own directory, not Hermes'.
+GMCP='$HOME/.local/share/agent-sandbox/google-mcp'
+if g "test -x $GMCP/bin/python" >/dev/null 2>&1; then
+  VENV="$GMCP"
+else
+  VENV="$GMCP/venv"
+fi
 
 # ---------------------------------------------------------------------------
 section "Credentials stay secret"
@@ -97,7 +107,12 @@ fi
 if ! g 'test -f $HOME/.config/agent-sandbox/google.env' >/dev/null 2>&1; then
   skip "the refresh token lives in one file only" "no credentials installed in the VM yet"
 else
-  dup="$(g 'grep -rlE "1//[A-Za-z0-9_-]{20,}" $HOME/.config/agent-sandbox/ $HOME/.hermes/ $HOME/.openclaw/ 2>/dev/null | grep -v "/agent-sandbox/google.env$" | tr "\n" " "')"
+  # The credential store file is a sanctioned second copy -- the server
+  # reads the token from there, by design -- so it is excluded alongside
+  # google.env. node_modules and lock files are excluded because "1//"
+  # followed by base64-ish characters occurs in minified JS and integrity
+  # hashes; matching those was a false alarm, not a leak.
+  dup="$(g 'grep -rlE "1//[A-Za-z0-9_-]{20,}" $HOME/.config/agent-sandbox/ $HOME/.hermes/ $HOME/.openclaw/ 2>/dev/null | grep -vE "/agent-sandbox/google.env$|/agent-sandbox/google-creds/|/node_modules/|package-lock\.json$" | tr "\n" " "')"
   [ -z "$(printf '%s' "$dup" | tr -d '[:space:]')" ] \
     && pass "the refresh token lives in one file only" \
     || fail "the refresh token lives in one file only" "also in: $dup"
@@ -248,7 +263,12 @@ esac
 # ---------------------------------------------------------------------------
 section "Wired into Hermes, and only Hermes"
 
-cfg="$(g 'hermes config show 2>/dev/null')"
+# Read the config FILE, not `hermes config show` -- that prints a
+# formatted summary (paths, API keys, models) which never mentions
+# mcp_servers, so checking its output failed against a config that was
+# perfectly correct. gotchas.md: assert what the system does, not what
+# the output looks like.
+cfg="$(g 'cat ~/.hermes/config.yaml 2>/dev/null')"
 case "$cfg" in
   *google*workspace*|*google-workspace*|*google_workspace*)
     pass "Hermes config references the google-workspace server" ;;
@@ -373,7 +393,11 @@ else
   # Reads one label. Writes nothing, sends nothing, deletes nothing.
   # Goes through the server's own credential store, so this exercises the
   # exact path the agent uses -- including the refresh the store performs.
-  live="$(g "cd \$HOME/.local/share/agent-sandbox/google-mcp 2>/dev/null && WORKSPACE_MCP_CREDENTIALS_DIR=\$HOME/.config/agent-sandbox/google-creds $VENV/bin/python -c '
+  # Give it the same proxy the mcp_servers env: block gives the real
+  # server. Without it this test fails with "No route to host" at the uid
+  # lockdown whatever the server config says -- which looked like the
+  # add-on being broken when it was the harness.
+  live="$(g "cd \$HOME/.local/share/agent-sandbox/google-mcp 2>/dev/null && http_proxy=http://127.0.0.1:3128 https_proxy=http://127.0.0.1:3128 WORKSPACE_MCP_CREDENTIALS_DIR=\$HOME/.config/agent-sandbox/google-creds $VENV/bin/python -c '
 import os
 from auth.credential_store import LocalDirectoryCredentialStore
 from googleapiclient.discovery import build
