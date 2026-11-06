@@ -100,17 +100,21 @@ Almost nobody runs this on a machine with a browser — the usual setup is a
 headless Linux host reached over SSH from a laptop — so that is the path
 described first.
 
-**You need two terminals.** Open the tunnel *before* you open the URL. The
-order matters: Google redirects to `127.0.0.1:8731` at the end of consent,
-and without the tunnel that address means your laptop, where nothing is
-listening.
+**You need two terminals, and the tunnel has to be open before you click.**
+Google redirects to `127.0.0.1:8731` at the end of consent; without the
+tunnel that address means your laptop, where nothing is listening.
 
-**Terminal A — on your laptop.** Forward the port to the remote host and
-leave it open:
+**Terminal A — a fresh terminal on your laptop.** Not a window that is
+already SSH'd into the remote host: this command runs *on the laptop* and
+dials out. Run inside an existing session it would forward the remote host
+to itself, which does nothing.
 
 ```sh
 ssh -N -L 8731:127.0.0.1:8731 you@remote-host
 ```
+
+It prints nothing and does not return — `-N` means "no command, just the
+tunnel". That blank window is it working. Leave it until consent is done.
 
 **Terminal B — on the remote host, over SSH.** Start the consent flow:
 
@@ -120,6 +124,9 @@ ssh -N -L 8731:127.0.0.1:8731 you@remote-host
 
 It detects there is no display, writes the consent URL to
 `config/google-consent-url.txt`, and waits ten minutes.
+
+If you already have a session open on the remote host for other work, that
+is fine and unrelated — these two are in addition to it.
 
 **Then, on your laptop:** open that URL in your browser and approve. The
 URL is long, so read it out of the file rather than retyping it — for

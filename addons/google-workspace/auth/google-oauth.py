@@ -318,10 +318,14 @@ def main():
   {YELLOW}This machine has no browser.{OFF} Use the one on your laptop. This
   command is now waiting for up to 10 minutes; leave it running.
 
-  {BOLD}1.{OFF} On your laptop, in another terminal, open the tunnel and leave
-     it open. Do this {BOLD}before{OFF} step 2, or the redirect has nowhere to land:
+  {BOLD}1.{OFF} Open a {BOLD}new terminal on your laptop{OFF} -- not another window on
+     this machine, and not one already SSHed in here. This command runs
+     ON THE LAPTOP and dials back to here:
 
          ssh -N -L {port}:127.0.0.1:{port} {os.environ.get('USER', 'user')}@{socket.gethostname()}
+
+     It prints nothing and does not return. That is correct; leave it
+     running. Do it {BOLD}before{OFF} step 2, or the redirect has nowhere to land.
 
   {BOLD}2.{OFF} Open this URL in your laptop's browser and approve:
 
