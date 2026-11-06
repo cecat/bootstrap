@@ -115,6 +115,38 @@ When Pi is wrong, push back with `pi-session.sh say "..."`. When the *spec*
 is wrong, fix `spec/pi-target-state.md`. Read `docs/gotchas.md` before
 debugging anything.
 
+## Read the manual before you guess
+
+**When something will not work, find its documentation first.** Not after
+three attempts, not after handing Pi another theory — first. This is the
+cheapest step available and the one most easily skipped, because guessing
+feels like progress and reading feels like delay.
+
+A guess costs a Pi turn (5–15 minutes), a user's patience, and a change to
+the VM you then have to reason about. Reading the manual costs minutes and
+usually ends the question. On 2026-11-06 four consecutive guesses at one
+config token failed; the answer was one sentence in the vendor docs, found
+in two minutes once someone looked.
+
+Do it properly:
+
+- **One thin page is not "undocumented".** Look for the index, a search, a
+  `reference/` section, or an `llms.txt` / `llms-full.txt` — vendors
+  increasingly ship a single concatenated file for exactly this. Hermes
+  does: `hermes-agent.nousresearch.com/docs/llms-full.txt`, ~6 MB, grep it.
+- **The software documents itself too.** `--help`, `--list-*`, `config
+  show`, and the comments inside a generated config file are first-class
+  sources. The `platform_toolsets` answer was sitting in the config file's
+  own comments for days.
+- **Prefer the vendor's words to inference**, and quote them to Pi when you
+  push back. Pi cannot reach the network from inside the VM, so fetching
+  and reading docs is work only you can do — it is the clearest case of
+  the division of labour this file describes.
+
+A symptom with no error message is a particularly strong signal to go
+reading: silence usually means a value was accepted and ignored, which is a
+documented behaviour somewhere, not a bug to be guessed at.
+
 ## The rules that matter
 
 **The deliverable is the repo, not the VM.** This exists so someone else can

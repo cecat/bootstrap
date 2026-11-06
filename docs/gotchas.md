@@ -117,6 +117,32 @@ apt repos, which looks alarming during `apt-get update` and is irrelevant.
 **The host must be on the network its model endpoint needs.** The VM
 inherits host NAT.
 
+## Guessing instead of reading
+
+**Fetch the vendor's documentation before the first guess.** (2026-11-06)
+Four consecutive attempts to name an MCP server in Hermes'
+`platform_toolsets` failed — `google-workspace`, an expanded toolset list,
+then `mcp`. The answer was one sentence in the vendor docs: *"Each
+configured MCP server generates a `mcp-<server>` toolset at runtime."* It
+took two minutes to find once anyone looked, and cost four Pi turns not to.
+
+What made it worse: I checked one documentation page, got "not documented
+here", and treated that as "undocumented". The index listed a dedicated
+Tools & Toolsets page, and the site ships `llms-full.txt` — the whole
+corpus in one ~6 MB file, built to be grepped. Check for one before
+concluding the docs are thin.
+
+The software documents itself too, and that is nearer to hand than the
+web: `--help`, `--list-toolsets`, `config get`, and the comments inside
+`~/.hermes/config.yaml` all carried pieces of this answer while it was
+being guessed at.
+
+**A failure with no error message means go and read.** Hermes accepted
+every wrong toolset name silently, because an unmatched name is ignored
+rather than rejected. Silence like that is almost always a documented
+behaviour, not a bug — and no amount of trying adjacent spellings will
+surface it.
+
 ## Pi grinding on a failure
 
 **Pi will retry a hopeless command dozens of times unless told not to.**
