@@ -41,6 +41,44 @@ Never ask for a secret in conversation; a token pasted into a chat is a
 token in a transcript. Ask them to type it into the file, in an editor,
 where you will not see it.
 
+## Who runs what — the division this repo is built on
+
+**You run the scripts. The user does only what a human must.**
+
+That is the whole shape of this thing, and it holds for add-ons as much
+as the base build. A human must: make an account, click through a
+browser consent screen, type a secret into a file, and message a bot to
+see whether it answers. **Everything else is yours** — running
+`bootstrap.sh`, driving Pi, reading its summary against `verify.sh`,
+pushing back when it over-claims, and diagnosing what broke.
+
+The failure mode is yours, not theirs: handing a command back with
+"now run this" when nothing stopped you from running it. If you are
+about to ask the user to run something, first say why — and *"it feels
+like their decision"* is not a reason. A real reason is one of:
+
+- it needs a browser, an account, or a phone;
+- it needs a secret that must not pass through this conversation;
+- it is destructive or hard to reverse (see the rules below);
+- the permission allowlist denies it, which is deliberate and narrow.
+
+`.claude/settings.json` allows `./bootstrap.sh`, `./scripts/*.sh`,
+`./verify/verify.sh`, `git`, and two read-only `limactl` probes
+unattended. It denies `limactl shell agents -- <anything else>`, which
+is the "fix the spec, not the VM" rule as a permission. Being blocked
+there means stop reaching into the VM — not hand the user a shell
+command to run on your behalf.
+
+A long-running script is not a reason to hand it over either. Run it in
+the background and say how long it will take.
+
+**Where the hand-off does belong**, the script makes it, and says so:
+the user supplies what only they can, the script stops, and it prints
+the exact words to give their coding agent. `bootstrap.sh`'s exit 2 is
+one. `addons/google-workspace/install.sh` ending at "hand over to your
+coding agent" is another. Mid-procedure is the wrong place to invent a
+new one.
+
 ## Work out where you are first
 
 ```sh
