@@ -33,11 +33,19 @@ ok()   { printf '%s  ok%s  %s\n' "$G" "$Z" "$*"; }
 # mistyped secret would then run as a command on the host. Strip one layer
 # of matched quotes so that KEY="" reads as empty rather than two quote
 # characters -- reading these with a naive grep shipped a bug once already.
+# Surrounding whitespace is stripped too, inside the quotes as well as
+# outside. A value pasted out of a browser arrives with a leading space
+# often enough that it is worth handling rather than diagnosing: Google
+# answers a client id with a space in front of it with "Error 401:
+# invalid_client -- The OAuth client was not found", which reads like a
+# console problem and is not.
 envval() {
   awk -v k="$1" '
     index($0, k "=") == 1 {
       v = substr($0, length(k) + 2)
+      gsub(/^[ \t]+|[ \t\r]+$/, "", v)
       if (v ~ /^".*"$/ || v ~ /^'"'"'.*'"'"'$/) v = substr(v, 2, length(v) - 2)
+      gsub(/^[ \t]+|[ \t\r]+$/, "", v)
       print v; exit
     }' "$ENVFILE" 2>/dev/null
 }

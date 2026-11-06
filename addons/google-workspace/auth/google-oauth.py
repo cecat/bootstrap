@@ -18,6 +18,7 @@ import hashlib
 import http.server
 import json
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -88,7 +89,12 @@ def read_env(path):
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 key, _, val = line.partition("=")
-                values[key.strip()] = val.strip().strip('"').strip("'")
+                # Strip whitespace inside the quotes as well as outside: a
+                # client id pasted with a leading space is answered by
+                # Google with "Error 401: invalid_client -- The OAuth
+                # client was not found", which sends you looking in the
+                # Cloud Console for a client that is perfectly fine.
+                values[key.strip()] = val.strip().strip('"').strip("'").strip()
     except FileNotFoundError:
         die(f"{path} does not exist. Run the install command once to create it.")
     return values
@@ -236,6 +242,27 @@ def main():
             "       Console and put both values in that file. The five steps are in\n"
             "       addons/google-workspace/README.md.")
 
+    # Check the shape before Google does. Its answer to a malformed client
+    # id is "Error 401: invalid_client -- The OAuth client was not found",
+    # which points at the Cloud Console rather than at the typo, and costs
+    # a round trip through a browser on another machine to discover.
+    if not re.match(r"^\d+-[A-Za-z0-9_]+\.apps\.googleusercontent\.com$", client_id):
+        hint = ""
+        if client_id.endswith(".apps.googleusercontent.com"):
+            hint = ("\n       The suffix is right, so this is likely a stray character:\n"
+                    "       check for a space, a quote or a line break inside the value.")
+        die(f"GOOGLE_CLIENT_ID in {env_path} is not a well-formed client id.\n"
+            f"       Expected  <digits>-<letters>.apps.googleusercontent.com\n"
+            f"       Got       {len(client_id)} characters"
+            f"{hint}\n"
+            "       Copy it again from Cloud Console -> APIs & Services ->\n"
+            "       Credentials, and paste it with nothing either side.")
+
+    if not re.match(r"^GOCSPX-[A-Za-z0-9_-]+$", client_secret):
+        die(f"GOOGLE_CLIENT_SECRET in {env_path} does not look like a client\n"
+            "       secret. Google's start with 'GOCSPX-'. Check for a stray space\n"
+            "       or quote, and that you did not paste the client id twice.")
+
     if env.get("GOOGLE_REFRESH_TOKEN") and "--force" not in sys.argv:
         say("a refresh token is already present; nothing to do.")
         say("re-consent anyway with: addon-google-workspace.sh auth --force")
@@ -287,18 +314,26 @@ def main():
         # Printing a 600-character URL to a terminal the user cannot copy
         # out of is useless, so point at a file instead.
         print(f"""
-  {YELLOW}This machine has no browser.{OFF} Open the consent page from a machine
-  that does, then come back here -- this command is waiting.
+  {YELLOW}This machine has no browser.{OFF} Use the one on your laptop. This
+  command is now waiting for up to 10 minutes; leave it running.
 
-  The URL is in:   {BOLD}config/google-consent-url.txt{OFF}
+  {BOLD}1.{OFF} On your laptop, in another terminal, open the tunnel and leave
+     it open. Do this {BOLD}before{OFF} step 2, or the redirect has nowhere to land:
 
-  Google will redirect to 127.0.0.1:{port}, which must mean THIS machine.
-  If your browser is somewhere else, forward the port first, from that
-  other machine:
+         ssh -N -L {port}:127.0.0.1:{port} {os.environ.get('USER', 'user')}@{socket.gethostname()}
 
-      ssh -L {port}:127.0.0.1:{port} {os.environ.get('USER', 'user')}@{socket.gethostname()}
+  {BOLD}2.{OFF} Open this URL in your laptop's browser and approve:
 
-  Then open the URL there. Ctrl-C to give up.
+         {BOLD}config/google-consent-url.txt{OFF}   <- the URL is in this file
+
+     It is too long to retype; copy it, or fetch it with
+         scp {os.environ.get('USER', 'user')}@{socket.gethostname()}:{url_path} .
+
+  Google redirects to 127.0.0.1:{port} at the end, which must reach THIS
+  machine -- that is what the tunnel in step 1 is for. When it does, this
+  command finishes by itself.
+
+  Ctrl-C to give up.
 """, file=sys.stderr)
 
     # serve_forever, not handle_request: a browser may fetch /favicon.ico

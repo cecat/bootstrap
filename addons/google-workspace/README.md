@@ -98,26 +98,53 @@ control.
 
 ### 3. Consent, in a browser
 
+Consent needs a real Google login in a real browser. You cannot `curl` it:
+the URL returns Google's sign-in *page*, not a token.
+
+Almost nobody runs this on a machine with a browser — the usual setup is a
+headless Linux host reached over SSH from a laptop — so that is the path
+described first.
+
+**You need two terminals.** Open the tunnel *before* you open the URL. The
+order matters: Google redirects to `127.0.0.1:8731` at the end of consent,
+and without the tunnel that address means your laptop, where nothing is
+listening.
+
+**Terminal A — on your laptop.** Forward the port to the remote host and
+leave it open:
+
+```sh
+ssh -N -L 8731:127.0.0.1:8731 you@remote-host
+```
+
+**Terminal B — on the remote host, over SSH.** Start the consent flow:
+
 ```sh
 ./scripts/addon-google-workspace.sh auth
 ```
 
-This opens Google's consent page, catches the result on `127.0.0.1:8731`,
-and writes the refresh token into `config/google.env` (0600) plus a
-credential file beside it. You do not type or copy either one.
+It detects there is no display, writes the consent URL to
+`config/google-consent-url.txt`, and waits ten minutes.
 
-If this machine has no browser — a headless host over SSH, which is the
-common case — the command says so and waits ten minutes. It writes the
-consent URL to `config/google-consent-url.txt` and prints an `ssh -L` line
-to run from a machine that *does* have one:
+**Then, on your laptop:** open that URL in your browser and approve. The
+URL is long, so read it out of the file rather than retyping it — for
+example `scp you@remote-host:…/config/google-consent-url.txt .`, or just
+`cat` it in terminal B and copy. When you approve, your browser is sent to
+`127.0.0.1:8731`, the tunnel carries that to the waiting command, and
+terminal B finishes on its own and writes the tokens. Close terminal A
+afterwards.
 
-```sh
-ssh -L 8731:127.0.0.1:8731 you@this-host
-```
+If the machine running `auth` *does* have a browser, none of the above
+applies: the command opens the page itself and no tunnel is needed.
 
-Open the URL there, consent, and the waiting command finishes on its own.
-Google redirects to `127.0.0.1:8731`, which has to mean *this* machine —
-that is what the forwarded port is for.
+**If something goes wrong,** the error tells you which layer:
+
+| What Google or the browser says | What it means |
+|---|---|
+| `Error 401: invalid_client` — "The OAuth client was not found" | The client ID is wrong — very often a stray space or a partial paste. `auth` now checks the format first and refuses before sending you to a browser. |
+| `Error 400: redirect_uri_mismatch` | `http://127.0.0.1:8731/` is not registered on the OAuth client. Add it in step 1. |
+| Consent succeeds, then "can't reach this site" at 127.0.0.1:8731 | The tunnel is not up, or was opened after the fact. Start terminal A, then re-run `auth`. |
+| `auth` says the port is in use | Something else holds 8731. Pick another with `GOOGLE_OAUTH_PORT=8732`, and register *that* port in the Cloud Console and use it in the `ssh -L` line. |
 
 ### 4. Hand over to your coding agent
 
