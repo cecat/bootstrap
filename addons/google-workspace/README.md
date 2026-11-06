@@ -14,9 +14,11 @@ Calendar, Drive and Forms. OpenClaw gets nothing.
 
 ## Your part, then your agent's
 
-Steps 1–3 are yours, because they need a browser and a secret that must not
-pass through a chat. Then you hand over at step 4, and step 5 is the one
-check at the end that no script can do. Everything between is the agent's.
+Steps 1–4 are yours, because they need a browser, a secret that must not
+pass through a chat, and a file only you can edit. Step 4 ends by handing
+over, and step 5 is the one check at the end that no script can do.
+Everything in between — Pi building, and the reading of what it claims
+against what the checks measure — belongs to your coding agent.
 
 Budget about twenty minutes of your attention: roughly ten clicking
 through the Google Cloud Console, and ten on the consent step, which is
@@ -161,15 +163,29 @@ above: the command opens the page itself and there is no tunnel.
 | Consent succeeds, then "can't reach this site" at 127.0.0.1:8731 | The tunnel is not up, or was opened after the fact. Start terminal A, then re-run `auth`. |
 | `auth` says the port is in use | Something else holds 8731. Pick another with `GOOGLE_OAUTH_PORT=8732` and use the same number in the `ssh -L` line. Nothing to change in the Cloud Console. |
 
-### 4. Hand over to your coding agent
+### 4. Run `install`, then hand over
 
-Now switch. Open your coding agent in this directory and tell it:
+```sh
+./scripts/addon-google-workspace.sh install
+```
 
-> Read `addons/google-workspace/README.md` and install the Google Workspace
-> add-on.
+This checks the base build is healthy, pushes your credentials into the VM,
+and stages the spec Pi will work from. It takes 3–6 minutes, almost all of
+it re-running the base `verify.sh`, and it prints a log path you can
+`tail -f` while you wait.
 
-It takes over from here, and will come back to you once at the end with the
-one check no script can perform.
+**It stops at the hand-over rather than running on into the build**, and
+tells you so. That boundary is deliberate: what remains is Pi building and
+someone reading its claims against the evidence, and that is a coding
+agent's job, not yours. Open your coding agent in this directory and tell
+it:
+
+> Install the Google Workspace add-on: run
+> `./scripts/addon-google-workspace.sh build`, then supervise Pi and verify
+> it as `addons/google-workspace/README.md` describes.
+
+It will come back to you once, at the end, with the one check no script can
+perform.
 
 ### 5. The check nothing automated covers
 
@@ -182,29 +198,30 @@ it is not optional.
 
 # Installing it — for the coding agent
 
-The human has done steps 1–3 above: `config/google.env` holds a client ID,
-a client secret and a refresh token, and a `google-credentials-*.json` sits
-beside it. Your job is the rest.
+The human has done steps 1–4 above: credentials are in `config/`, pushed
+into the VM, and the spec is staged at `~/agent-bootstrap/GOOGLE-ADDON.md`.
+They stopped at the hand-over on purpose. Your job is the build and the
+reading of it.
 
 ```sh
-./scripts/addon-google-workspace.sh install        # preconditions, push, drive Pi
+./scripts/addon-google-workspace.sh build          # drive Pi (5-15 min)
 ./scripts/pi-session.sh summary                    # what Pi claims it did
+./scripts/pi-session.sh steps                      # what it actually did
 ./scripts/addon-google-workspace.sh verify --live --base
 ```
 
-`install` checks its preconditions and refuses rather than half-installing:
-the base build must be present and verifying, and the Hermes Telegram
-allowlist must not be empty. It then pushes the pinned requirements and the
-credential store into the VM and hands Pi the spec in
-`addons/google-workspace/spec.md`, through the ordinary
-`./scripts/pi-session.sh say`.
+The user has already run `install`, which checked preconditions, pushed the
+credentials and pinned requirements into the VM, and staged the spec at
+`~/agent-bootstrap/GOOGLE-ADDON.md`. `build` refuses if any of that is
+missing rather than starting a turn that cannot succeed.
 
-**It goes quiet twice, for minutes at a time, and neither is a hang.**
-First at *Base system still verifying*, which runs the whole base suite
-(3–5 minutes); it prints the path of a log you can `tail -f`. Then while
-Pi works, which is the long one — use `./scripts/pi-session.sh steps` from
-another shell if you want to watch. Reassure the user rather than killing
-it.
+`build` drives Pi through the ordinary `./scripts/pi-session.sh say`, so
+supervise it exactly as `AGENTS.md` describes for the base build.
+
+**It goes quiet for 5–15 minutes while Pi works, and that is not a hang** —
+gaps of a minute between tool calls are normal, and the silence watchdog
+only kills a turn after 600s of *no* output. Watch it from another shell
+with `./scripts/pi-session.sh steps` if you want to.
 
 Supervise Pi exactly as `AGENTS.md` describes for the base build: its
 summary is a claim, `verify.sh` is the evidence, and `pi-session.sh say` is

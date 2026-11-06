@@ -3,8 +3,12 @@
 # Google Workspace add-on for the Hermes agent. OPTIONAL -- the base build
 # neither needs nor knows about this.
 #
+# The user does the first two, because they need a browser and a secret:
 #   ./scripts/addon-google-workspace.sh auth      one-time browser consent
-#   ./scripts/addon-google-workspace.sh install   build it
+#   ./scripts/addon-google-workspace.sh install   preconditions, push, stage
+#
+# Then their coding agent takes over, because supervising Pi is its job:
+#   ./scripts/addon-google-workspace.sh build     drive Pi
 #   ./scripts/addon-google-workspace.sh verify    the evidence
 #   ./scripts/addon-google-workspace.sh remove    undo it
 #
@@ -214,14 +218,57 @@ step; re-run: ./scripts/addon-google-workspace.sh auth --force"
   ' _ "$email.json" || fail "could not install the add-on files in the VM."
   ok "credential store populated for $email; pinned requirements in ~/google-mcp-src"
 
-  step "Handing the spec to Pi"
+  step "Staging the spec for Pi"
   limactl copy "$ADDON/spec.md" "$INSTANCE:agent-bootstrap/GOOGLE-ADDON.md" \
     || fail "could not copy the add-on spec into the VM."
   ok "spec placed at ~/agent-bootstrap/GOOGLE-ADDON.md"
 
-  printf '      %sPi now works for 5-15 minutes.%s Its progress view follows; long\n' "$Y" "$Z"
-  printf '      gaps between lines are normal -- it is thinking, not stuck. The\n'
-  printf '      watchdog kills a turn that goes %ss with no output at all.\n' "${PI_SILENCE:-600}"
+  # Stop here, deliberately. Everything above needed a browser, a secret,
+  # or a file only the user can edit. Everything below is supervising Pi,
+  # which is a coding agent's job -- reading a summary sceptically against
+  # verify.sh is the whole skill, and this repo exists because a human
+  # should not have to do it. `install` used to run straight on into the
+  # Pi turn, which left whoever typed it watching a progress view for
+  # fifteen minutes with no idea what they were meant to be checking.
+  step "Your part is done -- hand over to your coding agent"
+  cat <<EOF
+
+  Credentials are in place and Pi has its spec. What remains is a build
+  and a review of it: roughly 5-15 minutes of Pi working, then reading
+  what it claims against what the checks measure.
+
+  ${B}Tell your coding agent:${Z}
+
+      Install the Google Workspace add-on: run
+      ./scripts/addon-google-workspace.sh build, then supervise Pi and
+      verify it as addons/google-workspace/README.md describes.
+
+  It will come back to you once, at the end, with the one check no
+  script can do: message the Hermes bot and ask what is on your
+  calendar.
+
+EOF
+}
+
+# ===========================================================================
+# The agent's half: drive Pi, then report. Separate from install so the
+# human-facing setup can finish and hand over cleanly.
+# ===========================================================================
+cmd_build() {
+  vm_running || fail "instance '$INSTANCE' is not running."
+
+  limactl shell "$INSTANCE" -- bash -lc 'test -f "$HOME/agent-bootstrap/GOOGLE-ADDON.md"' 2>/dev/null \
+    || fail "the add-on spec is not in the VM, so the setup half has not run.
+The user needs to do their part first -- see addons/google-workspace/README.md:
+./scripts/addon-google-workspace.sh auth, then install."
+
+  limactl shell "$INSTANCE" -- bash -lc 'test -s "$HOME/.config/agent-sandbox/google.env"' 2>/dev/null \
+    || fail "no credentials in the VM. Run the install step first."
+
+  step "Pi builds the add-on"
+  printf '      %sthis takes 5-15 minutes.%s Pi'"'"'s progress view follows; long gaps\n' "$Y" "$Z"
+  printf '      between lines are normal -- it is thinking, not stuck. The watchdog\n'
+  printf '      kills a turn only after %ss with no output at all.\n' "${PI_SILENCE:-600}"
   printf '      From another shell:  ./scripts/pi-session.sh steps\n\n'
 
   # Short on purpose: fifty-line supervision prompts have hung this setup.
@@ -235,9 +282,11 @@ step; re-run: ./scripts/addon-google-workspace.sh auth --force"
   step "Next"
   cat <<EOF
   Read what Pi claims:   ./scripts/pi-session.sh summary
-  Then check it:         ./scripts/addon-google-workspace.sh verify
+  What it actually did:  ./scripts/pi-session.sh steps
+  Then check it:         ./scripts/addon-google-workspace.sh verify --live --base
 
-  A summary is a claim; verify.sh is evidence.
+  A summary is a claim; verify.sh is evidence. Push back with
+  ./scripts/pi-session.sh say "..." rather than fixing the VM by hand.
 EOF
 }
 
@@ -295,9 +344,10 @@ EOF
 case "${1:-}" in
   auth)    shift; cmd_auth "$@" ;;
   install) cmd_install ;;
+  build)   cmd_build ;;
   verify)  shift; cmd_verify "$@" ;;
   remove)  cmd_remove ;;
   *)
-    sed -n '3,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '3,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 2 ;;
 esac
