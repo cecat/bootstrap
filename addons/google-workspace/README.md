@@ -26,14 +26,53 @@ Cloud Console.
 At <https://console.cloud.google.com/>:
 
 1. Create a project, or pick one you already have.
-2. Enable four APIs: **Gmail**, **Google Calendar**, **Google Drive**,
-   **Google Forms**.
-3. Configure the OAuth consent screen. Choose **External** unless you
-   administer a Workspace domain, and add your own address as a user.
-4. **Publish it** — set publishing status to **In production**. This matters
-   more than it looks; see the warning below.
-5. Create credentials → **OAuth client ID** → application type **Desktop
-   app**. Keep the client ID and client secret on screen for the next step.
+2. Enable four APIs. Search for each by name in **APIs & Services →
+   Library** and enable exactly these, no others:
+
+   | Search for | Enable the one titled | Its service name | Not these |
+   |---|---|---|---|
+   | `Gmail` | **Gmail API** | `gmail.googleapis.com` | Gmail MCP API, Gmail Postmaster Tools API, Workspace MCP API |
+   | `Google Calendar` | **Google Calendar API** | `calendar-json.googleapis.com` | Calendar MCP API |
+   | `Google Drive` | **Google Drive API** | `drive.googleapis.com` | Drive Activity API, Drive Labels API |
+   | `Google Forms` | **Google Forms API** | `forms.googleapis.com` | Forms MCP API |
+
+   The near-misses are real and several are one search result away from the
+   right answer. Two things to know. The **service name** in the third
+   column is the unambiguous identifier — it appears on each API's detail
+   page, so check it there if a title looks close but not exact. And the
+   Google-hosted **"MCP API"** entries are a different product from the MCP
+   server this add-on runs inside your VM; enabling one does nothing for
+   you here.
+3. Configure the consent screen, under **APIs & Services → OAuth consent
+   screen** (recent consoles file this under **Google Auth Platform →
+   Branding / Audience**). Choose user type **External** unless you
+   administer a Workspace domain, give it any app name, and put your own
+   address in both the user-support and developer-contact fields.
+4. **Publish it.** On the same screen — **Audience**, in the newer layout —
+   the publishing status starts as **Testing**. Press **Publish app** so it
+   reads **In production**. This matters more than it looks; see the
+   warning below.
+5. **APIs & Services → Credentials → Create credentials → OAuth client
+   ID**, application type **Desktop app**. Google then shows the client ID
+   and client secret once, in a dialog. Leave it open for the next step, or
+   download the JSON — you can always re-open the client later to copy the
+   ID, and reset the secret if you lose it.
+
+   **If the client offers an "Authorized redirect URIs" field, add exactly
+   this:**
+
+   ```
+   http://127.0.0.1:8731/
+   ```
+
+   That is the port the next step listens on. Google requires the redirect
+   to match a registered URI exactly, so a missing or mistyped entry fails
+   the consent step with `redirect_uri_mismatch`. (If you had to use a
+   different port because 8731 was taken, register that one instead.)
+
+   You can skip the **Data access / Scopes** screen. This add-on requests
+   its scopes at consent time; scopes listed in the console do not grant
+   anything by themselves.
 
 > **Leave the consent screen in "Testing" and this add-on breaks every seven
 > days.** Google expires refresh tokens issued by an unpublished app after a
