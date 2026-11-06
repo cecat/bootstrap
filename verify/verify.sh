@@ -636,6 +636,15 @@ else
   else
     fail "Hermes answers a completion" "$(tr -d '\r' <<<"$out" | grep -viE 'key|token|secret' | tail -3 | paste -sd' | ' -)"
   fi
+
+  # The proxy check above reads a config value, and stayed green for a whole
+  # build while web_fetch returned nothing. Fetch something instead.
+  out="$(g "timeout 180 openclaw agent --model '$ocmodel' --message 'Use web_fetch on https://tpc25.org and reply with exactly: FETCH_OK if you got page text' 2>&1")"
+  if grep -q 'FETCH_OK' <<<"$out"; then
+    pass "OpenClaw can fetch a web page" "web_fetch reached https://tpc25.org"
+  else
+    fail "OpenClaw can fetch a web page" "$(tr -d '\r' <<<"$out" | grep -viE 'key|token|secret' | tail -2 | paste -sd' | ' -)"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
