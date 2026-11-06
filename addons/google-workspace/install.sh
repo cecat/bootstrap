@@ -227,16 +227,13 @@ step; re-run: ./scripts/addon-google-workspace.sh auth --force"
     printf 'USER_GOOGLE_EMAIL=%s\n'          "$(envval GOOGLE_ACCOUNT_EMAIL)"
     printf 'WORKSPACE_MCP_CREDENTIALS_DIR=%s/.config/agent-sandbox/google-creds\n' \
            "$(limactl shell "$INSTANCE" -- bash -lc 'printf %s "$HOME"' 2>/dev/null)"
-    # The MCP server is a child of a systemd *user* service, which does not
-    # read ~/.profile, so it inherits no proxy and its Google calls die at
-    # the uid lockdown with "No route to host" -- DNS resolves, the connect
-    # is refused. The base spec says this about the gateway; the server is
-    # a separate process and needs it too. Putting it here means the
-    # EnvironmentFile carries it and no drop-in has to remember.
+    # Kept for anyone running the server by hand from a login shell. The
+    # gateway-spawned one does NOT get these: the MCP stdio client passes
+    # a child only HOME/LOGNAME/PATH/SHELL/TERM/USER plus whatever the
+    # server's own env: block names, so the proxy has to be declared
+    # there. See spec.md.
     printf 'http_proxy=http://127.0.0.1:3128\n'
     printf 'https_proxy=http://127.0.0.1:3128\n'
-    printf 'HTTP_PROXY=http://127.0.0.1:3128\n'
-    printf 'HTTPS_PROXY=http://127.0.0.1:3128\n'
   } > "$GUESTENV"
 
   step "Pushing the add-on into $INSTANCE"

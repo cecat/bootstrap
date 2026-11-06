@@ -92,12 +92,26 @@ That file already carries every name the server needs, including
 `USER_GOOGLE_EMAIL`, `WORKSPACE_MCP_CREDENTIALS_DIR` and the proxy
 variables. One `EnvironmentFile=` line is the whole job.
 
-The proxy entries matter and are easy to drop. The MCP server is a child
-of a user service, which does not read `~/.profile`, so without them its
-Google calls hit the uid lockdown and fail with **"No route to host"** —
-DNS resolves, the connection is refused. If you see that, the server is
-not using the proxy; it is not a Google problem, a credential problem or
-a transient, so do not retry it in a loop.
+**The MCP server does not inherit the gateway's environment**, and this
+is the thing that will waste your time if you let it. The MCP stdio
+client passes a child only `HOME, LOGNAME, PATH, SHELL, TERM, USER` plus
+whatever the server's own `env:` block names — everything else, proxy
+variables included, is dropped on purpose. So exporting `https_proxy` to
+the gateway, or putting it in the systemd drop-in, does nothing for the
+server.
+
+Put the proxy in the `mcp_servers` `env:` block itself:
+
+    http_proxy: http://127.0.0.1:3128
+    https_proxy: http://127.0.0.1:3128
+
+Without them the server's Google calls hit the uid lockdown and fail with
+**"No route to host"** — DNS resolves, the connection is refused, and
+squid's access log shows the request never arrived. That is not a Google
+problem, a credential problem, or a transient: do not retry it in a loop,
+and do not conclude the HTTP library ignores proxy environment variables.
+It reads lowercase `https_proxy` and honours it; the variable was simply
+never passed in.
 
 **Do not try to rename a variable with `Environment=`.** systemd does no
 variable expansion there — `systemd.exec(5)`: *"Variable expansion is not

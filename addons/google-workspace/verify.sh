@@ -257,6 +257,19 @@ case "$cfg" in
          "no mcp_servers entry found in hermes config show" ;;
 esac
 
+# The MCP stdio client hands a child only HOME, LOGNAME, PATH, SHELL,
+# TERM and USER, plus whatever the server's own env: block names. So the
+# proxy cannot be inherited from the gateway however it is exported, and
+# without it every Google call dies at the uid lockdown with "No route to
+# host". Costing: one 17-minute Pi turn, 56 retries, and a confident
+# wrong diagnosis blaming httplib2.
+case "$cfg" in
+  *proxy*) pass "the MCP server is given a proxy" "proxy named in the server config" ;;
+  "")      skip "the MCP server is given a proxy" "could not read hermes config" ;;
+  *)       fail "the MCP server is given a proxy" \
+                "no http_proxy/https_proxy in the mcp_servers env block -- the server inherits none, so Google calls will fail with 'No route to host'" ;;
+esac
+
 # The credentials have to reach a *user* systemd service, which does not
 # read ~/.profile. A drop-in is the only thing that gets them there.
 drop="$(g 'cat $HOME/.config/systemd/user/hermes-gateway.service.d/*.conf 2>/dev/null')"
