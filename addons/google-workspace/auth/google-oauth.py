@@ -299,8 +299,9 @@ def main():
         die(f"could not listen on 127.0.0.1:{port} ({exc}).\n"
             f"       Something else is using it. Pick another with:\n"
             f"         GOOGLE_OAUTH_PORT=8732 ./scripts/addon-google-workspace.sh auth\n"
-            f"       Whatever you choose must also be registered as a redirect URI\n"
-            f"       on the OAuth client, as http://127.0.0.1:<port>/")
+            f"       Nothing to change in the Cloud Console -- a Desktop client\n"
+            f"       accepts any loopback port. Use the same number in your\n"
+            f"       ssh -L tunnel.")
 
     with open(url_path, "w") as fh:
         fh.write(consent_url + "\n")

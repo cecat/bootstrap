@@ -58,21 +58,16 @@ At <https://console.cloud.google.com/>:
    download the JSON — you can always re-open the client later to copy the
    ID, and reset the secret if you lose it.
 
-   **If the client offers an "Authorized redirect URIs" field, add exactly
-   this:**
+   **There is nothing to configure for the redirect.** A Desktop app client
+   has no "Authorized redirect URIs" field, and does not need one: loopback
+   redirects are matched on everything *except* the port, so
+   `http://127.0.0.1:<anything>/` is accepted automatically. That is what
+   the next step relies on, and why changing `GOOGLE_OAUTH_PORT` needs no
+   console change. (RFC 8252 §7.3 and §8.4, which Google implements.)
 
-   ```
-   http://127.0.0.1:8731/
-   ```
-
-   That is the port the next step listens on. Google requires the redirect
-   to match a registered URI exactly, so a missing or mistyped entry fails
-   the consent step with `redirect_uri_mismatch`. (If you had to use a
-   different port because 8731 was taken, register that one instead.)
-
-   You can skip the **Data access / Scopes** screen. This add-on requests
-   its scopes at consent time; scopes listed in the console do not grant
-   anything by themselves.
+   You can also skip the **Data access / Scopes** screen. This add-on
+   requests its scopes at consent time; scopes listed in the console do not
+   grant anything by themselves.
 
 > **Leave the consent screen in "Testing" and this add-on breaks every seven
 > days.** Google expires refresh tokens issued by an unpublished app after a
@@ -142,9 +137,9 @@ applies: the command opens the page itself and no tunnel is needed.
 | What Google or the browser says | What it means |
 |---|---|
 | `Error 401: invalid_client` — "The OAuth client was not found" | The client ID is wrong — very often a stray space or a partial paste. `auth` now checks the format first and refuses before sending you to a browser. |
-| `Error 400: redirect_uri_mismatch` | `http://127.0.0.1:8731/` is not registered on the OAuth client. Add it in step 1. |
+| `Error 400: redirect_uri_mismatch` | The client is not a **Desktop app**. Web application clients do require every redirect URI to be registered; desktop ones accept any loopback port. Check the client type in Credentials, and make a new Desktop client if it is wrong. |
 | Consent succeeds, then "can't reach this site" at 127.0.0.1:8731 | The tunnel is not up, or was opened after the fact. Start terminal A, then re-run `auth`. |
-| `auth` says the port is in use | Something else holds 8731. Pick another with `GOOGLE_OAUTH_PORT=8732`, and register *that* port in the Cloud Console and use it in the `ssh -L` line. |
+| `auth` says the port is in use | Something else holds 8731. Pick another with `GOOGLE_OAUTH_PORT=8732` and use the same number in the `ssh -L` line. Nothing to change in the Cloud Console. |
 
 ### 4. Hand over to your coding agent
 
