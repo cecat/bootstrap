@@ -89,8 +89,15 @@ existing is correct.
 
 That file already carries every name the server needs, including
 `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
-`USER_GOOGLE_EMAIL` and `WORKSPACE_MCP_CREDENTIALS_DIR`. One
-`EnvironmentFile=` line is the whole job.
+`USER_GOOGLE_EMAIL`, `WORKSPACE_MCP_CREDENTIALS_DIR` and the proxy
+variables. One `EnvironmentFile=` line is the whole job.
+
+The proxy entries matter and are easy to drop. The MCP server is a child
+of a user service, which does not read `~/.profile`, so without them its
+Google calls hit the uid lockdown and fail with **"No route to host"** —
+DNS resolves, the connection is refused. If you see that, the server is
+not using the proxy; it is not a Google problem, a credential problem or
+a transient, so do not retry it in a loop.
 
 **Do not try to rename a variable with `Environment=`.** systemd does no
 variable expansion there — `systemd.exec(5)`: *"Variable expansion is not

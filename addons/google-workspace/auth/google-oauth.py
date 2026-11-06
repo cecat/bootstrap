@@ -79,6 +79,48 @@ def die(msg):
     sys.exit(1)
 
 
+def read_client_json(repo):
+    """Read a client_secret_*.json downloaded from Cloud Console.
+
+    Offered because retyping a client id is how a leading space got into
+    one and cost an afternoon of invalid_client. The download button is
+    right there on the credentials page; copying the file is fewer steps
+    and cannot mistype.
+
+    Returns (client_id, client_secret, path) or (None, None, None).
+    """
+    import glob
+    found = sorted(glob.glob(os.path.join(repo, "secrets", "client_secret_*.json")))
+    if not found:
+        return None, None, None
+    if len(found) > 1:
+        die("more than one client_secret_*.json in secrets/:\n       "
+            + "\n       ".join(os.path.basename(p) for p in found)
+            + "\n       Leave only the one you want to use.")
+
+    path = found[0]
+    try:
+        with open(path) as fh:
+            blob = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        die(f"could not read {path}: {exc}")
+
+    # Desktop clients are filed under "installed"; web ones under "web",
+    # and a web client cannot do the loopback redirect this flow needs.
+    if "web" in blob and "installed" not in blob:
+        die(f"{os.path.basename(path)} is a {BOLD}Web application{OFF} client.\n"
+            "       This flow needs a Desktop app client -- a web one rejects the\n"
+            "       loopback redirect. Create one in Cloud Console -> Credentials\n"
+            "       -> Create credentials -> OAuth client ID -> Desktop app.")
+    section = blob.get("installed") or {}
+    cid = (section.get("client_id") or "").strip()
+    sec = (section.get("client_secret") or "").strip()
+    if not cid or not sec:
+        die(f"{os.path.basename(path)} has no client_id/client_secret under\n"
+            "       an \"installed\" key. Re-download it from Cloud Console.")
+    return cid, sec, path
+
+
 def read_env(path):
     """Parse the shell-style env file without executing it."""
     values = {}
@@ -234,13 +276,28 @@ def main():
     port = int(os.environ.get("GOOGLE_OAUTH_PORT", "8731"))
 
     env = read_env(env_path)
-    client_id = env.get("GOOGLE_CLIENT_ID", "")
-    client_secret = env.get("GOOGLE_CLIENT_SECRET", "")
+
+    # The downloaded JSON wins when it is there. It cannot be mistyped,
+    # and it carries the client type, so a Web client is caught here
+    # rather than at the redirect.
+    client_id, client_secret, from_json = read_client_json(repo)
+    if from_json:
+        source = f"secrets/{os.path.basename(from_json)}"
+        ok(f"read the OAuth client from {source}")
+        write_env_value(env_path, "GOOGLE_CLIENT_ID", client_id)
+        write_env_value(env_path, "GOOGLE_CLIENT_SECRET", client_secret)
+    else:
+        source = str(env_path)
+        client_id = env.get("GOOGLE_CLIENT_ID", "")
+        client_secret = env.get("GOOGLE_CLIENT_SECRET", "")
+
     if not client_id or not client_secret:
-        die(f"GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are blank in {env_path}.\n"
-            "       Create an OAuth client of type 'Desktop app' in Google Cloud\n"
-            "       Console and put both values in that file. The five steps are in\n"
-            "       addons/google-workspace/README.md.")
+        die("no OAuth client credentials yet.\n"
+            "       Easiest: in Cloud Console -> APIs & Services -> Credentials,\n"
+            "       press the download icon beside your Desktop client and put the\n"
+            "       file in  secrets/  -- it is named client_secret_*.json and is\n"
+            "       gitignored. Nothing to copy by hand.\n"
+            f"       Or fill GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in {env_path}.")
 
     # Check the shape before Google does. Its answer to a malformed client
     # id is "Error 401: invalid_client -- The OAuth client was not found",
@@ -251,17 +308,17 @@ def main():
         if client_id.endswith(".apps.googleusercontent.com"):
             hint = ("\n       The suffix is right, so this is likely a stray character:\n"
                     "       check for a space, a quote or a line break inside the value.")
-        die(f"GOOGLE_CLIENT_ID in {env_path} is not a well-formed client id.\n"
+        die(f"the client id from {source} is not well formed.\n"
             f"       Expected  <digits>-<letters>.apps.googleusercontent.com\n"
             f"       Got       {len(client_id)} characters"
             f"{hint}\n"
-            "       Copy it again from Cloud Console -> APIs & Services ->\n"
-            "       Credentials, and paste it with nothing either side.")
+            "       Simplest fix: download the JSON from Cloud Console into\n"
+            "       secrets/ and let this command read it.")
 
     if not re.match(r"^GOCSPX-[A-Za-z0-9_-]+$", client_secret):
-        die(f"GOOGLE_CLIENT_SECRET in {env_path} does not look like a client\n"
-            "       secret. Google's start with 'GOCSPX-'. Check for a stray space\n"
-            "       or quote, and that you did not paste the client id twice.")
+        die(f"the client secret from {source} does not look like one.\n"
+            "       Google's start with 'GOCSPX-'. Check for a stray space or\n"
+            "       quote, and that you did not paste the client id twice.")
 
     if env.get("GOOGLE_REFRESH_TOKEN") and "--force" not in sys.argv:
         say("a refresh token is already present; nothing to do.")

@@ -80,20 +80,32 @@ At <https://console.cloud.google.com/>:
 > no sensitive scopes for *other people's* accounts does not need Google's
 > verification review to be published for your own use.
 
-### 2. Put those two values in a file
+### 2. Download the client JSON into `secrets/`
 
-```sh
-./scripts/addon-google-workspace.sh install
+On the Credentials page, press the **download icon** beside the client you
+just made, and put the file in `secrets/`:
+
+```
+secrets/client_secret_<long-id>.apps.googleusercontent.com.json
 ```
 
-The first run creates `config/google.env` from a template, tells you what it
-needs, and stops with exit 2 — the same handshake `bootstrap.sh` uses. Open
-that file in an editor and fill in `GOOGLE_CLIENT_ID` and
-`GOOGLE_CLIENT_SECRET`.
+Leave the name as Google gives it — the add-on finds it by that pattern.
+`secrets/` is gitignored. Nothing to retype, and nothing to mistype: a
+client ID copied by hand arrived with a leading space once and cost an
+afternoon of `invalid_client`.
 
-**Type them into the file, never into a chat with your coding agent.** A
-secret pasted into a conversation is a secret in a transcript you do not
-control.
+The next command reads this file, copies the two values into
+`config/google.env`, and checks the client is a **Desktop app** — a Web
+application client is rejected here rather than at the redirect.
+
+If you would rather do it by hand, run
+`./scripts/addon-google-workspace.sh install` once; it creates
+`config/google.env`, tells you what it wants, and stops with exit 2 — the
+same handshake `bootstrap.sh` uses. Fill in `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` there instead.
+
+**Either way, never paste these into a chat with your coding agent.** A
+secret in a conversation is a secret in a transcript you do not control.
 
 ### 3. Consent, in a browser
 

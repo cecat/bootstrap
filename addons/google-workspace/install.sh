@@ -70,22 +70,25 @@ ensure_config() {
 
   STOP -- this is your turn, and the add-on waits here until you take it.
 
-  $ENVFILE has been created. It needs two values from Google Cloud
-  Console, which only you can get:
+  It needs an OAuth client from Google Cloud Console, which only you can
+  make. The five steps are in addons/google-workspace/README.md.
 
-      \$EDITOR $ENVFILE
+  Then, rather than copying two long strings by hand:
 
-    GOOGLE_CLIENT_ID       from an OAuth client of type "Desktop app"
-    GOOGLE_CLIENT_SECRET
+    Credentials -> the download icon beside your Desktop client ->
+    put the .json in  secrets/
 
-  The five steps to create one are in
-  addons/google-workspace/README.md. One of them matters more than the
-  others: publish the consent screen. Left in "Testing", Google expires
-  the refresh token after seven days and the add-on quietly stops working
-  every week.
+  It arrives named client_secret_*.json; leave the name alone. That
+  directory is gitignored, and the next command reads the file itself.
+  (If you would rather, fill GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+  in $ENVFILE by hand instead.)
 
-  Do not paste these values into a chat with an agent. Type them into the
-  file, in an editor, where they stay out of a transcript.
+  Either way, do not paste these values into a chat with an agent -- a
+  secret in a conversation is a secret in a transcript.
+
+  One step matters more than the rest: publish the consent screen. Left
+  in "Testing", Google expires the refresh token after seven days and the
+  add-on quietly stops working every week.
 
   Then:  ./scripts/addon-google-workspace.sh auth
 
@@ -96,12 +99,19 @@ EOF
 }
 
 require_client() {
+  # Either source will do: the downloaded JSON, or the two values typed
+  # into the env file. `auth` reads the JSON and copies them across.
+  ls "$REPO"/secrets/client_secret_*.json >/dev/null 2>&1 && return 0
   [ -n "$(envval GOOGLE_CLIENT_ID)" ] && [ -n "$(envval GOOGLE_CLIENT_SECRET)" ] || {
     cat >&2 <<EOF
 
-  GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are still blank in
-  $ENVFILE. Fill them in from Google Cloud Console -- see
-  addons/google-workspace/README.md -- and run this again.
+  No OAuth client yet. Create one in Google Cloud Console (see
+  addons/google-workspace/README.md), then either:
+
+    - download its JSON and drop it in  secrets/  -- nothing to retype, or
+    - fill GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in $ENVFILE
+
+  Then run this again.
 
 EOF
     exit 2
@@ -217,6 +227,16 @@ step; re-run: ./scripts/addon-google-workspace.sh auth --force"
     printf 'USER_GOOGLE_EMAIL=%s\n'          "$(envval GOOGLE_ACCOUNT_EMAIL)"
     printf 'WORKSPACE_MCP_CREDENTIALS_DIR=%s/.config/agent-sandbox/google-creds\n' \
            "$(limactl shell "$INSTANCE" -- bash -lc 'printf %s "$HOME"' 2>/dev/null)"
+    # The MCP server is a child of a systemd *user* service, which does not
+    # read ~/.profile, so it inherits no proxy and its Google calls die at
+    # the uid lockdown with "No route to host" -- DNS resolves, the connect
+    # is refused. The base spec says this about the gateway; the server is
+    # a separate process and needs it too. Putting it here means the
+    # EnvironmentFile carries it and no drop-in has to remember.
+    printf 'http_proxy=http://127.0.0.1:3128\n'
+    printf 'https_proxy=http://127.0.0.1:3128\n'
+    printf 'HTTP_PROXY=http://127.0.0.1:3128\n'
+    printf 'HTTPS_PROXY=http://127.0.0.1:3128\n'
   } > "$GUESTENV"
 
   step "Pushing the add-on into $INSTANCE"
