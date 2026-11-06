@@ -2,7 +2,8 @@
 
 **Host:** macOS (Darwin 25.6.0), arm64. Lima 2.2.1 via Homebrew.
 **Dates:** attempt 1 2026-11-04, attempt 2 (this run) 2026-11-04/05.
-**Branch:** `macos-port`.
+**Branch:** `macos-port`, merged into `main` in `abf09e7` and since
+deleted. There is one branch now; do not go looking for this one.
 **Method:** `./bootstrap.sh --rebuild` — the VM and all generated config
 destroyed first, so this is a from-scratch build driven only by the
 committed documents.

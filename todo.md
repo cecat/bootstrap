@@ -14,7 +14,7 @@ and reached **39 passed, 1 failed, 2 skipped** on
 `verify.sh --models --reboot` — parity with the Linux reference of 39/0/3.
 The one failure is a check defect, not a build defect. Both agents answer
 on Telegram and both fetch the public web. Full account in
-`MACOS-RESULT.md` on branch `macos-port`. The old "25 checks" figure in
+`MACOS-RESULT.md`, here on `main`. The old "25 checks" figure in
 this item was obsolete and is gone.
 
 **What is proven.** `vz` and aarch64 both follow the host with
