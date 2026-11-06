@@ -1,0 +1,5 @@
+# Local to the add-on, so the repo's own .gitignore does not have to change
+# for an optional extra. Importing the server to list its tools leaves
+# bytecode behind, and `git add addons/` would otherwise commit it.
+__pycache__/
+*.pyc
