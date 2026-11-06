@@ -18,8 +18,10 @@ Steps 1–3 are yours, because they need a browser and a secret that must not
 pass through a chat. Then you hand over at step 4, and step 5 is the one
 check at the end that no script can do. Everything between is the agent's.
 
-Budget about fifteen minutes of your attention, most of it in the Google
-Cloud Console.
+Budget about twenty minutes of your attention: roughly ten clicking
+through the Google Cloud Console, and ten on the consent step, which is
+fiddly on a headless host and is described in full before you start it.
+Both are one-off — once there is a refresh token, none of this recurs.
 
 ### 1. Set up a Google OAuth client (browser, about ten minutes)
 
@@ -93,51 +95,62 @@ control.
 
 ### 3. Consent, in a browser
 
-Consent needs a real Google login in a real browser. You cannot `curl` it:
-the URL returns Google's sign-in *page*, not a token.
+> **Read this before you start it.** If the machine running the add-on is
+> headless — the usual case — this step is the awkward one, and it is
+> awkward for a reason nothing here can remove: Google will only hand over
+> a token to a logged-in browser, and it insists on delivering it to
+> `127.0.0.1`, which has to mean the machine that asked. Your browser is on
+> your laptop; the thing that asked is the remote host. Bridging that gap
+> is an SSH tunnel, and the ten minutes it takes are a one-off.
+>
+> You need: **the terminal you run `auth` in**, and **one shell on your
+> laptop** for the tunnel. The tunnel backgrounds itself, so that shell is
+> yours again immediately. The URL is printed in full for you to select —
+> no file to open, nothing to scp, nothing to retype.
+>
+> Do them in that order. Approving before the tunnel exists fails *after*
+> you have consented, and the grant is spent — you would re-run `auth` and
+> do it again.
 
-Almost nobody runs this on a machine with a browser — the usual setup is a
-headless Linux host reached over SSH from a laptop — so that is the path
-described first.
+You cannot `curl` your way through this: the URL returns Google's sign-in
+*page*, not a token.
 
-**You need two terminals, and the tunnel has to be open before you click.**
-Google redirects to `127.0.0.1:8731` at the end of consent; without the
-tunnel that address means your laptop, where nothing is listening.
-
-**Terminal A — a fresh terminal on your laptop.** Not a window that is
-already SSH'd into the remote host: this command runs *on the laptop* and
-dials out. Run inside an existing session it would forward the remote host
-to itself, which does nothing.
+**On your laptop**, open the tunnel. It backgrounds itself and hands your
+prompt straight back, so this shell is not tied up:
 
 ```sh
-ssh -N -L 8731:127.0.0.1:8731 you@remote-host
+ssh -f -N -L 8731:127.0.0.1:8731 you@remote-host
 ```
 
-It prints nothing and does not return — `-N` means "no command, just the
-tunnel". That blank window is it working. Leave it until consent is done.
+It must run on the laptop, in a shell that is *not* already SSH'd into the
+remote host — the command dials out from the laptop. Run inside an existing
+remote session it would forward that host to itself and silently do
+nothing.
 
-**Terminal B — on the remote host, over SSH.** Start the consent flow:
+**On the remote host**, start the consent flow:
 
 ```sh
 ./scripts/addon-google-workspace.sh auth
 ```
 
-It detects there is no display, writes the consent URL to
-`config/google-consent-url.txt`, and waits ten minutes.
+It notices there is no display and prints the consent URL in full, then
+waits ten minutes.
 
-If you already have a session open on the remote host for other work, that
-is fine and unrelated — these two are in addition to it.
+**Back on your laptop:** select that URL, paste it into your browser, and
+approve. Your browser is sent to `127.0.0.1:8731`, the tunnel carries it to
+the waiting command, and `auth` finishes on its own and writes the tokens.
 
-**Then, on your laptop:** open that URL in your browser and approve. The
-URL is long, so read it out of the file rather than retyping it — for
-example `scp you@remote-host:…/config/google-consent-url.txt .`, or just
-`cat` it in terminal B and copy. When you approve, your browser is sent to
-`127.0.0.1:8731`, the tunnel carries that to the waiting command, and
-terminal B finishes on its own and writes the tokens. Close terminal A
-afterwards.
+Then close the tunnel:
 
-If the machine running `auth` *does* have a browser, none of the above
-applies: the command opens the page itself and no tunnel is needed.
+```sh
+ssh -O exit you@remote-host
+```
+
+Any sessions you already had open on the remote host are beside the point —
+they are neither used nor disturbed.
+
+If the machine running `auth` *does* have a browser, ignore all of the
+above: the command opens the page itself and there is no tunnel.
 
 **If something goes wrong,** the error tells you which layer:
 
@@ -185,6 +198,13 @@ allowlist must not be empty. It then pushes the pinned requirements and the
 credential store into the VM and hands Pi the spec in
 `addons/google-workspace/spec.md`, through the ordinary
 `./scripts/pi-session.sh say`.
+
+**It goes quiet twice, for minutes at a time, and neither is a hang.**
+First at *Base system still verifying*, which runs the whole base suite
+(3–5 minutes); it prints the path of a log you can `tail -f`. Then while
+Pi works, which is the long one — use `./scripts/pi-session.sh steps` from
+another shell if you want to watch. Reassure the user rather than killing
+it.
 
 Supervise Pi exactly as `AGENTS.md` describes for the base build: its
 summary is a claim, `verify.sh` is the evidence, and `pi-session.sh say` is

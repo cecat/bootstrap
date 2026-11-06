@@ -163,6 +163,11 @@ allowlist is the one combination this refuses to create."
 
   step "Base system still verifying"
   BASELOG="$(mktemp -t gw-base-verify.XXXXXX)"
+  # Say how long and where to look. This runs the whole base suite with
+  # its output redirected, so for several minutes it prints nothing and
+  # reads like a hang.
+  printf '      running ./verify/verify.sh -- takes 3-5 minutes, no output until it finishes\n'
+  printf '      watch it with:  tail -f %s\n' "$BASELOG"
   if ./verify/verify.sh >"$BASELOG" 2>&1; then
     ok "base verify.sh passed"
   else

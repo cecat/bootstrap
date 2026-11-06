@@ -311,34 +311,37 @@ def main():
     if try_open_browser(consent_url):
         ok("opened your browser")
     else:
-        # The common case on this kind of host: a headless box over SSH.
-        # Printing a 600-character URL to a terminal the user cannot copy
-        # out of is useless, so point at a file instead.
+        # Headless box over SSH: the normal case for this repo. Print the
+        # URL in full rather than pointing at a file -- a terminal is a
+        # thing you select text in, and sending someone to `cat` a file in
+        # a fourth window to get it was a worse experience than a long
+        # line that wraps. The file stays, for anyone who would rather scp
+        # it.
+        user = os.environ.get("USER", "user")
+        host = socket.gethostname()
         print(f"""
-  {YELLOW}This machine has no browser.{OFF} Use the one on your laptop. This
-  command is now waiting for up to 10 minutes; leave it running.
+  {YELLOW}No browser here.{OFF} Two things to do on your laptop. This command is
+  waiting for up to 10 minutes; leave it running.
 
-  {BOLD}1.{OFF} Open a {BOLD}new terminal on your laptop{OFF} -- not another window on
-     this machine, and not one already SSHed in here. This command runs
-     ON THE LAPTOP and dials back to here:
+  {BOLD}1.{OFF} On your laptop -- any shell there, as long as it is not SSHed
+     into this machine -- open the tunnel. This backgrounds itself and
+     gives you your prompt straight back:
 
-         ssh -N -L {port}:127.0.0.1:{port} {os.environ.get('USER', 'user')}@{socket.gethostname()}
+         {BOLD}ssh -f -N -L {port}:127.0.0.1:{port} {user}@{host}{OFF}
 
-     It prints nothing and does not return. That is correct; leave it
-     running. Do it {BOLD}before{OFF} step 2, or the redirect has nowhere to land.
+     (Drop the -f if you would rather watch it; then it prints nothing
+     and does not return, which is also it working.)
 
-  {BOLD}2.{OFF} Open this URL in your laptop's browser and approve:
+  {BOLD}2.{OFF} Paste this into your laptop's browser and approve:
 
-         {BOLD}config/google-consent-url.txt{OFF}   <- the URL is in this file
+{BOLD}{consent_url}{OFF}
 
-     It is too long to retype; copy it, or fetch it with
-         scp {os.environ.get('USER', 'user')}@{socket.gethostname()}:{url_path} .
+  Then this command finishes by itself. Close the tunnel afterwards with
+      ssh -O exit {user}@{host}    (or just kill it, if you skipped -f)
 
-  Google redirects to 127.0.0.1:{port} at the end, which must reach THIS
-  machine -- that is what the tunnel in step 1 is for. When it does, this
-  command finishes by itself.
-
-  Ctrl-C to give up.
+  (The URL is also in config/google-consent-url.txt if you would rather
+  scp it. Approving before the tunnel is up fails and burns the consent,
+  so do 1 first. Ctrl-C to give up.)
 """, file=sys.stderr)
 
     # serve_forever, not handle_request: a browser may fetch /favicon.ico
