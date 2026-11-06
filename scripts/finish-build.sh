@@ -4,8 +4,8 @@
 #
 #   ./scripts/finish-build.sh [instance]      (default instance: agents)
 #
-# bootstrap.sh calls this at the end of an interactive run. A supervising
-# coding agent calls it directly once it is satisfied with what Pi did.
+# A supervising coding agent runs this directly, once it is satisfied with
+# what Pi did. bootstrap.sh stops before Pi and never reaches this script.
 #
 # Exits non-zero if anything failed. "Finished" and "passed" are not the
 # same thing, and this script never reports the second when it means the

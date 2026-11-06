@@ -40,10 +40,6 @@ REBUILD-RESULT*.md
 # committing: they are long, machine-specific, and quote config paths.
 logs/
 
-# The handoff bootstrap.sh writes for the supervising coding agent. Local
-# state about one build, regenerated on every run.
-NEXT-STEP.md
-
 # macOS
 .DS_Store
 
