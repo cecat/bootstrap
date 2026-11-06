@@ -268,6 +268,33 @@ case "$drop" in
          "no EnvironmentFile for google.env -- the server will start and then fail every call" ;;
 esac
 
+# systemd.exec(5): "Variable expansion is not performed" in Environment=.
+# So Environment=FOO=${BAR} sets FOO to the literal seven characters
+# "${BAR}". It looks plausible in systemctl show and fails only on a real
+# Google call, as invalid_client. Pi wrote exactly this on 2026-11-06.
+case "$drop" in
+  *'Environment='*'${'*)
+    fail "no unexpanded \${...} in the drop-in" \
+         "systemd does not expand variables in Environment= -- the service gets the literal text" ;;
+  *)
+    pass "no unexpanded \${...} in the drop-in" ;;
+esac
+
+# What the service really has, as opposed to what the unit files say.
+svcenv="$(g 'systemctl --user show hermes-gateway.service --property=Environment --value 2>/dev/null')"
+case "$svcenv" in
+  *'${'*)
+    fail "gateway environment holds real values" "an unexpanded \${...} reached the service" ;;
+  *GOOGLE_OAUTH_CLIENT_ID=*)
+    pass "gateway environment holds real values" "GOOGLE_OAUTH_CLIENT_ID is set and expanded" ;;
+  "")
+    skip "gateway environment holds real values" "could not read the unit environment" ;;
+  *)
+    # EnvironmentFile contents do not show up in this property, so absence
+    # here is not a failure on its own -- the live call settles it.
+    skip "gateway environment holds real values" "not visible in Environment=; --live is the real test" ;;
+esac
+
 # A token in a config file is a token in a backup. Only meaningful once
 # ~/.hermes exists -- grepping a directory that is not there finds nothing
 # and would otherwise read as a clean bill of health.

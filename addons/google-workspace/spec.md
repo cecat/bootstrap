@@ -87,13 +87,18 @@ The Hermes gateway runs as a systemd **user** service and does not read
 Add a new file. Do not edit the drop-in the base build created; both
 existing is correct.
 
-`google.env` names its variables `GOOGLE_CLIENT_ID` and
-`GOOGLE_CLIENT_SECRET`, but the server reads `GOOGLE_OAUTH_CLIENT_ID` and
-`GOOGLE_OAUTH_CLIENT_SECRET`. Bridge the two **without writing the values
-anywhere** — a second `Environment=` line referencing the first, or an
-`ExecStart` wrapper, or whatever the installed systemd supports. If you
-cannot bridge them without copying a value into a file, say so and stop
-rather than pasting the secret.
+That file already carries every name the server needs, including
+`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+`USER_GOOGLE_EMAIL` and `WORKSPACE_MCP_CREDENTIALS_DIR`. One
+`EnvironmentFile=` line is the whole job.
+
+**Do not try to rename a variable with `Environment=`.** systemd does no
+variable expansion there — `systemd.exec(5)`: *"Variable expansion is not
+performed inside the strings and the `$` character has no special
+meaning"* — so `Environment=GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_CLIENT_ID}`
+hands the server that literal text and Google answers `invalid_client`.
+It looks right in `systemctl show` and fails only on a real call. Nothing
+needs bridging; if you think it does, re-read the file first.
 
 ### 4. Restart and prove it works
 
