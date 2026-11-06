@@ -117,6 +117,25 @@ apt repos, which looks alarming during `apt-get update` and is irrelevant.
 **The host must be on the network its model endpoint needs.** The VM
 inherits host NAT.
 
+## Writing scripts people wait on
+
+**Any wait longer than about 30 seconds must say how long it will be.**
+(2026-11-06) A user reported `install` "stuck for a few minutes"; it was
+four minutes into a base `verify.sh` whose output it had redirected to a
+log, so it sat mute. Nothing was wrong, and that is the problem — silence
+and failure look identical, and the honest response to an apparently hung
+script is to kill it.
+
+A rough range is enough: *"this takes 3-6 minutes and prints nothing until
+it finishes"*. Better still, name a file to `tail -f`. This applies to
+anything that redirects a long command, and to every Pi turn — those run
+5–15 minutes with gaps of a minute or more between tool calls, and the
+only thing distinguishing that from a hang is having been told.
+
+Measure the range rather than guessing it: `verify.sh` is 3–6 minutes on
+the Spark, a `limactl shell` round trip is 60ms, Pi turns in `logs/` run
+4–6 minutes for a small task.
+
 ## Writing checks
 
 **When you find a defect, the fix is a check that fails on it** — not prose

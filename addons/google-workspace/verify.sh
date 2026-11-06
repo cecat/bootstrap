@@ -361,6 +361,7 @@ if [ "$DO_BASE" -eq 0 ]; then
   skip "the base system still verifies" "re-run with --base"
 else
   BASELOG="$(mktemp -t gw-base-verify.XXXXXX)"
+  printf '        %sthis takes 3-6 minutes%s -- tail -f %s\n' "$Y" "$Z" "$BASELOG"
   if ./verify/verify.sh >"$BASELOG" 2>&1; then
     pass "the base system still verifies" "$(grep -oE "[0-9]+ passed, [0-9]+ failed" "$BASELOG" | tail -1)"
   else

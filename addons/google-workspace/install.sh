@@ -163,11 +163,11 @@ allowlist is the one combination this refuses to create."
 
   step "Base system still verifying"
   BASELOG="$(mktemp -t gw-base-verify.XXXXXX)"
-  # Say how long and where to look. This runs the whole base suite with
-  # its output redirected, so for several minutes it prints nothing and
-  # reads like a hang.
-  printf '      running ./verify/verify.sh -- takes 3-5 minutes, no output until it finishes\n'
-  printf '      watch it with:  tail -f %s\n' "$BASELOG"
+  # Anything that can outlast a user's patience says how long it will be.
+  # This runs the whole base suite with its output redirected, so it
+  # prints nothing for minutes and reads like a hang. It duly did.
+  printf '      %sthis takes 3-6 minutes and prints nothing until it finishes%s\n' "$Y" "$Z"
+  printf '      watch it live:  tail -f %s\n' "$BASELOG"
   if ./verify/verify.sh >"$BASELOG" 2>&1; then
     ok "base verify.sh passed"
   else
@@ -218,6 +218,11 @@ step; re-run: ./scripts/addon-google-workspace.sh auth --force"
   limactl copy "$ADDON/spec.md" "$INSTANCE:agent-bootstrap/GOOGLE-ADDON.md" \
     || fail "could not copy the add-on spec into the VM."
   ok "spec placed at ~/agent-bootstrap/GOOGLE-ADDON.md"
+
+  printf '      %sPi now works for 5-15 minutes.%s Its progress view follows; long\n' "$Y" "$Z"
+  printf '      gaps between lines are normal -- it is thinking, not stuck. The\n'
+  printf '      watchdog kills a turn that goes %ss with no output at all.\n' "${PI_SILENCE:-600}"
+  printf '      From another shell:  ./scripts/pi-session.sh steps\n\n'
 
   # Short on purpose: fifty-line supervision prompts have hung this setup.
   # It must still say which file to follow, because `say` re-copies the
