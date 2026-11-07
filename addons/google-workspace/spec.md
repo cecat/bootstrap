@@ -69,10 +69,10 @@ disagrees with this document, trust the software and say so.
 The command is the venv's `workspace-mcp` binary, named absolutely, with
 these arguments:
 
-    --single-user --tools gmail drive calendar forms
+    --single-user --tools gmail drive calendar forms contacts
 
 `--single-user` makes it use the one credential in the store instead of
-mapping per-session logins. `--tools` keeps the other eight services
+mapping per-session logins. `--tools` keeps the other seven services
 unregistered.
 
 It needs these in its environment — set them in the `mcp_servers` entry's

@@ -4,7 +4,7 @@ An **optional add-on**. The base build does not need it, does not know about
 it, and is not modified by it. Nothing here runs unless you ask for it.
 
 It gives the **Hermes agent only** access to one Google account's Gmail,
-Calendar, Drive and Forms. OpenClaw gets nothing.
+Calendar, Drive, Forms and Contacts. OpenClaw gets nothing.
 
 > **Build the base system first.** Follow the repo's top-level `README.md`
 > and come back when `./verify/verify.sh` reports no failures. That document
@@ -30,7 +30,7 @@ Both are one-off — once there is a refresh token, none of this recurs.
 At <https://console.cloud.google.com/>:
 
 1. Create a project, or pick one you already have.
-2. Enable four APIs. Search for each by name in **APIs & Services →
+2. Enable five APIs. Search for each by name in **APIs & Services →
    Library** and enable exactly these, no others:
 
    | Search for | Enable the one titled | Its service name | Not these |
@@ -39,6 +39,7 @@ At <https://console.cloud.google.com/>:
    | `Google Calendar` | **Google Calendar API** | `calendar-json.googleapis.com` | Calendar MCP API |
    | `Google Drive` | **Google Drive API** | `drive.googleapis.com` | Drive Activity API, Drive Labels API |
    | `Google Forms` | **Google Forms API** | `forms.googleapis.com` | Forms MCP API |
+   | `People` | **People API** | `people.googleapis.com` | Contacts API (legacy, retired) |
 
    The near-misses are real and several are one search result away from the
    right answer. Two things to know. The **service name** in the third
@@ -299,9 +300,18 @@ rather than a no-op. That friction is deliberate.
 | **Calendar** | list, read, create, update, delete events | — |
 | **Drive** | search, read, create, update, copy, share | delete, trash |
 | **Forms** | create a form, edit questions, read responses | submit a response |
+| **Contacts** | search, read, create, edit, delete contacts and groups | — |
 
 Archiving is removing the `INBOX` label; trashing is adding `TRASH`. Both go
 through `modify_gmail_message_labels`.
+
+**Contacts is the one service with no withheld verb.** It was asked for with
+write access, so the token carries the full `contacts` scope and the agent
+can create, amend and delete entries — including deletion, which the add-on
+withholds from Drive. Contacts is backed by the **People API**, which must be
+enabled in Cloud Console alongside the other four; there is no API called
+"Contacts". To make it read-only instead, change the scope to
+`contacts.readonly` in `auth/google-oauth.py` and re-run `auth --force`.
 
 Two of those limits are worth being precise about, because they are not the
 same kind of limit.

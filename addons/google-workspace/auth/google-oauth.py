@@ -53,6 +53,16 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/forms.body",
     "https://www.googleapis.com/auth/forms.responses.readonly",
+    # Contacts, read and write. The agent resolves senders to people it
+    # has seen before, and can also create and amend entries --
+    # workspace-mcp exposes manage_contact and manage_contacts_batch,
+    # which this scope is what enables. Deliberate: asked for explicitly.
+    # Note the asymmetry with Drive, where the add-on withholds delete
+    # tools; the contacts tools include deletion, so this grant is
+    # broader than that one.
+    # Backed by the People API (people.googleapis.com), which must be
+    # enabled in Cloud Console; there is no API called "Contacts".
+    "https://www.googleapis.com/auth/contacts",
 ]
 
 # Scopes recorded in the credential file. The two OIDC scopes above are

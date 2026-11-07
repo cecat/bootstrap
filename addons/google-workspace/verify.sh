@@ -161,7 +161,7 @@ section "Tool surface"
 TOOLS="$(g "cd \$HOME/.local/share/agent-sandbox/google-mcp 2>/dev/null && $VENV/bin/python -c '
 import asyncio
 from core.server import server
-import gmail.gmail_tools, gdrive.drive_tools, gcalendar.calendar_tools, gforms.forms_tools
+import gmail.gmail_tools, gdrive.drive_tools, gcalendar.calendar_tools, gforms.forms_tools, gcontacts.contacts_tools
 print(\"TOOLS:\" + \" \".join(sorted(t.name for t in asyncio.run(server.list_tools()))))
 ' 2>/dev/null | sed -n 's/^TOOLS://p' | tail -1")"
 
@@ -184,7 +184,8 @@ for t in search_gmail_messages get_gmail_message_content send_gmail_message \
          draft_gmail_message modify_gmail_message_labels list_gmail_labels \
          get_events manage_event list_calendars \
          search_drive_files get_drive_file_content create_drive_file update_drive_file \
-         create_form get_form list_form_responses; do
+         create_form get_form list_form_responses \
+         search_contacts list_contacts manage_contact; do
   case " $TOOLS " in
     *" $t "*) ;;
     *) fail "tool present: $t" "not registered"; continue ;;
