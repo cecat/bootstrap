@@ -139,14 +139,19 @@ WANT_MODEL="argo:claude-5-opus"
 he_model="$(g 'hermes config get model.default 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-zA-Z0-9.:_/-')"
 case "$he_model" in
   "")            skip "Hermes runs $WANT_MODEL" "could not read hermes config get model.default" ;;
-  *opus-5*|*opus5*) pass "Hermes runs $WANT_MODEL" "$he_model" ;;
+  *claude-5-opus*|*claude-opus-5*|*claudeopus5*) pass "Hermes runs $WANT_MODEL" "$he_model" ;;
   *)             fail "Hermes runs $WANT_MODEL" "running '$he_model' -- the spec names $WANT_MODEL; an installer default is not a choice" ;;
 esac
 
-oc_model="$(g 'grep -oE "argo:[a-zA-Z0-9.:_-]+" $HOME/.openclaw/openclaw.json 2>/dev/null | sort -u | head -3 | tr "\n" " "')"
+# Read the configured model, not every argo: string in the file --
+# openclaw.json also lists the provider's whole model catalogue, so a grep
+# returns a dozen ids that have nothing to do with what the agent runs.
+# The first draft of this check did exactly that and failed a correct
+# build, which is the mistake this file's own header warns about.
+oc_model="$(g 'jq -r ".agents.defaults.model.primary // empty" $HOME/.openclaw/openclaw.json 2>/dev/null' | tr -d '\r')"
 case "$oc_model" in
   "")            skip "OpenClaw runs $WANT_MODEL" "no argo: model id found in openclaw.json" ;;
-  *opus-5*|*opus5*) pass "OpenClaw runs $WANT_MODEL" "$oc_model" ;;
+  *claude-5-opus*|*claude-opus-5*|*claudeopus5*) pass "OpenClaw runs $WANT_MODEL" "$oc_model" ;;
   *)             fail "OpenClaw runs $WANT_MODEL" "found '$oc_model' -- the spec names $WANT_MODEL" ;;
 esac
 
