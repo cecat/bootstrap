@@ -78,6 +78,26 @@ it. `~/.config/agent-sandbox/model-access.env` gives you `VM_BASE_URL` (use
 this one — `UPSTREAM_BASE_URL` is a host-side address that is nothing from
 here), `CREDENTIAL`, and model names.
 
+**Both agents run `argo:claude-5-opus`.** Not the installer's default, not
+whatever an onboarding flag suggests, and not a model you saw in an
+example. The whole point of this build is that the agents reach the same
+models the supervising coding agent uses, so configure:
+
+- OpenClaw: the provider's model id — `--custom-model-id "argo:claude-5-opus"`
+- Hermes: `hermes config set model.default argo:claude-5-opus`
+
+`model-access.env` carries `MODEL_OPUS`, `MODEL_SONNET` and `MODEL_HAIKU`
+as the host's own aliases (`claudeopus5` and friends). The gateway accepts
+either spelling; prefer the `argo:` form above, which is what
+`/v1/models` lists.
+
+This is written down because it went wrong: a build set both agents to
+`argo:gpt-4o` — an installer default, never chosen — and nothing caught
+it for weeks, because `verify.sh` only asked whether a completion
+succeeded and gpt-4o completes fine. A user then spent an evening being
+confidently lied to by an agent about files it had not written. If you
+cannot set a model, say so loudly rather than accepting a default.
+
 The endpoint is argo-proxy and serves both shapes: `/v1/messages`
 (Anthropic) for Pi and OpenClaw, `/v1/chat/completions` (OpenAI) for Hermes.
 Reach it **directly, `--noproxy '*'`** — it is allowed by uid as a single

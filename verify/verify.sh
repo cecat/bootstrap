@@ -127,6 +127,29 @@ case ",$pi_prov," in
   *)        fail "Pi provider id is 'argo'" "providers (${pi_shape:-missing}): ${pi_prov:-none} -- scripts/pi-session.sh passes --provider argo and will abort with Unknown provider" ;;
 esac
 
+# Both agents must be on the model this build promises -- "the same models
+# your coding agent already uses", per README.md. Nothing checked this, and
+# a build silently shipped both agents on argo:gpt-4o: an installer default
+# Pi carried forward, never chosen by anyone. It passed every check here for
+# weeks, because --models only asks whether a completion succeeds and gpt-4o
+# completes perfectly well. The user found it after an agent spent an
+# evening fabricating claims about files it had not written. (2026-11-06)
+WANT_MODEL="argo:claude-5-opus"
+
+he_model="$(g 'hermes config get model.default 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-zA-Z0-9.:_/-')"
+case "$he_model" in
+  "")            skip "Hermes runs $WANT_MODEL" "could not read hermes config get model.default" ;;
+  *opus-5*|*opus5*) pass "Hermes runs $WANT_MODEL" "$he_model" ;;
+  *)             fail "Hermes runs $WANT_MODEL" "running '$he_model' -- the spec names $WANT_MODEL; an installer default is not a choice" ;;
+esac
+
+oc_model="$(g 'grep -oE "argo:[a-zA-Z0-9.:_-]+" $HOME/.openclaw/openclaw.json 2>/dev/null | sort -u | head -3 | tr "\n" " "')"
+case "$oc_model" in
+  "")            skip "OpenClaw runs $WANT_MODEL" "no argo: model id found in openclaw.json" ;;
+  *opus-5*|*opus5*) pass "OpenClaw runs $WANT_MODEL" "$oc_model" ;;
+  *)             fail "OpenClaw runs $WANT_MODEL" "found '$oc_model' -- the spec names $WANT_MODEL" ;;
+esac
+
 # ---------------------------------------------------------------------------
 section "Egress policy"
 
