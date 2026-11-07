@@ -212,6 +212,32 @@ esac
 
 section "Hermes can actually see the tools"
 
+# Tools are scoped per platform, and the Telegram preset does not include
+# MCP servers -- so the CLI can have them while the agent the user talks
+# to does not. That is what shipped as "40 passed" twice while Gandalf
+# said it had no calendar. The toolset Hermes generates per server is
+# mcp-<server>; an unmatched name here is ignored in silence.
+hcfg="$(g 'cat ~/.hermes/config.yaml 2>/dev/null')"
+case "$hcfg" in
+  *mcp-google-workspace*)
+    pass "Telegram is granted the MCP toolset" "platform_toolsets names mcp-google-workspace" ;;
+  *platform_toolsets*)
+    fail "Telegram is granted the MCP toolset" \
+         "platform_toolsets exists but does not name mcp-google-workspace -- a wrong name is ignored silently and the agent sees no Google tools" ;;
+  *)
+    fail "Telegram is granted the MCP toolset" \
+         "no platform_toolsets block -- Telegram falls back to the hermes-telegram preset, which has no MCP tools" ;;
+esac
+
+case "$hcfg" in
+  *platform_toolsets*)
+    case "$hcfg" in
+      *hermes-telegram*) pass "Telegram keeps its standard toolset" ;;
+      *) fail "Telegram keeps its standard toolset" \
+              "platform_toolsets.telegram omits hermes-telegram, so the agent loses terminal, file, web and the rest" ;;
+    esac ;;
+esac
+
 park="$(g 'journalctl --user -u hermes-gateway.service --since "-24h" --no-pager 2>/dev/null | grep -icE "google-workspace.*(parked|permanent error|missing executable)"' | tr -dc '0-9')"
 livetools="$(g 'hermes tools list 2>/dev/null | grep -ci "google_workspace\|google-workspace"' | tr -dc '0-9')"
 

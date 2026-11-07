@@ -128,6 +128,38 @@ hands the server that literal text and Google answers `invalid_client`.
 It looks right in `systemctl show` and fails only on a real call. Nothing
 needs bridging; if you think it does, re-read the file first.
 
+### 3c. Give the Telegram platform the toolset
+
+Registering the server is not enough. Hermes scopes tools per platform,
+and the CLI's default preset includes everything while Telegram's does
+not — so the tools work from `hermes chat` and the agent on Telegram says
+it has no calendar. That asymmetry cost four rounds of guessing on
+2026-11-06; the answer is in the vendor docs, quoted here so you do not
+have to find it again:
+
+> Each configured MCP server generates a `mcp-<server>` toolset at
+> runtime. For example, if you configure a `github` MCP server, a
+> `mcp-github` toolset is created containing all tools that server
+> exposes. [...] you can reference [it] in `--toolsets` or platform
+> configs.
+
+So add a **top-level** `platform_toolsets` block naming both the standard
+preset and this server's generated toolset:
+
+    platform_toolsets:
+      telegram:
+        - hermes-telegram
+        - mcp-google-workspace
+
+Both entries matter. Drop `hermes-telegram` and the agent loses terminal,
+file, web and the rest; drop the second and it has no Google tools.
+
+**An unmatched toolset name is ignored in silence.** There is no error,
+no warning, and `hermes config get platform_toolsets` happily shows
+whatever you wrote. `google-workspace`, `mcp`, and `mcp__google_workspace`
+were all tried and all did nothing. If you are tempted to invent a name,
+run `hermes chat --list-toolsets` and use one that exists.
+
 ### 4. Restart and prove it works
 
 Before restarting, run the `command:` path from the config and confirm it
