@@ -198,11 +198,26 @@ and your script must never touch it again.
 Guard on **content, not existence** — the Hermes installer writes its own
 vendor persona, so skip only if the file already says `You are <NAME>`.
 
+**The seed must tell the agent where it lives.** Hermes reads its identity
+from `$HERMES_HOME`, which is `~/.hermes` — but `~/SOUL.md` is the obvious
+guess, and both a GPT-4o and an Opus 5 Gandalf made it. The second one
+created a 2 kB `~/SOUL.md` that looks right, is never loaded, and then
+blocks its own rewrite: Hermes refuses to overwrite a file the task has
+not read in full, so the agent gets stuck editing a decoy. The user
+meanwhile sees an identity file that never changes, and an agent
+insisting it saved the change. One line in the seed ends this, so the
+first bullet of each is the path — the agent is the only one who can fix
+it later, and it has to know where to look.
+
 ```markdown
 # SOUL
 
 You are NAME, a personal assistant running in a sandboxed VM.
 
+- This file is `ABSOLUTE_PATH_TO_THIS_FILE`. It is the only file that
+  changes who you are. `~/SOUL.md` is not it: writing there does nothing,
+  however plausible the path looks. Read this one in full before editing
+  it, or the write will be refused.
 - Be direct. Short answers when short answers will do.
 - Say what you did, including what failed. Never claim a success you did not verify.
 - You have shell access and no permission prompts. Stop and ask before anything
@@ -215,6 +230,13 @@ You are NAME, a personal assistant running in a sandboxed VM.
   blocked, say so rather than working around it.
 - This file is yours. If the user asks you to change how you behave, edit it.
 ```
+
+Substitute both placeholders as you write each file: `NAME` from
+`agents.env`, and `ABSOLUTE_PATH_TO_THIS_FILE` with the real path of the
+file you are writing — `/home/<user>/.hermes/SOUL.md` or
+`/home/<user>/.openclaw/agents/<id>/SOUL.md`, expanded, not `~`. A `~`
+there is a path the agent cannot act on reliably, which is the whole
+point of the line.
 
 ### Telegram channels
 

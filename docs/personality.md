@@ -17,6 +17,26 @@ to sync, no file in this repo to change, and no restart needed.
 | OpenClaw | `~/.openclaw/agents/<agent-id>/SOUL.md` (inside the VM) |
 | Hermes | `~/.hermes/SOUL.md` (inside the VM) |
 
+**Check the file changed; do not take the agent's word for it.**
+(2026-11-07) Asked to edit its `SOUL.md`, Gandalf wrote a convincing 2 kB
+file to `~/SOUL.md` — the obvious guess, the wrong path, loaded by
+nothing — and reported success. Worse, Hermes then refuses to overwrite
+a file the task has not read in full, so the agent gets stuck rewriting
+its own decoy while the real file never moves.
+
+An earlier build, on a weaker model, went further and described edits it
+had not made at all. Either way the tell is the same and it takes one
+command:
+
+```sh
+limactl shell agents -- stat -c '%s bytes %y' ~/.hermes/SOUL.md
+```
+
+If the size and timestamp have not moved, nothing happened, whatever you
+were told. Ask again naming the absolute path, and have it delete the
+stray `~/SOUL.md` if one appeared. Seeds written by current builds state
+their own path in the first bullet to stop this at the source.
+
 ## Why not edit the files directly
 
 You can (see below), but it is the worse default, for two reasons that come
