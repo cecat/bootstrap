@@ -77,6 +77,14 @@ the reason the coding agent should be the one to run it.
 sent, not what it can spend. Your host must be on whatever network the
 endpoint needs; the VM inherits your host's networking.
 
+Both agents are built on **`argo:claude-5-opus`**, named in
+`spec/pi-target-state.md` and asserted by `verify.sh`, which prints what
+they are actually running in its summary. Check that line: a build once
+put both agents on an obsolete model for weeks, because the spec left the
+choice to the installer and nothing ever reported the result. To run
+something else, tell your coding agent which model you want — the change
+belongs in the spec, not in the VM, or the next build reverts it.
+
 **Software** — Lima (macOS: `brew install lima`; Linux: the release binary
 from [lima-vm/lima](https://github.com/lima-vm/lima/releases), since distro
 packages are often older than the required 1.0.0, plus QEMU and a usable

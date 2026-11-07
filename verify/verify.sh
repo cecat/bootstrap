@@ -134,6 +134,13 @@ esac
 # weeks, because --models only asks whether a completion succeeds and gpt-4o
 # completes perfectly well. The user found it after an agent spent an
 # evening fabricating claims about files it had not written. (2026-11-06)
+#
+# These checks also exist to DISCLOSE. Before this, nothing ever told the
+# user which model their agents were running -- the detection script
+# prints the host's names at detection time, and after that the answer
+# lived only inside the VM. A user talked to an agent for weeks without
+# knowing, and found out only by reading a transcript that smelled wrong.
+# Whatever these report, pass or fail, the name is printed.
 WANT_MODEL="argo:claude-5-opus"
 
 he_model="$(g 'hermes config get model.default 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-zA-Z0-9.:_/-')"
@@ -717,6 +724,14 @@ fi
 # ---------------------------------------------------------------------------
 printf '\n%s== Summary ==%s\n' "$B" "$Z"
 printf '  %s%d passed%s, %s%d failed%s, %s%d skipped%s\n' "$G" "$PASS" "$Z" "$R" "$FAIL" "$Z" "$Y" "$SKIP" "$Z"
+
+# Say which models are running, every time, in the part people read. A
+# build shipped both agents on an obsolete model for weeks because this
+# line did not exist: the information was inside the VM and nowhere else.
+printf '\n  %sModels%s  Hermes: %s\n' "$B" "$Z" "${he_model:-unknown}"
+printf '          OpenClaw: %s\n' "${oc_model:-unknown}"
+printf '          To change one, tell your coding agent which model you want;\n'
+printf '          it edits spec/pi-target-state.md and has Pi re-apply it.\n'
 if [ "$FAIL" -eq 0 ] && [ "$DO_MODELS" -eq 0 ]; then
   printf '\n  Structure and egress look right, but NO COMPLETION WAS MADE.\n'
   printf '  A gateway can be up and still have a dead model path. Run with\n'

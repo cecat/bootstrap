@@ -79,6 +79,26 @@ one. `addons/google-workspace/install.sh` ending at "hand over to your
 coding agent" is another. Mid-procedure is the wrong place to invent a
 new one.
 
+## Tell the user which models their agents run
+
+**Name the models when you report a build.** Not the endpoint, the
+models — "Hermes and OpenClaw are both on `argo:claude-5-opus`". It is
+one line and it closes a hole that cost a user weeks: both agents were
+silently built on `argo:gpt-4o`, an installer default nobody chose, and
+nothing in the build ever said so. The suite was green the whole time,
+because it only asked whether a completion succeeded.
+
+`verify.sh` now prints both in its summary. Repeat it in your own
+report rather than assuming they read it.
+
+**The user may change a model, and should be told they can.** The spec
+names `argo:claude-5-opus` for both agents; the gateway offers more
+(`curl -s "$VM_BASE_URL/v1/models"` lists them). When they ask for a
+different one, the change belongs in `spec/pi-target-state.md` and then
+in `verify.sh`'s `WANT_MODEL` — edit both, have Pi re-apply, and re-run
+the suite. Changing it only inside the VM is the "fix the spec, not the
+VM" violation, and the next build silently reverts it.
+
 ## Work out where you are first
 
 ```sh
