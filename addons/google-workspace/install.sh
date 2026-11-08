@@ -280,8 +280,8 @@ cmd_build() {
 The user needs to do their part first -- see addons/google-workspace/README.md:
 ./scripts/addon-google-workspace.sh auth, then install."
 
-  limactl shell "$INSTANCE" -- bash -lc 'test -s "$HOME/.config/agent-sandbox/google.env"' 2>/dev/null \
-    || fail "no credentials in the VM. Run the install step first."
+  limactl shell "$INSTANCE" -- bash -lc 'test -s "$HOME/google-skill-push/google_token.json" && test -s "$HOME/google-skill-push/google_client_secret.json"' 2>/dev/null \
+    || fail "the staged credentials are not in the VM. Run the install step first."
 
   step "Pi builds the add-on"
   printf '      %sthis takes 5-15 minutes.%s Pi'"'"'s progress view follows; long gaps\n' "$Y" "$Z"

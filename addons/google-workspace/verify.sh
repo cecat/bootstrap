@@ -311,6 +311,8 @@ section "Live Google call"
 
 if [ "$DO_LIVE" -eq 0 ]; then
   skip "a real Google API call succeeds" "re-run with --live; nothing above proves the token works"
+elif [ -z "$HPY" ]; then
+  skip "a real Google API call succeeds" "could not find the gateway interpreter to run it with"
 else
   # The skill's own --check-live, which lists calendars. Writes nothing.
   #
@@ -319,8 +321,24 @@ else
   # honours proxy variables natively. So --check can pass while every real
   # API call fails on the httplib2 path above. --check-live makes an actual
   # API call and is the only thing that exercises it.
-  live="$(g "cd $SKILLDIR/scripts 2>/dev/null && python setup.py --check-live 2>&1 | tail -5")"
+  # The skill's scripts import `pm`, which only resolves inside Hermes'
+  # own environment -- plain python3 answers "Run this script in the
+  # Hermes environment" and proves nothing. Rebuild that environment the
+  # way Hermes' launcher does: its interpreter, plus the installed venv's
+  # site-packages and the hermes-agent tree on PYTHONPATH. The venv hash
+  # is per-install, so find it rather than hard-coding one.
+  # `pm` itself lives in the hermes-agent tree; site-packages supplies the
+  # dependencies it imports. Several environments sit side by side (an
+  # upgrade leaves the old generations in place), so pick by content --
+  # googleapiclient is the one the skill cannot run without -- rather than
+  # taking whichever the shell globs first. Newest first.
+  SITEPKGS="$(g 'for d in $(ls -1dt $HOME/.hermes/installs/*/environments/*/venv/lib/python*/site-packages 2>/dev/null); do if [ -d "$d/googleapiclient" ]; then printf %s "$d"; break; fi; done' | tr -d '[:space:]')"
+  # $HHOME and $SKILLDIR may still contain a literal $HOME for the guest
+  # shell to expand, so they are deliberately left unquoted here.
+  live="$(g "export HERMES_HOME=$HHOME PYTHONPATH=\"$SITEPKGS:\$HOME/.hermes/hermes-agent\" http_proxy=http://127.0.0.1:3128 https_proxy=http://127.0.0.1:3128; '$HPY' $SKILLDIR/scripts/setup.py --check-live 2>&1 | tail -5")"
   case "$live" in
+    *LIVE_CHECK_OK*)
+      pass "a real Google API call succeeds" "setup.py --check-live reached Google" ;;
     *"AUTHENTICATED (partial)"*)
       fail "a real Google API call succeeds" \
            "the token is missing scopes the skill wants. Re-consent host-side:
