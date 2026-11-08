@@ -129,6 +129,27 @@ rather than installing something.
 Check it is not disabled: `skills.disabled` and `skills.platform_disabled`
 in the config must not name it.
 
+**Then add it to `skills.auto_load`**, which is a separate thing from
+being enabled and is the one that decides whether the agent actually has
+it:
+
+    skills:
+      auto_load:
+        - google-workspace
+
+Merge with any existing list rather than replacing it. Without this the
+skill is merely *available* — the agent has to go looking for it, and an
+agent asked for a calendar will reach for the first calendar-shaped tool
+it finds. On 2026-11-08 that was a `connectors__wispr_flow_mcp`
+calendar tool from an unrelated catalogue; the session spent a minute
+failing against it and never made a single request to Google. The vendor
+docs are explicit: auto-load means Hermes "loads each named skill into the
+session prompt before the first turn".
+
+The list is resolved when a session's system prompt is first built, so
+**the change only affects new sessions** — an open Telegram conversation
+keeps the old prompt until the user starts a fresh one.
+
 **Do not set `platform_toolsets`.** The defaults for both the `telegram`
 and `cron` platforms already include the `skills` and `terminal` toolsets
 this needs. Setting that block by hand is how the previous build silently

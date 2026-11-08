@@ -178,6 +178,20 @@ case "$disabled" in
   *) pass "the skill is not disabled" ;;
 esac
 
+# Enabled is not loaded. An enabled skill is merely available to be found;
+# auto_load is what puts it in the system prompt before the first turn.
+# Without it the agent goes looking, and an agent asked for a calendar
+# reaches for the first calendar-shaped thing it sees -- on 2026-11-08 a
+# connector tool from an unrelated catalogue, with no request to Google
+# made at all. Nothing else in this suite would have caught that.
+autoload="$(g 'hermes config get skills.auto_load 2>/dev/null')"
+case "$autoload" in
+  *google-workspace*) pass "the skill is auto-loaded into every session" ;;
+  *) fail "the skill is auto-loaded into every session" \
+          "not in skills.auto_load -- the skill is available but not loaded, so the
+        agent must discover it and may pick an unrelated tool instead" ;;
+esac
+
 # ---------------------------------------------------------------------------
 section "It can reach Google through squid"
 
