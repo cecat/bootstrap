@@ -143,6 +143,36 @@ rather than rejected. Silence like that is almost always a documented
 behaviour, not a bug — and no amount of trying adjacent spellings will
 surface it.
 
+(The `mcp-<server>` detail above is now historical — the Google add-on
+moved off MCP on 2026-11-08 and sets no `platform_toolsets` at all. The
+lesson about reading first is why the entry stays.)
+
+## Building beside the vendor instead of on it
+
+**Check whether the tool already ships the thing you are about to build.**
+(2026-11-08) The Google add-on installed a pinned third-party MCP server
+for five months. Hermes ships a bundled `google-workspace` skill that does
+substantially the same job, and the original decision never compared the
+two — it weighed the MCP server against writing our own Google API
+plumbing, and the skill appears nowhere in that commit.
+
+What surfaced it: **the agent reached for the vendor's path by name.** A
+cron job attached the bundled skill, found no credentials where that skill
+looks, and was refused. An agent picking the standard mechanism unprompted
+is the clearest signal available that the bespoke one is the detour.
+
+The cost was not just maintenance. Every platform's toolsets had to be
+named by hand, every credential lived in a second format, and the whole
+apparatus was invisible to the agent that was supposed to use it.
+
+**A missing credential file blocks a cron job before it spends anything.**
+Hermes' pre-dispatch validation checks that each attached skill's declared
+`required_credential_files` exist, reports `blocked_config`, alerts once,
+and makes no LLM call. Worth knowing in both directions: it is a real
+guard, and it fires on a file's *existence*, not its usefulness — the
+Google skill demands a `google_client_secret.json` that nothing reads at
+runtime.
+
 ## Pi grinding on a failure
 
 **Pi will retry a hopeless command dozens of times unless told not to.**

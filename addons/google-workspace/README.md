@@ -4,7 +4,7 @@ An **optional add-on**. The base build does not need it, does not know about
 it, and is not modified by it. Nothing here runs unless you ask for it.
 
 It gives the **Hermes agent only** access to one Google account's Gmail,
-Calendar, Drive, Forms and Contacts. OpenClaw gets nothing.
+Calendar, Drive, Docs, Sheets and Contacts. OpenClaw gets nothing.
 
 > **Build the base system first.** Follow the repo's top-level `README.md`
 > and come back when `./verify/verify.sh` reports no failures. That document
@@ -30,7 +30,7 @@ Both are one-off — once there is a refresh token, none of this recurs.
 At <https://console.cloud.google.com/>:
 
 1. Create a project, or pick one you already have.
-2. Enable five APIs. Search for each by name in **APIs & Services →
+2. Enable six APIs. Search for each by name in **APIs & Services →
    Library** and enable exactly these, no others:
 
    | Search for | Enable the one titled | Its service name | Not these |
@@ -38,16 +38,19 @@ At <https://console.cloud.google.com/>:
    | `Gmail` | **Gmail API** | `gmail.googleapis.com` | Gmail MCP API, Gmail Postmaster Tools API, Workspace MCP API |
    | `Google Calendar` | **Google Calendar API** | `calendar-json.googleapis.com` | Calendar MCP API |
    | `Google Drive` | **Google Drive API** | `drive.googleapis.com` | Drive Activity API, Drive Labels API |
-   | `Google Forms` | **Google Forms API** | `forms.googleapis.com` | Forms MCP API |
+   | `Google Sheets` | **Google Sheets API** | `sheets.googleapis.com` | Sheets MCP API |
+   | `Google Docs` | **Google Docs API** | `docs.googleapis.com` | Docs MCP API |
    | `People` | **People API** | `people.googleapis.com` | Contacts API (legacy, retired) |
 
    The near-misses are real and several are one search result away from the
    right answer. Two things to know. The **service name** in the third
    column is the unambiguous identifier — it appears on each API's detail
    page, so check it there if a title looks close but not exact. And the
-   Google-hosted **"MCP API"** entries are a different product from the MCP
-   server this add-on runs inside your VM; enabling one does nothing for
-   you here.
+   Google-hosted **"MCP API"** entries are a wholly different product;
+   enabling one does nothing for you here.
+
+   No Forms API: the bundled skill has no Forms support. If you enabled it
+   for an earlier version of this add-on, it is now unused.
 3. Configure the consent screen, under **APIs & Services → OAuth consent
    screen** (recent consoles file this under **Google Auth Platform →
    Branding / Audience**). Choose user type **External** unless you
@@ -230,8 +233,8 @@ reading of it.
 ./scripts/addon-google-workspace.sh verify --live --base
 ```
 
-The user has already run `install`, which checked preconditions, pushed the
-credentials and pinned requirements into the VM, and staged the spec at
+The user has already run `install`, which checked preconditions, staged the
+credentials at `~/google-skill-push/`, and put the spec at
 `~/agent-bootstrap/GOOGLE-ADDON.md`. `build` refuses if any of that is
 missing rather than starting a turn that cannot succeed.
 
@@ -250,10 +253,12 @@ how you push back. Pi's deliverable is
 script, never `setup.sh`, so base idempotence stays a measurement of the
 base build.
 
-`verify --live` makes one real Google call (it reads a Gmail label and
-writes nothing), because a registered tool list proves nothing about the
-credentials. `--base` re-runs the base suite to confirm this add-on broke
-nothing. Then tell the user to do step 5.
+`verify --live` runs the skill's own `setup.py --check-live`, which makes a
+real Calendar call and writes nothing. Credentials sitting in place prove
+nothing by themselves. Note that `--check` is **not** a substitute: it only
+refreshes the token, over a library that honours proxy variables natively,
+so it can pass while every real API call fails. `--base` re-runs the base
+suite to confirm this add-on broke nothing. Then tell the user to do step 5.
 
 ---
 
@@ -261,103 +266,117 @@ nothing. Then tell the user to do step 5.
 
 ## What this installs
 
-The MCP server is **[taylorwilsdon/google_workspace_mcp][upstream]** (MIT),
-installed from PyPI as `workspace-mcp`, pinned to one version. This add-on is
-the wiring: host-side consent, credential plumbing, the Hermes registration,
-and the checks.
+Nothing, in the sense that matters: the Google integration is **Hermes' own
+bundled `google-workspace` skill**, which ships with Hermes and is seeded
+into every profile. This add-on is the wiring around it — host-side
+consent, getting the credentials into the VM, the two settings the sandbox
+needs, and the checks.
 
-[upstream]: https://github.com/taylorwilsdon/google_workspace_mcp
+That is a deliberate change of direction. Until 2026-11-08 this add-on
+installed a third-party MCP server (`workspace-mcp`) instead, pinned to one
+version, in a venv of its own. It worked, but it was a parallel stack: the
+agent never found it by name, the vendor's own path kept improving without
+us, and the first scheduled cron job failed because the agent reached for
+the bundled skill — the obvious thing — and found no credentials where that
+skill looks for them.
 
-There is no official Google or Anthropic MCP server for Workspace. Google
-publishes MCP servers for databases and gcloud, not for Gmail or Drive;
-Anthropic's `gdrive` reference server was archived. This is the de-facto
-standard — and depending on it beats maintaining a few hundred lines of
-Google API plumbing here.
+The bundled skill is what Hermes documents, what `hermes skills list`
+shows, and what the agent reaches for unprompted. Using it means upstream
+maintains the Google plumbing and we maintain almost nothing.
 
-### The tradeoffs of that choice
+### What we still own, and why
 
-**Supply chain.** An optional add-on now pulls a third-party package into a
-VM whose whole premise is a sandbox. Mitigations: the version is pinned, the
-server runs in a venv of its own, it gets exactly one account's credentials,
-and it is confined by the same egress rules as everything else. It is not
-audited, and nobody here reviews its releases.
+**One host-side consent script**, `auth/google-oauth.py`. The skill ships
+its own (`setup.py --auth-url` / `--auth-code`), and we do not use it for
+the consent step, for two reasons.
 
-**The pin is load-bearing.** Every restriction below is a claim about *one
-reviewed version's* tool surface. A floating dependency could add a delete
-tool in a release nobody read. So `verify.sh` asserts both the version and
-the surface, re-derived from the running server — a bump that widens what the
-agent can do fails the checks rather than passing quietly.
+It redirects to `http://localhost:1`, where nothing listens — the browser
+is *expected* to fail, and you copy the authorization code out of the URL
+bar by hand. Google deprecated exactly that pattern: "the manual copy/paste
+option, also referred to as an out of band (OOB) redirect method, is no
+longer supported" (February 2022), and their current guidance is that a
+loopback redirect with a real listener "is the recommended mechanism for
+obtaining the authorization code". Ours does that — loopback, a real
+listener, PKCE. Second, the skill's flow needs a ~400-character redirect
+URL carried back by hand from the browser; ours captures the code itself.
 
-**Tool names are upstream's.** They change between releases, so `verify.sh`
-names them explicitly and a version bump becomes a verify-and-adjust step
-rather than a no-op. That friction is deliberate.
+It runs **once**, on the host, and contributes nothing to the runtime. The
+skill's own `setup.py --check` and `--check-live` are used unchanged.
 
 ## What the agent can do
 
 | Service | It can | It cannot |
 |---|---|---|
-| **Gmail** | search, read, send, draft, label, move, archive, trash | delete permanently |
-| **Calendar** | list, read, create, update, delete events | — |
-| **Drive** | search, read, create, update, copy, share | delete, trash |
-| **Forms** | create a form, edit questions, read responses | submit a response |
-| **Contacts** | search, read, create, edit, delete contacts and groups | — |
+| **Gmail** | search, read, send, reply, label, archive, trash | delete permanently |
+| **Calendar** | list, read, create, delete events | — |
+| **Drive** | search and read files | — |
+| **Docs** | read | — |
+| **Sheets** | read, write, append | — |
+| **Contacts** | list | create, amend or delete |
 
-Archiving is removing the `INBOX` label; trashing is adding `TRASH`. Both go
-through `modify_gmail_message_labels`.
-
-**Contacts is the one service with no withheld verb.** It was asked for with
-write access, so the token carries the full `contacts` scope and the agent
-can create, amend and delete entries — including deletion, which the add-on
-withholds from Drive. Contacts is backed by the **People API**, which must be
-enabled in Cloud Console alongside the other four; there is no API called
-"Contacts". To make it read-only instead, change the scope to
-`contacts.readonly` in `auth/google-oauth.py` and re-run `auth --force`.
-
-Two of those limits are worth being precise about, because they are not the
-same kind of limit.
+Archiving is removing the `INBOX` label; trashing is adding `TRASH`.
 
 **Gmail cannot permanently delete, and Google enforces it.** The token
 carries `gmail.modify`, under which the API refuses `messages.delete`.
-Trashed mail is recoverable for 30 days. The upstream package defines no
-full-mailbox scope at all, so it cannot ask for more — `verify.sh` checks
-both that fact and the scopes actually granted to your token.
+Trashed mail is recoverable for 30 days. This is Google's rule, not ours,
+and `verify.sh` checks the granted scope rather than taking it on trust.
 
-**Drive cannot delete, because no such tool exists.** Google publishes no
-"everything except delete" scope for Drive, so the token carries the full
-`drive` scope and the restriction is that the server implements no delete or
-trash tool — verified against the installed package, not taken on trust. But
-the agent has a shell and can read the credentials, so this is a guardrail
-against mistakes, not a boundary against intent. If that is not good enough
-for the account you are connecting, connect a different account.
+**Drive deletion is no longer withheld, and you should know that.** The
+previous MCP-based version of this add-on exposed no Drive delete or trash
+tool, so deletion was impossible through the tool surface. The bundled
+skill takes the full `drive` scope and runs a CLI, so the agent *can*
+delete Drive files. In practice this is a smaller change than it sounds —
+the old restriction was already, in this repo's own words, "a guardrail
+against mistakes, not a boundary against intent", because the agent has a
+shell and can read the credentials either way. But it was a real guardrail
+and it is gone. If that is not acceptable for the account you are
+connecting, connect a different account.
 
-The narrower alternative is `drive.readonly` + `drive.file`, where Google
-itself refuses to touch anything the agent did not create — at the cost of
-the agent no longer being able to edit your existing documents. To switch,
-drop the `drive` scope from `SCOPES` in `auth/google-oauth.py` and re-run
-`auth --force` and `install`.
+**Contacts is read-only.** The skill requests `contacts.readonly` and
+implements one subcommand, `contacts list`. The MCP version could create,
+amend and delete contacts; that capability is not available here. Regaining
+it means either patching the skill's `google_api.py` (the People API calls
+would mirror the existing `contacts_list`) or asking upstream. Deferred
+deliberately rather than forgotten.
 
-**Forms cannot be submitted.** The agent builds forms and reads what others
-submitted. Google publishes no API for filling one in, and driving a real
-browser does not work in this VM (the computer-use driver fails on a missing
-`libXi.so.6`). Filling in arbitrary web forms is not part of this add-on.
+**Forms is gone.** The skill has no Forms support at all. The MCP version
+could create forms and read responses.
+
+**Docs and Sheets are new.** Neither was available before.
 
 ### A note on egress
 
-The add-on needs pypi.org (to install the server) and googleapis.com (to use
-it), and **adds nothing to the allowlist for either**. Squid's rules end with
-`http_access allow all` after denying the private ranges, so the public web on
-80/443 is already reachable in both the bootstrap and runtime phases; the
-allowlist only names destinations on other ports. `verify.sh` asserts that no
-Google domain was added, because an optional extra that widens egress would be
-changing the base system by the back door.
+The add-on needs googleapis.com, and **adds nothing to the allowlist**.
+Squid's rules end with `http_access allow all` after denying the private
+ranges, so the public web on 80/443 is already reachable in both the
+bootstrap and runtime phases; the allowlist only names destinations on
+other ports. `verify.sh` asserts that no Google domain was added, because
+an optional extra that widens egress would be changing the base system by
+the back door.
 
-One stale note to be aware of: `docs/gotchas.md` (2026-10-30) says pypi.org is
-"bootstrap allowlist only", and `spec/pi-target-state.md` says the same. That
-predates the squid change of 2026-10-31 that opened the public web. Verified
-on 2026-11-06: a runtime-phase VM reports "public web is reachable through
-squid". Those base files are left alone here deliberately — this add-on
-changes nothing in the base system — but the install does not need the
-bootstrap phase, and you should not switch to it.
+### Two things the sandbox needs that a normal machine does not
+
+Both are applied by Pi from `spec.md`, and both are checked.
+
+**PySocks, installed where Hermes will load it.** The skill reaches Google
+through `google-api-python-client`, which builds a bare `httplib2.Http`.
+httplib2 does `try: import socks / except ImportError: socks = None`, and
+when `socks` is None its `isgood()` returns false and the HTTPS path opens
+a **direct socket without saying so**. Under this VM's uid-scoped iptables
+that connection is refused or hangs, with no proxy error anywhere, because
+httplib2 never believed it had a proxy. PySocks is not a Hermes dependency,
+so nothing else installs it.
+
+**`terminal.env_passthrough` naming the proxy variables.** Hermes strips
+most environment variables from the children of its `terminal` and
+`execute_code` tools, and `http_proxy` / `https_proxy` match none of its
+safe prefixes. The skill's scripts run as exactly such a child. Without
+this they get no proxy at all.
+
+These two are also why `setup.py --check` is not an acceptable test and
+`--check-live` is. `--check` only refreshes the token, and refreshing goes
+through `requests`, which honours proxy variables natively — so it can pass
+while every real API call fails on the httplib2 path above.
 
 ## What `install` refuses to do
 
@@ -376,15 +395,24 @@ Consent happens **on your machine**, never in the VM — the VM has no browser
 and no display, and this is why it never needs one. The flow writes two files
 into `config/`, both 0600 and both gitignored:
 
-- `google.env` — client id, secret, refresh token, account email
-- `google-credentials-<you>@<domain>.json` — the same refresh token in the
-  layout the server's credential store reads
+- `google_token.json` — the refresh token, in the `authorized_user` shape
+  google-auth reads
+- `google_client_secret.json` — the OAuth client, as Google issued it
 
-Both are copied into the VM (`~/.config/agent-sandbox/`, the store directory
-at 0700), and the Hermes gateway gets the OAuth client values through a
-systemd `EnvironmentFile=`. The store file necessarily holds the refresh
-token in the clear, because that is the format the server reads; file modes
-are what protect it, and `verify.sh` checks them.
+Both names are the skill's, declared in its `SKILL.md` under
+`required_credential_files`, and are not ours to change. `install` pushes
+them into the VM and Pi installs them at 0600 in the home the Hermes
+gateway resolves (`$HERMES_HOME`, normally `~/.hermes`).
+
+`google_client_secret.json` is never read at runtime — refreshing uses the
+client id and secret inside the token file. It has to exist anyway, because
+Hermes' **cron preflight refuses to start any job whose attached skill has
+a declared credential file missing**. That refusal is what blocked the first
+inbox digest, and it is why `verify.sh` checks for the file by name.
+
+The token file necessarily holds the refresh token in the clear, because
+that is the format google-auth reads; file modes are what protect it, and
+`verify.sh` checks them.
 
 Never paste any of these values into a conversation with an agent. A token in
 a chat is a token in a transcript.
@@ -395,9 +423,9 @@ a chat is a token in a transcript.
 ./scripts/addon-google-workspace.sh remove
 ```
 
-Deregisters the server, deletes the credentials and the store from the VM,
-and restarts the Hermes gateway. It does **not** revoke the token at Google's
-end — only you can do that, at
+Deletes the credentials from the VM, clears away anything left from the old
+MCP-server layout, and tells you the two config edits to have Pi undo. It
+does **not** revoke the token at Google's end — only you can do that, at
 <https://myaccount.google.com/permissions>. If you are removing this because
 something went wrong, revoke there too, then delete the two files in
 `config/`.
@@ -406,7 +434,6 @@ something went wrong, revoke there too, then delete the two files in
 
 If you administer a Google Workspace domain you may prefer a service account
 with domain-wide delegation: no consent screen, no refresh-token expiry, no
-per-user browser step. This add-on does not implement that path, though the
-upstream server supports more auth modes than are used here. Service-account
-keys are long-lived secrets with a much larger blast radius than one user's
-refresh token.
+per-user browser step. This add-on does not implement that path.
+Service-account keys are long-lived secrets with a much larger blast radius
+than one user's refresh token.

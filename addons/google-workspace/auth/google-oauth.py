@@ -28,48 +28,46 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from urllib.parse import quote
 
 AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 USERINFO_URI = "https://openidconnect.googleapis.com/v1/userinfo"
 
-# Must match what workspace-mcp asks for, because the credential file we
-# write records these as the granted scopes and the server trusts that
-# record. Checked against its auth/scopes.py at version 2.3.0.
+# These eight must match Hermes' bundled google-workspace skill exactly,
+# scope for scope. Its setup.py checks the token's recorded scopes against
+# its own SCOPES list and reports "AUTHENTICATED (partial)" for any it does
+# not find -- so a list that merely overlaps is not good enough.
 #
-# Drive takes the full scope because Google publishes no read/write/no-delete
-# scope for it; the no-delete rule comes from the server exposing no delete
-# tool (verified -- see README.md). Gmail deliberately stops at
-# gmail.modify rather than https://mail.google.com/: under modify the API
-# refuses permanent deletion, so "trash only" is Google's rule, not ours.
-SCOPES = [
-    "openid",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/gmail.labels",
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/forms.body",
-    "https://www.googleapis.com/auth/forms.responses.readonly",
-    # Contacts, read and write. The agent resolves senders to people it
-    # has seen before, and can also create and amend entries --
-    # workspace-mcp exposes manage_contact and manage_contacts_batch,
-    # which this scope is what enables. Deliberate: asked for explicitly.
-    # Note the asymmetry with Drive, where the add-on withholds delete
-    # tools; the contacts tools include deletion, so this grant is
-    # broader than that one.
-    # Backed by the People API (people.googleapis.com), which must be
-    # enabled in Cloud Console; there is no API called "Contacts".
-    "https://www.googleapis.com/auth/contacts",
+# Gmail deliberately stops at gmail.modify rather than
+# https://mail.google.com/: under modify the API refuses permanent
+# deletion, so "trash only" is Google's rule, not ours. Drive takes the
+# full scope because Google publishes no read/write/no-delete scope for it;
+# unlike the MCP server this replaces, the skill CAN delete Drive files.
+# Said plainly in README.md rather than left to be discovered.
+GOOGLE_SCOPE = "https://www.googleapis.com/auth/"
+SKILL_SCOPES = [
+    GOOGLE_SCOPE + "gmail.readonly",
+    GOOGLE_SCOPE + "gmail.send",
+    GOOGLE_SCOPE + "gmail.modify",
+    GOOGLE_SCOPE + "calendar",
+    GOOGLE_SCOPE + "drive",
+    # Read-only, because that is all the skill implements: google_api.py
+    # has one contacts subcommand, `contacts list`. Asking for write here
+    # would grant more than anything can use. The MCP server this replaces
+    # did have contacts write; regaining it is deferred, see README.md.
+    GOOGLE_SCOPE + "contacts.readonly",
+    GOOGLE_SCOPE + "spreadsheets",
+    GOOGLE_SCOPE + "documents",
 ]
 
-# Scopes recorded in the credential file. The two OIDC scopes above are
-# only how we learn which account consented; the server never uses them,
-# and listing them as granted API scopes would misrepresent the token.
-API_SCOPES = [s for s in SCOPES if s.startswith("https://www.googleapis.com/auth/")
-              and not s.endswith("/userinfo.email")]
+# openid/userinfo.email are only how we learn which account consented.
+# They are requested but not recorded as granted API scopes.
+SCOPES = ["openid", GOOGLE_SCOPE + "userinfo.email"] + SKILL_SCOPES
+
+# What goes in the token file's "scopes" list. Keep it exactly SKILL_SCOPES:
+# the skill's _stored_token_scopes() reads this list and silently falls back
+# to its own full set if it is absent or empty, which would hide a mismatch.
+API_SCOPES = list(SKILL_SCOPES)
 
 BOLD, RED, YELLOW, GREEN, OFF = "\033[1m", "\033[31m", "\033[33m", "\033[32m", "\033[0m"
 if not sys.stdout.isatty():
@@ -185,32 +183,63 @@ def write_env_value(path, key, value):
     os.chmod(path, 0o600)
 
 
-def write_credential_json(path, email, refresh, client_id, client_secret):
-    """Write the credential file workspace-mcp's store expects.
-
-    Its FileCredentialStore reads <url-encoded-email>.json from the
-    credentials directory, with exactly these keys, and reconstructs a
-    google.oauth2 Credentials from them (auth/credential_store.py at 2.3.0).
-
-    Producing it here is what keeps a browser out of the VM: the server's
-    own flow would otherwise want to open a consent page from inside the
-    sandbox, which has no display and no way to reach one. A null `token`
-    with a live `refresh_token` is the documented resting state -- the
-    library mints an access token on first use.
-    """
-    payload = {
-        "token": None,
-        "refresh_token": refresh,
-        "token_uri": TOKEN_URI,
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "scopes": API_SCOPES,
-        "expiry": None,
-    }
+def write_json_0600(path, payload):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
         json.dump(payload, fh, indent=2)
     os.chmod(path, 0o600)
+
+
+def write_token_json(path, refresh, client_id, client_secret):
+    """Write google_token.json in the shape Hermes' skill reads.
+
+    google-auth's Credentials.from_authorized_user_file requires exactly
+    refresh_token, client_id and client_secret, and raises without them.
+    The skill's _normalize_authorized_user_payload injects type=
+    authorized_user when absent, so writing it is belt and braces.
+
+    No `token` and no `expiry`: google-auth treats a credential with no
+    expiry as already expired, so the first use refreshes against Google
+    rather than trusting anything we minted here. That is what lets consent
+    happen on the host and the token be used in a VM with no browser.
+    """
+    write_json_0600(path, {
+        "type": "authorized_user",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh,
+        "token_uri": TOKEN_URI,
+        "scopes": API_SCOPES,
+    })
+
+
+def write_client_secret_json(path, src_path, client_id, client_secret):
+    """Write google_client_secret.json, verbatim from Google where possible.
+
+    Nothing reads this at runtime -- the skill's google_api.py assigns
+    CLIENT_SECRET_PATH and never opens it, because refreshing uses the id
+    and secret inside the token file. It exists because the skill's
+    SKILL.md declares it under required_credential_files, and Hermes' cron
+    preflight refuses to start any job whose declared credential file is
+    missing. That refusal is what blocked the first inbox digest.
+
+    The skill only validates that a top-level "installed" or "web" key is
+    present, so Google's own download satisfies it. We reconstruct the file
+    only when the user supplied the id and secret by hand instead.
+    """
+    if src_path:
+        try:
+            with open(src_path) as fh:
+                write_json_0600(path, json.load(fh))
+            return
+        except (OSError, json.JSONDecodeError):
+            pass
+    write_json_0600(path, {"installed": {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "auth_uri": AUTH_URI,
+        "token_uri": TOKEN_URI,
+    }})
 
 
 def post_form(url, fields):
@@ -468,15 +497,20 @@ def main():
     write_env_value(env_path, "GOOGLE_REFRESH_TOKEN", refresh)
     write_env_value(env_path, "GOOGLE_ACCOUNT_EMAIL", email)
 
-    cred_path = os.path.join(os.path.dirname(env_path),
-                             f"google-credentials-{quote(email, safe='@._-')}.json")
-    write_credential_json(cred_path, email, refresh, client_id, client_secret)
+    # Both files are named exactly as the skill's required_credential_files
+    # declares them. install.sh pushes them into $HERMES_HOME unchanged;
+    # renaming either one re-creates the cron failure this replaced.
+    config_dir = os.path.dirname(env_path)
+    token_path = os.path.join(config_dir, "google_token.json")
+    secret_path = os.path.join(config_dir, "google_client_secret.json")
+    write_token_json(token_path, refresh, client_id, client_secret)
+    write_client_secret_json(secret_path, from_json, client_id, client_secret)
 
     if os.path.exists(url_path):
         os.remove(url_path)
 
     ok(f"refresh token written to config/google.env (0600) for {email}")
-    ok(f"credential file written to {os.path.basename(cred_path)} (0600)")
+    ok("google_token.json and google_client_secret.json written to config/ (0600)")
     say("next: ./scripts/addon-google-workspace.sh install")
 
 
