@@ -99,7 +99,12 @@ confidently lied to by an agent about files it had not written. If you
 cannot set a model, say so loudly rather than accepting a default.
 
 The endpoint is argo-proxy and serves both shapes: `/v1/messages`
-(Anthropic) for Pi and OpenClaw, `/v1/chat/completions` (OpenAI) for Hermes.
+(Anthropic) and `/v1/chat/completions` (OpenAI). Both were confirmed
+working on 2026-11-09. Pi uses the Anthropic path; **Hermes and OpenClaw
+both use the OpenAI one** — OpenClaw's provider is `api:
+"openai-completions"`. An earlier version of this file claimed OpenClaw
+was on the Anthropic path, which was simply untrue, and it matters
+because some output-cap behaviour is adapter-specific.
 Reach it **directly, `--noproxy '*'`** — it is allowed by uid as a single
 fixed host:port. Everything else goes through `127.0.0.1:3128`, already in
 your environment.
@@ -152,6 +157,43 @@ with a token gateway and a daemon, running as a systemd **user** service.
   `openclaw secrets audit --check` must report `plaintext=0` **and
   `unresolved=0`** from a clean login shell. Quote that line.
 
+**Undo what the onboarding wizard guessed.** Three of its defaults are
+wrong here and none of them fail loudly:
+
+- **`maxTokens: 4096` on every model row.** The wizard writes this for a
+  custom provider; OpenClaw's own default for an unpinned model is 32768.
+  It means OpenClaw *explicitly asks* for a 4096-token ceiling the
+  endpoint never imposed — measured 2026-11-09, the same endpoint
+  returned 14,606 tokens in one response without truncating. Every long
+  reply is cut short, with no error. Remove the per-row `maxTokens` so
+  the catalogue default applies, or set one deliberately above 16000.
+- **`contextWindow: 128000` on every model row**, also a blanket wizard
+  value. Every compaction threshold is derived from it, so if it is
+  wrong, so is all of them. Leave it unless you can confirm the real
+  window; just know it was guessed.
+- **A stale `agents.defaults.models` entry naming `argo:gpt-4o`.** Inert
+  — it neither selects nor registers a model — but it is the exact id
+  that silently ran both agents for weeks, and the next person to read
+  this file will misread it. Delete the entry.
+
+**Compaction must not run on the main model.** Set
+`agents.defaults.compaction.model` to the same cheap model Hermes uses
+for compression, and `compaction.thinkingLevel: "off"`. Unset, compaction
+summarises on Opus with reasoning enabled, and the vendor warns the
+allowance can be spent on thinking tokens before any summary is emitted.
+A rejected summary leaves history uncompacted — and under the configured
+`mode: "safeguard"` the user is warned **even when `notifyUser` is
+false**. That is the same warning loop Hermes produced; it is worth
+avoiding once rather than diagnosing twice.
+
+**Memory indexing needs a provider that exists.** `memory.search.provider`
+unset means OpenAI embeddings, and there is no OpenAI key here — so
+indexing stops, while the `session-memory` hook keeps writing memory
+files. The agent accumulates memories it can never search and appears, over
+weeks, to forget things it was told. Nothing errors. Set
+`memory.search.provider: "none"` for keyword-only search and reindex
+once (`openclaw memory index --force --agent <id>`).
+
 ### Hermes
 
 Install from `https://hermes-agent.nousresearch.com/install.sh`. Configure
@@ -194,6 +236,72 @@ The model override is the second half: compression is mechanical work
 that otherwise runs on the main Opus model, slowly and expensively, for
 no benefit. Any `*-flash` the gateway lists will do — confirm with a real
 completion, not `/v1/models`.
+
+**Point the other auxiliary work at the same cheap model.** Compression
+was not the only mechanical task defaulting to Opus:
+
+    auxiliary.background_review.model      the post-turn fork that
+                                           extracts memories and skills;
+                                           replays the conversation
+    auxiliary.background_review.max_input_tokens: 48000
+    auxiliary.title_generation.model       a 64-token session title
+    auxiliary.approval.model               classifies every flagged
+                                           shell command
+    auxiliary.approval.timeout: 60         30s is tight through a proxy
+
+None of these fail visibly. They are slow and expensive, and the approval
+classifier timing out silently falls through on a path that exists to
+gate shell commands.
+
+**Prune ended sessions.** Set `sessions.auto_prune: true` with
+`sessions.retention_days: 90`. The vendor is blunt about the default:
+*"Without pruning, `state.db` grows without bound — multi-GB files within
+weeks were reported on gateway + cron installs."* That is exactly this
+build, on a VM with a finite disk. Only *ended* sessions are removed;
+live Telegram threads are untouched. Left alone, the first thing the user
+sees is the bot spontaneously asking about disk pruning over Telegram,
+which reads as a malfunction rather than a disk warning.
+
+**Pin an explicit stale timeout.** Set
+`providers.argo-gateway.stale_timeout_seconds: 90`.
+
+Hermes auto-detects localhost and **LAN** endpoints and relaxes its
+streaming timeouts: socket read 120s → 1800s, stale-stream detection
+180s → 900s, and non-streaming stale detection off entirely. `VM_BASE_URL`
+is a `192.168.x.x` address, so all of that applies to us — silently,
+with nothing in the config saying so. The relaxation is meant for a slow
+local GPU; ours is a translation shim in front of a remote service. Left
+alone, an upstream that accepts the connection and then goes quiet hangs
+a Telegram turn for up to thirty minutes instead of failing in ninety
+seconds. An explicit value is honoured even on a local endpoint.
+
+**Stop cron replaying missed slots.** Set `cron.catch_up_missed: false`.
+After any VM suspend, reboot or gateway restart, every schedule that came
+due while it was down fires once on return, each delivering to Telegram:
+a burst of stale briefs on a morning that should have had one. A job that
+genuinely wants a late run can ask for it per-job.
+
+**Do not offer strangers a pairing code.** Set
+`unauthorized_dm_behavior: ignore`. The default (`pair`) sends an unknown
+Telegram user a one-time pairing code. Who may message this bot is the
+*only* access control on an agent that has shell access, a mailbox and
+the user's Drive; a pairing affordance is the wrong thing to hand out.
+
+**Leave the curator alone, but know what it does.** Hermes' curator runs
+a deterministic pass that archives agent-written skills unused for 30
+days. Bundled skills are exempt, so the Google one is safe — but a skill
+the agent writes for itself will quietly disappear after a month. That is
+reasonable default behaviour and this build keeps it; it is recorded here
+so its disappearance is not mistaken for a fault.
+
+**Compact an idle thread before answering it.** Set
+`compression.idle_compact_after_seconds: 1800`. A conversation resumed
+after a gap otherwise re-reads its whole stale context before replying.
+There may be a second benefit — in-place compaction rebuilds the system
+prompt, which is where the `Current time:` line lives, so this *might*
+refresh the stale clock described above. That is an inference from the
+vendor's wording, not a documented promise: do not report it as fixed
+unless you measure it.
 
 ### Pi's own provider
 

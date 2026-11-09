@@ -217,6 +217,98 @@ else
   fail "Hermes runs on the configured timezone" "set to '$he_tz', want '$want_tz'"
 fi
 
+# ---------------------------------------------------------------------------
+# Settings nobody chose. Each of these sat at a vendor default that is
+# wrong for this deployment, and not one of them fails loudly -- they
+# surface as the agent being slow, forgetful, truncated or chatty. The
+# 2026-11-09 audit (docs/config-audit-2026-11-09.md) is the reasoning;
+# these are the assertions.
+
+# OpenClaw's custom-provider wizard pins maxTokens on every model row.
+# 4096 is its value, OpenClaw's own default for an unpinned model is
+# 32768, and the endpoint imposes nothing -- measured, it returned 14,606
+# tokens in one response. So this caps replies for no reason, with no
+# error, and bounds the compaction summary too.
+oc_cap="$(g 'jq -r "[.models.providers[\"argo-gateway\"].models[]? | select(.maxTokens != null and .maxTokens < 16000)] | length" $HOME/.openclaw/openclaw.json 2>/dev/null' | tr -dc '0-9')"
+case "${oc_cap:-x}" in
+  0) pass "OpenClaw does not cap its own output" "no model row pinned below 16000" ;;
+  x) skip "OpenClaw does not cap its own output" "could not read openclaw.json" ;;
+  *) fail "OpenClaw does not cap its own output" \
+          "${oc_cap} model row(s) pin maxTokens below 16000 -- wizard residue. Long
+        replies truncate silently and compaction summaries are bounded too" ;;
+esac
+
+# Compaction on the main model, with thinking on, is how OpenClaw
+# reproduces the Hermes chat-spam loop: a summary whose allowance goes to
+# reasoning tokens is rejected, history stays uncompacted, and safeguard
+# mode warns the user even when notifyUser is false.
+oc_cmod="$(g 'jq -r ".agents.defaults.compaction.model // empty" $HOME/.openclaw/openclaw.json 2>/dev/null' | tr -dc 'a-zA-Z0-9.:_/-')"
+case "$oc_cmod" in
+  *flash*|*mini*|*nano*|*lite*) pass "OpenClaw compacts on a cheap fast model" "$oc_cmod" ;;
+  "") fail "OpenClaw compacts on a cheap fast model" \
+           "compaction.model is unset, so compaction runs on the session model (Opus)" ;;
+  *)  fail "OpenClaw compacts on a cheap fast model" "$oc_cmod" ;;
+esac
+
+# Unset means OpenAI embeddings, and there is no OpenAI key here. Memory
+# indexing stops while the session-memory hook keeps writing files, so
+# the agent accumulates memories it can never search and appears to
+# forget things over weeks. Nothing errors.
+oc_mem="$(g 'jq -r ".memory.search.provider // empty" $HOME/.openclaw/openclaw.json 2>/dev/null' | tr -dc 'a-z-')"
+case "$oc_mem" in
+  "") fail "OpenClaw memory search has a provider that exists" \
+           "memory.search.provider is unset, so it defaults to OpenAI embeddings and
+        there is no key -- indexing silently stops while memories keep being written" ;;
+  openai) fail "OpenClaw memory search has a provider that exists" \
+               "set to openai with no key configured" ;;
+  *) pass "OpenClaw memory search has a provider that exists" "$oc_mem" ;;
+esac
+
+# Without pruning the vendor reports multi-GB state.db within weeks on
+# exactly this shape of install (gateway + cron). The first symptom the
+# user sees is the bot asking about disk pruning over Telegram.
+hp="$(g 'hermes config get sessions.auto_prune 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-z')"
+case "$hp" in
+  true) pass "Hermes prunes ended sessions" ;;
+  *)    fail "Hermes prunes ended sessions" \
+             "sessions.auto_prune is '${hp:-unset}' -- state.db grows without bound on a
+        gateway+cron install, and the VM disk is finite" ;;
+esac
+
+# A 192.168.x.x endpoint is auto-classified LAN, which relaxes four
+# timeouts (socket read 120s -> 1800s). Meant for a slow local GPU; ours
+# is a shim in front of a remote service, so a wedged upstream would hang
+# a Telegram turn for half an hour. An explicit value is honoured anyway.
+hs="$(g 'hermes config get providers.argo-gateway.stale_timeout_seconds 2>/dev/null | tr -d "\r" | tail -1' | tr -dc '0-9')"
+if [ -n "$hs" ] && [ "$hs" -le 300 ]; then
+  pass "Hermes fails fast on a wedged upstream" "stale_timeout_seconds=$hs"
+else
+  fail "Hermes fails fast on a wedged upstream" \
+       "stale_timeout_seconds is '${hs:-unset}' -- our LAN-address endpoint gets the
+        relaxed local-endpoint timeouts, so a silent upstream hangs a turn for ~30min"
+fi
+
+# After any suspend or restart, every missed slot fires on return, each
+# delivering to Telegram: a burst of stale briefs.
+hc="$(g 'hermes config get cron.catch_up_missed 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-z')"
+case "$hc" in
+  false) pass "cron does not replay every missed slot" ;;
+  *)     fail "cron does not replay every missed slot" \
+              "cron.catch_up_missed is '${hc:-unset}' -- after a suspend or restart each
+        missed schedule fires once on return, all delivering to Telegram" ;;
+esac
+
+# Who may message the bot is the only access control on an agent with
+# shell access, a mailbox and the user's Drive. The default hands an
+# unknown DM a pairing code.
+hu="$(g 'hermes config get unauthorized_dm_behavior 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-z')"
+case "$hu" in
+  ignore|decline) pass "strangers are not offered a pairing code" "$hu" ;;
+  *) fail "strangers are not offered a pairing code" \
+          "unauthorized_dm_behavior is '${hu:-unset}' -- the default sends an unknown
+        Telegram user a pairing code, and the allowlist is the only control here" ;;
+esac
+
 oc_tz="$(g 'jq -r ".agents.defaults.userTimezone // empty" $HOME/.openclaw/openclaw.json 2>/dev/null' | tr -dc 'A-Za-z0-9/_+-')"
 if [ -z "$want_tz" ]; then
   fail "OpenClaw runs on the configured timezone" \
@@ -368,6 +460,52 @@ else
     pass "hermes doctor reports nothing actionable" \
          "${n_filtered:-0} warnings, all on the known-optional list"
   fi
+fi
+
+# OpenClaw ships a richer doctor than Hermes, and a trap with it: the
+# default lint run selects 39 of 69 checks and reported ok:true with an
+# empty findings list while --all found 33. A bare `openclaw doctor` in
+# this suite would be a false green, which is the exact class of mistake
+# this section exists to stop.
+#
+# It also exits 0 even when ok:false, so the JSON has to be parsed rather
+# than the exit code trusted.
+#
+# KNOWN-OPTIONAL, deliberately tolerated here. Shrink this, never grow it
+# without writing why beside it.
+#   skills-readiness -- ~30 catalogue skills whose binaries are absent
+#     (github, 1password, obsidian...). None are wanted in this sandbox.
+OC_DOCTOR_OK='core/doctor/skills-readiness'
+
+oc_doc="$(g 'openclaw doctor --lint --all --json 2>/dev/null')"
+if [ -z "$(printf '%s' "$oc_doc" | tr -d '[:space:]')" ]; then
+  skip "openclaw doctor reports nothing actionable" "could not run openclaw doctor"
+else
+  oc_left="$(printf '%s' "$oc_doc" | python3 -c "
+import json,sys,re
+try: d=json.load(sys.stdin)
+except Exception: print('PARSE_FAIL'); raise SystemExit
+ok=re.compile(r'''$OC_DOCTOR_OK''')
+bad=[f for f in d.get('findings',[]) if not ok.search(f.get('checkId',''))]
+print('CHECKS=%s' % d.get('checksRun',0))
+for f in bad[:5]: print('%s: %s' % (f.get('checkId'), f.get('message','')[:90]))
+" 2>/dev/null)"
+  case "$oc_left" in
+    PARSE_FAIL|"") fail "openclaw doctor reports nothing actionable" "could not parse its JSON" ;;
+    *)
+      n_checks="$(printf '%s' "$oc_left" | sed -n 's/^CHECKS=//p')"
+      rest="$(printf '%s\n' "$oc_left" | grep -v '^CHECKS=' | head -3)"
+      # --all is 69 checks here; anything near 39 means the filtered
+      # default run was used and the result cannot be trusted.
+      if [ "${n_checks:-0}" -lt 60 ]; then
+        fail "openclaw doctor reports nothing actionable" \
+             "only ${n_checks} checks ran -- --all was not honoured, so this would be a false green"
+      elif [ -n "$rest" ]; then
+        fail "openclaw doctor reports nothing actionable" "$(printf '%s' "$rest" | tr '\n' ' ' | cut -c1-200)"
+      else
+        pass "openclaw doctor reports nothing actionable" "${n_checks} checks, only known-optional findings"
+      fi ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
