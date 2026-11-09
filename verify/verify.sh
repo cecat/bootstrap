@@ -191,6 +191,45 @@ case "$cmod" in
   *)       fail "compression runs on a cheap fast model" "$cmod" ;;
 esac
 
+# The agent's clock. Decides what "2pm today" means, when cron fires, and
+# the time Hermes stamps into the prompt. Unset means "whatever zone the
+# host happens to have" -- which is not an error anywhere, just a meeting
+# on the wrong day. Compare against what the user asked for rather than
+# merely checking it is non-empty: inheriting the right answer by luck is
+# the thing being fixed.
+want_tz="$( set -a; . config/agents.env 2>/dev/null; set +a; printf %s "${AGENT_TIMEZONE:-}" )"
+he_tz="$(g 'hermes config get timezone 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'A-Za-z0-9/_+-')"
+# A blank AGENT_TIMEZONE fails rather than skips. Skipping would mean the
+# one deployment most likely to be on the wrong zone -- a clone whose
+# agents.env predates this setting -- is also the one that never gets
+# checked, which is the failure mode this whole section exists to close.
+if [ -z "$want_tz" ]; then
+  fail "Hermes runs on the configured timezone" \
+       "AGENT_TIMEZONE is blank in config/agents.env, so nothing pins the agents'
+        clock and they inherit the host zone. Set it (see agents.env.example)"
+elif [ "$he_tz" = "$want_tz" ]; then
+  pass "Hermes runs on the configured timezone" "$he_tz"
+elif [ -z "$he_tz" ]; then
+  fail "Hermes runs on the configured timezone" \
+       "timezone is unset, so the agent uses the host zone -- right only by luck,
+        and wrong by a whole zone on a clone built elsewhere. Want $want_tz"
+else
+  fail "Hermes runs on the configured timezone" "set to '$he_tz', want '$want_tz'"
+fi
+
+oc_tz="$(g 'jq -r ".agents.defaults.userTimezone // empty" $HOME/.openclaw/openclaw.json 2>/dev/null' | tr -dc 'A-Za-z0-9/_+-')"
+if [ -z "$want_tz" ]; then
+  fail "OpenClaw runs on the configured timezone" \
+       "AGENT_TIMEZONE is blank in config/agents.env -- see the Hermes check above"
+elif [ "$oc_tz" = "$want_tz" ]; then
+  pass "OpenClaw runs on the configured timezone" "$oc_tz"
+elif [ -z "$oc_tz" ]; then
+  fail "OpenClaw runs on the configured timezone" \
+       "agents.defaults.userTimezone is unset -- the agent uses the host zone. Want $want_tz"
+else
+  fail "OpenClaw runs on the configured timezone" "set to '$oc_tz', want '$want_tz'"
+fi
+
 # ---------------------------------------------------------------------------
 section "Egress policy"
 
@@ -292,6 +331,43 @@ if [ -n "$gw" ]; then
   fi
 else
   skip "model gateway reachable" "no /etc/agent-sandbox/model-gateway -- the model path does not cross the host boundary"
+fi
+
+# ---------------------------------------------------------------------------
+section "The vendors' own health checks"
+
+# `hermes doctor` ships with the product and reports config version,
+# deprecated keys, credential resolution, SQLite health and per-tool
+# readiness. It was not run once across three days of building this repo,
+# while four configuration gaps shipped past the rest of this suite. One
+# command. Run it.
+#
+# Its exit code is 1 whenever any optional integration is unconfigured, so
+# it cannot be used directly -- this deployment deliberately has no
+# Discord, no xAI, no Docker, no browser and one custom endpoint. Filter
+# those, fail on anything left, and print what was filtered so the
+# exclusion list stays honest rather than quietly swallowing a real
+# finding.
+#
+# KNOWN-OPTIONAL, deliberately not used here. Shrink this list, never grow
+# it without a reason written beside it.
+DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
+
+doc_out="$(g 'hermes doctor 2>&1')"
+if [ -z "$(printf '%s' "$doc_out" | tr -d '[:space:]')" ]; then
+  skip "hermes doctor reports nothing actionable" "could not run hermes doctor"
+else
+  # A hard failure marker is actionable whatever it says.
+  doc_bad="$(printf '%s\n' "$doc_out" | grep -E '^[[:space:]]*[✗✘×]' | head -5)"
+  doc_warn="$(printf '%s\n' "$doc_out" | grep '⚠' | grep -viE "$DOCTOR_OK" | head -5)"
+  n_filtered="$(printf '%s\n' "$doc_out" | grep -c '⚠' || true)"
+  if [ -n "$doc_bad" ] || [ -n "$doc_warn" ]; then
+    fail "hermes doctor reports nothing actionable" \
+         "$(printf '%s %s' "$doc_bad" "$doc_warn" | tr '\n' ' ' | cut -c1-200)"
+  else
+    pass "hermes doctor reports nothing actionable" \
+         "${n_filtered:-0} warnings, all on the known-optional list"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

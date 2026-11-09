@@ -113,6 +113,26 @@ answer 200 against a dead upstream.
 
 ## What to build
 
+### Both agents: the clock
+
+Set each agent's timezone to the IANA name in `AGENT_TIMEZONE` (from
+`~/.config/agent-sandbox/agents.env`). For Hermes that is the `timezone`
+key; find OpenClaw's equivalent in its own configuration and set that too.
+
+This is not cosmetic. It decides what "2pm today" resolves to, when a 6am
+cron job fires, and the time Hermes stamps into the agent's prompt. Left
+unset, both agents inherit whatever zone the VM host happens to carry —
+right by luck on the machine this was built on, silently wrong on a clone
+elsewhere. Wrong by a whole zone is not an error anywhere; it is a meeting
+booked on the wrong day.
+
+**A caution that belongs with it:** Hermes builds the system prompt,
+including its "Current time" line, **once per session** and reuses it for
+the life of the conversation. A session left open for a day therefore
+carries yesterday's clock, and an agent asked for "2pm today" will answer
+against it with perfectly correct arithmetic. Setting the zone does not
+fix that; only a new session does. Do not try to work around it here.
+
 ### OpenClaw
 
 Install from `https://openclaw.ai/install.sh`. Onboard non-interactively

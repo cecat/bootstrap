@@ -147,6 +147,38 @@ surface it.
 moved off MCP on 2026-11-08 and sets no `platform_toolsets` at all. The
 lesson about reading first is why the entry stays.)
 
+## Settings nobody chose
+
+**Run the vendor's own doctor before declaring anything built.**
+(2026-11-09) `hermes doctor` ships with the product. It checks config
+version, deprecated keys, credentials, SQLite health and per-tool
+readiness, and prints a findings list. It was never run once across three
+days of building this, while four configuration gaps shipped past a
+41-check suite. One command.
+
+**The gaps all had the same shape**, and it is worth naming because the
+suite will not catch the next one either: *we verified that things worked,
+never that they were configured deliberately*. Compression, timezone and
+skill auto-load were all sitting at a default nobody had read, and every
+one of them surfaced as bad agent behaviour — a wrong-day calendar entry,
+chat spam every few hours, the agent reaching for an unrelated tool —
+while every automated check stayed green. A completion succeeding proves
+the plumbing works. It says nothing about whether the settings around it
+were chosen.
+
+The standard to hold: **every setting is either deliberately set, or its
+default has been read and deemed reasonable.** A default someone examined
+and accepted is fine. A default nobody looked at is the bug.
+
+**A stale clock is not the model being careless.** Hermes builds the
+system prompt — including its `Current time:` line — once per session and
+reuses it for the whole conversation. A session open since yesterday
+reports yesterday's time, so "2pm today" resolves to yesterday and the
+agent's "that's 2.5h away" is correct arithmetic on a wrong `now`. On
+2026-11-09 this produced a calendar event on the wrong day and read, from
+the outside, exactly like an agent ignoring its instructions. Setting
+`timezone` does not fix it; only a new session does.
+
 ## Building beside the vendor instead of on it
 
 **Check whether the tool already ships the thing you are about to build.**
