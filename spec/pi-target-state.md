@@ -109,6 +109,16 @@ Reach it **directly, `--noproxy '*'`** — it is allowed by uid as a single
 fixed host:port. Everything else goes through `127.0.0.1:3128`, already in
 your environment.
 
+**Both agents' base URL must end in `/v1`.** `VM_BASE_URL` is the bare
+host (`http://HOST:PORT`), and both clients append only the trailing
+segment — an OpenAI client given the bare host POSTs to
+`/chat/completions`, not `/v1/chat/completions`, and argo-proxy answers
+`HTTP 405: Method Not Allowed`. Configure `$VM_BASE_URL/v1` for Hermes'
+`providers.argo-gateway.base_url` and for OpenClaw's provider `baseUrl`.
+Measured 2026-11-09: the bare host gives 405 on every completion while
+`curl "$VM_BASE_URL/v1/chat/completions"` returns 200, so the
+precondition above passing proves nothing about this.
+
 The API key is an ANL username, read from `CREDENTIAL`. A wrong one does not
 return 401: the stream opens, returns 200, and dies mid-flight. So an auth
 failure here looks like a network fault.
