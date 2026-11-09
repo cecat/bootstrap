@@ -149,6 +149,32 @@ fetched from pypi.org (**bootstrap allowlist only — it must happen while you
 run**), and credentials in `~/.hermes/.env`. Confirm from the journal that
 the adapter connected; a running service proves nothing.
 
+**Compression must fit in 4096 output tokens.** Set both:
+
+    compression.threshold_tokens: 60000
+    auxiliary.compression.model: argo:gemini-3.8-flash
+
+The gateway caps generation at 4096 tokens when the client sends no
+`max_tokens`, and Hermes deliberately sends none to a custom
+OpenAI-compatible endpoint — its docs say such endpoints "receive no
+automatic catalog-sized output cap. Their server defaults apply." Hermes
+exposes no setting to change that. Measured 2026-11-09: a request with no
+cap stops at exactly 4096 with `finish_reason=length`, while the same
+request asking for 8000 completes.
+
+Left alone, the agent compresses at half its context window — around
+150,000 tokens — and the summary of that much conversation does not fit
+in 4096. It truncates, compression aborts, a 60s → 300s → 900s cooldown
+arms, the context keeps growing, and the user gets three warnings every
+few hours forever. `threshold_tokens` is an absolute floor and Hermes
+takes the lower of it and the ratio, so 60000 makes each summary small
+enough to land.
+
+The model override is the second half: compression is mechanical work
+that otherwise runs on the main Opus model, slowly and expensively, for
+no benefit. Any `*-flash` the gateway lists will do — confirm with a real
+completion, not `/v1/models`.
+
 ### Pi's own provider
 
 `~/.pi/agent/models.json` is already correct. **Leave it alone.** It is the

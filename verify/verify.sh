@@ -162,6 +162,35 @@ case "$oc_model" in
   *)             fail "OpenClaw runs $WANT_MODEL" "found '$oc_model' -- the spec names $WANT_MODEL" ;;
 esac
 
+# The gateway caps generation at 4096 tokens when the client sends none,
+# and Hermes sends none to a custom OpenAI-compatible endpoint by design.
+# Compressing at the default half-window means summarizing ~150k tokens
+# into 4096, which truncates -- and a truncated summary aborts compression,
+# arms a 60s/300s/900s cooldown, and warns the user three times, forever.
+# The symptom reaches the user as chat noise rather than a failed check,
+# which is why it ran for weeks before anyone traced it.
+thr="$(g 'hermes config get compression.threshold_tokens 2>/dev/null | tr -dc "0-9"')"
+if [ -z "$thr" ] || [ "$thr" = 0 ]; then
+  fail "Hermes compresses before the summary outgrows 4096 tokens" \
+       "compression.threshold_tokens is unset, so compression fires at half the
+        context window and the summary cannot fit in the endpoint's 4096-token cap"
+elif [ "$thr" -le 80000 ]; then
+  pass "Hermes compresses before the summary outgrows 4096 tokens" "threshold_tokens=$thr"
+else
+  fail "Hermes compresses before the summary outgrows 4096 tokens" \
+       "threshold_tokens=$thr is too high for a 4096-token output cap"
+fi
+
+# Compression is mechanical work; running it on the main Opus model is
+# slow and expensive for no gain.
+cmod="$(g 'hermes config get auxiliary.compression.model 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-zA-Z0-9.:_/-')"
+case "$cmod" in
+  "")      fail "compression runs on a cheap fast model" \
+                "auxiliary.compression.model is empty, so compression runs on the main model" ;;
+  *flash*|*mini*|*nano*|*lite*) pass "compression runs on a cheap fast model" "$cmod" ;;
+  *)       fail "compression runs on a cheap fast model" "$cmod" ;;
+esac
+
 # ---------------------------------------------------------------------------
 section "Egress policy"
 
