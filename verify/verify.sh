@@ -655,7 +655,26 @@ fi
 # plaintext copy of the bot token, and the audit reported plaintext=0 while
 # it sat there. Count the copies directly. agents.env is the sanctioned one;
 # anything else beside it is a footprint nobody decided to add.
-tokdup="$(g 'grep -rlE "[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}" $HOME/.config/agent-sandbox/ 2>/dev/null | grep -v "/agents.env$" | tr "\n" " "')"
+#
+# Search the agents' own directories too, not just agent-sandbox/. On
+# 2026-11-09 Pi resolved a gateway-token conflict by writing
+# ~/.openclaw/gateway.env -- agents.env minus one variable, both bot tokens
+# in plaintext -- and this check looked in the wrong directory and passed.
+# A scan that only covers the place the last offender chose will keep
+# finding the last offender.
+#
+# Three exclusions, each deliberate:
+#   agent-sandbox/agents.env  the sanctioned copy, 0600
+#   .hermes/.env              where the spec *requires* Hermes' credentials
+#   hermes-agent/tests/       vendor test fixtures carrying dummy tokens
+# OpenClaw's state DB is excluded by searching text files only: it stores
+# channel config as a matter of course and is not a copy anyone wrote.
+tokdup="$(g 'grep -rlE "[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}" \
+    $HOME/.config/agent-sandbox/ $HOME/.openclaw/ $HOME/.hermes/ 2>/dev/null \
+  | grep -v "/agent-sandbox/agents.env$" \
+  | grep -v "/\.hermes/\.env$" \
+  | grep -v "/hermes-agent/tests/" \
+  | while read -r f; do [ -f "$f" ] && file -b "$f" | grep -qi text && printf "%s " "$f"; done')"
 if [ -z "$(printf '%s' "$tokdup" | tr -d '[:space:]')" ]; then
   pass "bot tokens live in one file only" "nothing beside agents.env carries a bot token"
 else
