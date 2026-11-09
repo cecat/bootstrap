@@ -56,3 +56,9 @@ local/
 # Pre-simplification snapshot of the repo (2026-10-29). Local reference
 # only -- git history is the real record. See archive/2026-10-29/README.md.
 archive/
+
+# Files pulled out of a VM before a --rebuild destroys it: an agent's own
+# SOUL.md, memory, or a skill it wrote for itself. The agent owns these and
+# rewrites them as it learns, so a copy here is a keepsake, not a managed
+# file -- do not add a script that syncs it back. See docs/personality.md.
+agent-backup/
