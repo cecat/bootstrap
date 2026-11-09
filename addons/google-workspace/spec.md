@@ -32,10 +32,13 @@ idempotent script. Put every change in it and run the script.
    `setup.py --auth-url` or `--auth-code`, and do not try to re-authenticate
    if something fails. The only `setup.py` commands you may run are
    `--check` and `--check-live`, which are read-only.
-6. **Do not edit the bundled skill.** Changing any file under
+6. **Do not edit the bundled skill, except for the one patch in step 6.**
+   Changing any file under
    `~/.hermes/skills/productivity/google-workspace/` marks it
-   `user_modified` and stops it tracking upstream. Everything you need is
-   configuration outside it.
+   `user_modified` and stops it tracking upstream. Everything else you
+   need is configuration outside it. If you find yourself wanting a
+   second edit, stop and say so instead — one tracked exception is a
+   known cost, two is a fork.
 7. **Guard every step before acting**, so a second run changes nothing.
 
 ## What you have been given
@@ -157,12 +160,55 @@ lost its tools on every platform it forgot to name, and a malformed block
 fails cron runs outright. If you believe a toolset really is missing, show
 `hermes chat --list-toolsets` output first.
 
-### 5. Restart and prove it works
+### 5. Patch the contacts projection — the one allowed edit
 
-- **`setup.py --check-live` succeeds.** This is the one that matters. Run
-  the skill's own script from the gateway's interpreter:
+`scripts/google_api.py` asks Google for `phoneNumbers` and
+`emailAddresses`, which come back carrying a `type` (`mobile`, `work`,
+`home`) and a `formattedType`. It then keeps only `value` and discards
+the rest, in both the `gws` branch and the Python one:
 
-      python ~/.hermes/skills/productivity/google-workspace/scripts/setup.py --check-live
+    "emails": [e.get("value", "") for e in emails],
+    "phones": [p.get("value", "") for p in phones],
+
+So the agent sees a bare list of numbers and cannot say which is the
+mobile. Measured on 2026-11-09: Google returned a non-empty `type` on
+29 of 29 phones and 13 of 15 emails for a real account. The data is
+fetched and thrown away — an upstream oversight, not a Google limit and
+not a design decision.
+
+Change both occurrences to keep the label:
+
+    "emails": [{"value": e.get("value", ""), "type": e.get("type", "")} for e in emails],
+    "phones": [{"value": p.get("value", ""), "type": p.get("type", "")} for p in phones],
+
+Requirements:
+
+- **both branches**, not just the one that runs here. `gws` is not
+  installed, so only the Python path executes — but a half-patched file
+  is a trap for whoever installs `gws` later;
+- **`.get("type", "")`**, so a contact with no label yields an empty
+  string rather than raising. Two of the fifteen emails had none;
+- **idempotent**: a second run must not patch an already-patched file.
+  Check before editing;
+- **nothing else in that file changes.** This is the single tracked
+  exception to rule 6.
+
+Then prove it: run the skill's `contacts list` and confirm the output
+has `type` alongside `value`. **Do not print a real contact** — report
+the shape, a count, or one entry with the values blanked.
+
+### 6. Restart and prove it works
+
+- **`setup.py --check-live` succeeds.** This is the one that matters.
+
+  Plain `python3` will not do: the script imports `pm`, which resolves
+  only inside Hermes' own environment, and anything else answers *"Run
+  this script in the Hermes environment"*. Use the gateway's interpreter
+  with Hermes' import paths — the installed venv's `site-packages` plus
+  the `hermes-agent` tree on `PYTHONPATH`. Several environments sit side
+  by side, so pick the one that actually contains `googleapiclient`
+  rather than the first you find. Work out the exact invocation and
+  report it.
 
   `--check-live` makes a real Calendar API call. **`--check` is not
   sufficient**: it only refreshes the token, and refreshing goes through

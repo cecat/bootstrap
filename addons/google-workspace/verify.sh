@@ -192,6 +192,26 @@ case "$autoload" in
         agent must discover it and may pick an unrelated tool instead" ;;
 esac
 
+# The one tracked modification to a bundled file. Upstream fetches the
+# type on phones and emails and then discards it, so the agent gets a
+# bare list of numbers and cannot say which is the mobile. We keep the
+# label. A hermes update, or `hermes skills reset`, would silently revert
+# this -- hence a check, so it comes back as a failure here rather than as
+# an agent getting vague about phone numbers.
+#
+# Count both branches: gws is not installed, so only the Python one runs,
+# but a half-patched file is a trap for whoever installs gws later.
+patched="$(g "grep -c '\"type\": p.get(\"type\"' $SKILLDIR/scripts/google_api.py 2>/dev/null" | tr -dc '0-9')"
+case "${patched:-0}" in
+  2) pass "contacts keep their type labels" "both code paths patched" ;;
+  0) fail "contacts keep their type labels" \
+          "the upstream projection is back -- phones and emails lose mobile/work/home.
+        Likely a hermes update or 'hermes skills reset'. Re-run the build to re-apply" ;;
+  *) fail "contacts keep their type labels" \
+          "only ${patched} of 2 code paths patched -- the gws branch and the Python
+        branch must match, or behaviour changes if gws is ever installed" ;;
+esac
+
 # ---------------------------------------------------------------------------
 section "It can reach Google through squid"
 
