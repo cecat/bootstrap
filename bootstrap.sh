@@ -124,14 +124,33 @@ step "Config"
 if [ ! -f config/agents.env ]; then
   install -m 600 config/agents.env.example config/agents.env 2>/dev/null \
     || fail "config/agents.env.example is missing."
+fi
+chmod 600 config/agents.env
+
+# Stop on the *values*, not on the file. Checking only for a missing file
+# meant a second run sailed past a copy still byte-identical to the
+# template: the first run creates it and exits 2, nobody fills it in, and
+# the build continues to two mute agents with every check green. The exit-2
+# message below is the only cue the user ever gets, so it has to fire on
+# the state it describes.
+# shellcheck disable=SC1091
+missing="$( set -a; . config/agents.env 2>/dev/null; set +a
+  for n in OPENCLAW_TELEGRAM_BOT_TOKEN HERMES_TELEGRAM_BOT_TOKEN \
+           TELEGRAM_ALLOWED_USER_ID; do
+    [ -n "$(eval "printf %s \"\${$n:-}\"")" ] || printf '      %s\n' "$n"
+  done )"
+if [ -n "$missing" ]; then
   cat >&2 <<EOF
 
   STOP -- this is your turn, and the build waits here until you take it.
   Nothing else will prompt you later: this message is the only cue, and
   re-running the script is how you say you are done.
 
-  config/agents.env has been created from the example. Open it in an
-  editor and fill in four things:
+  config/agents.env is waiting on you. These are still blank:
+
+$missing
+
+  Open it in an editor and fill them in:
 
       \$EDITOR config/agents.env
 
@@ -193,10 +212,13 @@ fi
         exit 1 ;;
     esac
   done
+  # Every character must be a digit. `*[0-9]` only tests the LAST one, so
+  # it accepted 'handle7' and '12 34' -- and an empty value, which is the
+  # state the exit-2 guard above exists to catch.
   case "${TELEGRAM_ALLOWED_USER_ID:-}" in
-    ''|*[0-9]) ;;
-    *) echo "error: TELEGRAM_ALLOWED_USER_ID wants a numeric id, not an @handle." >&2
-       exit 1 ;;
+    ''|*[!0-9]*)
+      echo "error: TELEGRAM_ALLOWED_USER_ID wants a numeric id, not an @handle." >&2
+      exit 1 ;;
   esac
 ) || fail "config/agents.env is not usable (see above). Edit it and re-run."
 
