@@ -405,6 +405,37 @@ case "$doctor" in
   *) pass "no cron job is blocked" ;;
 esac
 
+# An add-on is exactly when to re-run the vendor's own doctor. This one
+# edits Hermes' config, installs into its interpreter and patches a
+# bundled skill, so a doctor that was clean before it says nothing about
+# after. `hermes cron doctor` above is one narrow subcommand, not a
+# substitute for the full run.
+#
+# Hermes only, because this add-on touches nothing OpenClaw owns. An
+# add-on that does needs the openclaw doctor check from verify/verify.sh
+# too -- see "Adding another add-on" in README.md.
+#
+# The exit code is useless (1 whenever any optional integration is
+# absent, and this deployment deliberately has several), so parse the
+# output. The exclusion list is the base suite's and nothing more: an
+# add-on needing its own exclusion has probably broken something.
+DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
+doc_out="$(g 'hermes doctor 2>&1')"
+if [ -z "$(printf '%s' "$doc_out" | tr -d '[:space:]')" ]; then
+  skip "hermes doctor is still clean after the add-on" "could not run hermes doctor"
+else
+  doc_bad="$(printf '%s\n' "$doc_out" | grep -E '^[[:space:]]*[✗✘×]' | head -5)"
+  doc_warn="$(printf '%s\n' "$doc_out" | grep '⚠' | grep -viE "$DOCTOR_OK" | head -5)"
+  n_filtered="$(printf '%s\n' "$doc_out" | grep -c '⚠' || true)"
+  if [ -n "$doc_bad" ] || [ -n "$doc_warn" ]; then
+    fail "hermes doctor is still clean after the add-on" \
+         "$(printf '%s %s' "$doc_bad" "$doc_warn" | tr '\n' ' ' | cut -c1-200)"
+  else
+    pass "hermes doctor is still clean after the add-on" \
+         "${n_filtered:-0} warnings, all on the known-optional list"
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 section "Base build"
 

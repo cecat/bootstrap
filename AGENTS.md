@@ -198,6 +198,16 @@ before you finish.
 **Curl-to-bash installers** get downloaded, checksummed and then executed —
 never piped. This applies to Pi too, and is in its spec.
 
+**After any add-on, re-run the vendor's doctor for every gateway it
+touched** — `hermes doctor`, and `openclaw doctor --lint --all --json`
+if OpenClaw was involved. Add-ons edit config, install into an agent's
+interpreter and patch bundled files, so a doctor that was clean before
+one says nothing about after. Judge both on parsed output, never exit
+code: `hermes doctor` exits 1 whenever an optional integration is
+absent, and `openclaw doctor` exits 0 even when `ok:false`. The four
+configuration defects found on 2026-11-09 had all shipped past a
+41-check suite and surfaced as odd agent behaviour, not as failures.
+
 ## Permissions
 
 Every tool has its own approval mechanism, so this list is prose. Claude

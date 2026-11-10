@@ -268,6 +268,34 @@ refreshes the token, over a library that honours proxy variables natively,
 so it can pass while every real API call fails. `--base` re-runs the base
 suite to confirm this add-on broke nothing. Then tell the user to do step 5.
 
+## Adding another add-on
+
+**Re-run the vendor's own doctor for every gateway the add-on touched.**
+An add-on is the moment for it: a doctor that was clean beforehand says
+nothing about afterwards, and these change config, install into an
+agent's interpreter, and patch bundled files. `verify.sh` here runs
+`hermes doctor` for exactly that reason, because this add-on is
+Hermes-only.
+
+An add-on that touches OpenClaw must run `openclaw doctor --lint --all
+--json` as well — copy the check from `verify/verify.sh`, and keep the
+`--lint --all`: a bare `openclaw doctor` selects 39 of 69 checks and has
+reported `ok:true, findings:[]` while the full run found 33.
+
+Neither doctor can be judged by its exit code. `hermes doctor` exits 1
+whenever any optional integration is unconfigured, and `openclaw doctor`
+exits 0 even when `ok:false`. Parse the output against an exclusion list
+and print how many findings were filtered, so the list stays honest.
+
+The base suite's exclusions are the ones to copy. Needing a *new*
+exclusion for an add-on is a signal the add-on broke something, not a
+reason to widen the list.
+
+This matters because the gap is silent in both directions: the four
+configuration defects the doctors caught on 2026-11-09 had all shipped
+past a 41-check suite, and every one of them surfaced later as the agent
+behaving oddly rather than as anything failing.
+
 ---
 
 # Reference
