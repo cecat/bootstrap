@@ -146,7 +146,14 @@ def read_env(path):
                 # Cloud Console for a client that is perfectly fine.
                 values[key.strip()] = val.strip().strip('"').strip("'").strip()
     except FileNotFoundError:
-        die(f"{path} does not exist. Run the install command once to create it.")
+        # Not an error. `auth` runs before `install` in the documented
+        # order, and `install` is what creates this file -- so dying here
+        # made the first command anyone runs fail, with a message naming
+        # the OAuth client (which is fine) instead of the missing file.
+        # An absent env file simply means nothing has been written yet;
+        # the client comes from secrets/client_secret_*.json, and the
+        # values this function would supply are written back later.
+        return {}
     return values
 
 
@@ -156,8 +163,15 @@ def write_env_value(path, key, value):
     Rewrites through a 0600 temp file and renames: a crash partway through
     must not leave a half-written credentials file behind.
     """
-    with open(path) as fh:
-        lines = fh.readlines()
+    # May not exist yet: `auth` can legitimately run before `install`, and
+    # then this is the call that creates the file. The 0600 temp-and-rename
+    # below gives it the right mode either way.
+    try:
+        with open(path) as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        lines = []
 
     # Google's tokens are [A-Za-z0-9._/+=~-], but this file gets sourced by
     # tooling, so refuse rather than emit a line that could break quoting.

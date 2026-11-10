@@ -66,6 +66,17 @@ ensure_config() {
   if [ ! -f "$ENVFILE" ]; then
     install -m 600 "$ADDON/google.env.example" "$ENVFILE" \
       || fail "could not create $ENVFILE"
+  fi
+  chmod 600 "$ENVFILE" 2>/dev/null || true
+
+  # Stop on the OAuth client actually being absent, not on the env file.
+  # Creating the file and stopping meant the message fired once per clone
+  # and named the wrong thing afterwards -- the same bug bootstrap.sh had.
+  # The client is either a downloaded JSON in secrets/ or two values
+  # filled in by hand; either satisfies this.
+  if ! ls "$REPO/secrets"/client_secret_*.json >/dev/null 2>&1 \
+     && ! ( set -a; . "$ENVFILE" 2>/dev/null; set +a
+            [ -n "${GOOGLE_CLIENT_ID:-}" ] && [ -n "${GOOGLE_CLIENT_SECRET:-}" ] ); then
     cat >&2 <<EOF
 
   STOP -- this is your turn, and the add-on waits here until you take it.
@@ -95,7 +106,6 @@ ensure_config() {
 EOF
     exit 2
   fi
-  chmod 600 "$ENVFILE" 2>/dev/null || true
 }
 
 require_client() {
