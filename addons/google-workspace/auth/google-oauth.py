@@ -432,8 +432,9 @@ def main():
 
 {BOLD}{consent_url}{OFF}
 
-  Then this command finishes by itself. Close the tunnel afterwards with
-      ssh -O exit {user}@{host}    (or just kill it, if you skipped -f)
+  Then this command finishes by itself. Close the tunnel afterwards, on
+  the laptop, with
+      pkill -f 'ssh -f -N -L {port}'    (Ctrl-C instead, if you skipped -f)
 
   (The URL is also in config/google-consent-url.txt if you would rather
   scp it. Approving before the tunnel is up fails and burns the consent,

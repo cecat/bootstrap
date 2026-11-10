@@ -165,11 +165,19 @@ waits ten minutes.
 approve. Your browser is sent to `127.0.0.1:8731`, the tunnel carries it to
 the waiting command, and `auth` finishes on its own and writes the tokens.
 
-Then close the tunnel:
+Then close the tunnel, on the laptop:
 
 ```sh
-ssh -O exit you@remote-host
+pkill -f 'ssh -f -N -L 8731'
 ```
+
+That matches the forwarding command and nothing else, so it leaves any
+other SSH session alone. (If you dropped the `-f`, the tunnel is in the
+foreground of a shell you can see — Ctrl-C there instead.)
+
+Not `ssh -O exit`: that speaks to a ControlMaster socket, and this tunnel
+is a plain process with no control path. On macOS it answers *"No
+ControlPath specified for -O command"* and the tunnel keeps running.
 
 Any sessions you already had open on the remote host are beside the point —
 they are neither used nor disturbed.
