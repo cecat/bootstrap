@@ -123,6 +123,16 @@ software and say so. Merge with any existing list rather than replacing it.
 **Restart the gateway afterwards.** This value is cached per home, so an
 edit without a restart looks applied and changes nothing.
 
+**Restart it once, at the end — not after each step.** Telegram keeps a
+`getUpdates` session open for a while after a poller disconnects, so two
+restarts close together leave the new adapter logging `Conflict:
+terminated by other getUpdates request` and retrying. It recovers by
+itself and no message was lost when this happened on 2026-11-09, but the
+bot is unreachable while it lasts and the conflict makes the adapter
+check in `verify.sh` skip, which is noise in the one place a real
+Telegram fault would show. Make your config edits, then restart once
+before step 6.
+
 ### 4. Confirm the skill is present and enabled
 
 Run `hermes skills list` and confirm `google-workspace` is there. It is

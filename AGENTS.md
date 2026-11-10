@@ -135,7 +135,34 @@ When Pi is wrong, push back with `pi-session.sh say "..."`. When the *spec*
 is wrong, fix `spec/pi-target-state.md`. Read `docs/gotchas.md` before
 debugging anything.
 
-## Read the manual before you guess
+## The perfect is the enemy of the good enough
+
+**Complexity has to be paid for in reliability.** A suite that checks two
+hundred possible problems is itself larger than the system it checks, and
+then you are debugging the scaffolding instead of the build. That is a
+real failure mode here, not a hypothetical: more than one green run has
+been produced by a check that was wrong, and more than one red one by a
+check that was right about the wrong thing.
+
+So before adding a check, ask what it buys:
+
+- **Has this failed, or might it?** Every check in `verify.sh` should
+  trace to something that actually went wrong. Hypothetical coverage is
+  how a suite doubles in size without catching anything new.
+- **Would a human notice it anyway?** The end-of-build Telegram check is
+  deliberately manual. A person messaging a bot during setup finds the
+  problem while they are paying attention; an automated check that passes
+  teaches them to stop looking. Leave it with the human.
+- **Does it assert behaviour or appearance?** Checks that match on what
+  output looks like break when the vendor rewords a line. Several here
+  have.
+- **Can it be deleted later?** `docs/gotchas.md` has a deletion rule for
+  exactly this reason. Checks should too: one that has not fired across
+  several clean builds and could not fire today is cost, not safety.
+
+The suite exists to catch what a careful person would miss, not to spare
+anyone from looking. When a defect is cheap to see and expensive to
+automate, write it down and let the human see it.
 
 **When something will not work, find its documentation first.** Not after
 three attempts, not after handing Pi another theory — first. This is the

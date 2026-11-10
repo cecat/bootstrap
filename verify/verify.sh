@@ -613,7 +613,7 @@ if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
   case "$jr" in
     *"Connected to Telegram"*) pass "Hermes Telegram adapter" "connected (polling), this service start" ;;
     "")                        skip "Hermes Telegram adapter" "no adapter activity since the service started" ;;
-    *"Conflict: terminated"*)  skip "Hermes Telegram adapter" "another getUpdates consumer took the poll -- usually check-telegram-polling.sh running; the adapter reconnects on its own" ;;
+    *"Conflict: terminated"*)  skip "Hermes Telegram adapter" "another getUpdates consumer took the poll -- usually check-telegram-polling.sh, or two gateway restarts inside Telegram's session-expiry window; the adapter reconnects on its own" ;;
     *"network error"*)         skip "Hermes Telegram adapter" "${jr_msg:-network error} -- still down after 2 minutes. Long-polls drop and reconnect, and this check has been wrong about it before, so: message the bot. That settles it and nothing here can." ;;
     *)                         fail "Hermes Telegram adapter" "${jr_msg:-unrecognised adapter state} -- check: hermes plugins enable telegram-platform, and that pypi was reachable when it first started" ;;
   esac

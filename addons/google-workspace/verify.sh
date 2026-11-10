@@ -390,6 +390,18 @@ else
         terminal.env_passthrough above, in that order" ;;
     *) fail "a real Google API call succeeds" "$(printf '%s' "$live" | tail -1)" ;;
   esac
+
+  # Everything above proves the skill is configured and the token works.
+  # None of it proves the *agent* reaches for the skill when asked, which
+  # is the only thing the user ever experiences. On 2026-11-08 an agent
+  # asked for a calendar picked an unrelated tool and never called Google.
+  # Ask it, the way a user would.
+  ans="$(g "timeout 180 hermes -z 'Use the google-workspace skill to read my calendar. Reply with exactly CAL_OK if the tool returned, or CAL_FAIL and the error.' 2>&1")"
+  case "$ans" in
+    *CAL_OK*) pass "the agent reaches Google when asked" "a session used the skill end to end" ;;
+    *) fail "the agent reaches Google when asked" \
+            "$(printf '%s' "$ans" | tr -d '\r' | grep -viE 'token|secret|key' | tail -2 | paste -sd' | ' -)" ;;
+  esac
 fi
 
 # A blocked cron job is the failure that prompted this whole add-on being
