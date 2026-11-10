@@ -1,0 +1,11 @@
+# Local to the add-on, so the repo's own .gitignore does not have to change
+# for an optional extra.
+#
+# Nothing here should ever hold Signal account data: the account keys live
+# inside the VM, under signal-cli's data directory, and must not be copied
+# out. If a file matching one of these appears here, something went wrong.
+*.qr
+*.uri
+signal-cli-data/
+__pycache__/
+*.pyc
