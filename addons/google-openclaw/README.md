@@ -79,21 +79,43 @@ At <https://console.cloud.google.com/>, **signed in as the agent's
 account**, not yours:
 
 1. Create a project.
-2. Enable the APIs the agent needs. Search for each by name in **APIs &
-   Services → Library**:
+2. Enable the APIs the agent needs, in **APIs & Services → Library**.
 
-   | Search for | Enable | Needed for |
-   |---|---|---|
-   | `Gmail` | **Gmail API** | reading mail, writing drafts |
-   | `Google Calendar` | **Google Calendar API** | the agent's calendar |
-   | `Google Drive` | **Google Drive API** | required for Docs and Sheets |
-   | `Google Docs` | **Google Docs API** | documents |
-   | `Google Sheets` | **Google Sheets API** | spreadsheets |
-   | `Google Forms` | **Google Forms API** | reading form responses |
+   **Match on the service name, not the title.** Several titles are one
+   search result away from a different product, and the service name —
+   the `*.googleapis.com` string on each API's detail page — is unique.
+   If a title looks close, click into it and check that string before
+   pressing Enable.
 
-   Enable only what you listed in `GOOGLE_SERVICES`. The near-misses are
-   real: Google also publishes "MCP API" entries under several of these
-   names, and they are a different product that does nothing for you.
+   | `GOOGLE_SERVICES` entry | Enable the API titled | **Service name (the identifier)** | Easy to confuse with |
+   |---|---|---|---|
+   | `gmail` | **Gmail API** | `gmail.googleapis.com` | Gmail MCP API; Gmail Postmaster Tools API |
+   | `calendar` | **Google Calendar API** | `calendar-json.googleapis.com` | Calendar MCP API; CalDAV API |
+   | `drive` | **Google Drive API** | `drive.googleapis.com` | Drive Activity API; Drive Labels API |
+   | `docs` | **Google Docs API** | `docs.googleapis.com` | Docs MCP API |
+   | `sheets` | **Google Sheets API** | `sheets.googleapis.com` | Sheets MCP API |
+   | `forms` | **Google Forms API** | `forms.googleapis.com` | Forms MCP API |
+   | `contacts` | **People API** | `people.googleapis.com` | Contacts API (retired) |
+
+   Two notes that have each cost someone an afternoon:
+
+   - **Calendar's service name really is `calendar-json.googleapis.com`.**
+     The `-json` is historical and this is the current v3 API. It is
+     **not** CalDAV, which is a different protocol `gog` does not use. If
+     a search for "Calendar" only offers you *Calendar MCP API*, search
+     the full phrase `Google Calendar API`.
+   - **The "MCP API" entries are a different Google product** — hosted
+     Model Context Protocol endpoints. Enabling one does nothing here;
+     `gog` speaks to the classic REST APIs.
+
+   `docs` and `sheets` both need **Drive** enabled as well, which is why
+   `drive` is in the default `GOOGLE_SERVICES` even though the agent is
+   not being given Drive as a feature.
+
+   Enable only what you listed in `GOOGLE_SERVICES`. Every entry there
+   maps to exactly one row above; `gog`'s own README is the source for
+   that mapping, and the service names were read from Google's discovery
+   API rather than transcribed.
 3. Configure the consent screen (**APIs & Services → OAuth consent
    screen**, filed under **Google Auth Platform → Branding / Audience** in
    newer layouts). User type **External**, any app name, the agent's

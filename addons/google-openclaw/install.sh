@@ -160,9 +160,42 @@ Expected something like agent-name@gmail.com, with no spaces."
     *) fail "GOOGLE_ALLOW_SEND is '$send'. It must be yes or no." ;;
   esac
 
-  [ -n "$(envval GOOGLE_SERVICES)" ] \
+  local services; services="$(envval GOOGLE_SERVICES)"
+  [ -n "$services" ] \
     || fail "GOOGLE_SERVICES is empty. At minimum this add-on needs one
 service -- see $ENVFILE for the list."
+
+  # Reject a service gog does not know before sending anyone to the Cloud
+  # Console. A typo here is otherwise discovered at consent time, after
+  # the APIs have been enabled and against a ten-minute handshake clock.
+  # This list is gog's, from its own services table.
+  local known=" gmail calendar chat drive docs slides contacts tasks sheets forms meet photos "
+  local s IFS=,
+  for s in $services; do
+    s="$(printf '%s' "$s" | tr -d '[:space:]')"
+    [ -n "$s" ] || continue
+    case "$known" in
+      *" $s "*) ;;
+      *) fail "GOOGLE_SERVICES contains '$s', which gog does not recognise.
+
+Valid values:$known
+Each one maps to a Google API you must enable in the Cloud Console --
+see the table in addons/google-openclaw/README.md." ;;
+    esac
+  done
+
+  # docs and sheets go through Drive, so gog asks for the drive scope
+  # whether or not it is listed. Saying so here beats the user wondering
+  # why the consent screen mentions Drive when they never asked for it.
+  case ",$services," in
+    *,docs,*|*,sheets,*)
+      case ",$services," in
+        *,drive,*) ;;
+        *) warn "GOOGLE_SERVICES has docs or sheets but not drive. gog requests the
+          Drive scope for both anyway, and the Cloud Console needs the Drive
+          API enabled, so add 'drive' to the list to keep the two in step." ;;
+      esac ;;
+  esac
 
   # The Hermes add-on must not be using the same account. Two agents on one
   # Google account would both act as the same identity, and the whole point
