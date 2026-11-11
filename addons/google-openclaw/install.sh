@@ -338,7 +338,16 @@ cmd_auth() {
   services="$(envval GOOGLE_SERVICES)"
   send="$(envval GOOGLE_ALLOW_SEND)"
   args="--services $services"
-  [ "$send" = "yes" ] || args="$args --gmail-scope read"
+  # gog accepts exactly: full|readonly|send|read-send. Not "read", which
+  # it rejects outright -- confirmed from `gog auth add --help` after it
+  # did. Default (unset) is "full", so the flag is only passed when the
+  # user has NOT asked for send, to keep the mailbox read-only.
+  #
+  # readonly means gmail.readonly: the agent can read mail but cannot
+  # label, archive, or create drafts. If drafting turns out to be wanted
+  # without sending, this is the line to revisit -- "full" is the mode
+  # that allows drafts, at the cost of also allowing send.
+  [ "$send" = "yes" ] || args="$args --gmail-scope readonly"
 
   cat <<EOF
 
