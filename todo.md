@@ -89,30 +89,49 @@ the same of its skill allowlists — *"not a shell-time authorization
 boundary… that shell can still run external clients or read host files
 that are visible to the execution user."*
 
-**Mitigated, not fixed.** Each agent's `SOUL.md` now tells it to stay out
-of the other's tree (`spec/pi-target-state.md`, `docs/personality.md`).
-That addresses the realistic failure — an agent tidying up and finding a
-credential — and does nothing against a manipulated one. It matters more
-now that one agent reads mail from strangers.
+**Decided 2026-11-11: `SOUL.md` is the mitigation, and that is where this
+rests.** Each agent's seed now names the other's tree and says to stay out
+of it (`spec/pi-target-state.md`, `docs/personality.md`). The stakes do not
+justify more: the realistic failure is an agent tidying up and finding a
+credential, which an instruction fixes. A *manipulated* agent ignores it,
+and that gap is accepted knowingly rather than overlooked.
 
-**The real fix is a second Unix user, or a second VM.** Notes toward it,
-from a 2026-11-11 estimate:
+Both alternatives were costed before deciding. Recorded so nobody
+re-derives them, and so the "it's only one line" version of the second-user
+idea does not come back untested.
 
-- The repo is **already parameterised**: every script honours `AGENTS_VM`
-  and nothing hardcodes the instance name, so a second VM is mostly a
-  second `limactl start` plus a second config set. Cheaper than it looks.
-- **Memory is the constraint on this host**, not the code. 121 GiB total
-  with ~10 GiB available; the VM is 8 GiB and vLLM holds most of the
-  rest. A second VM needs that budget resolved first.
-- The costs are two base builds drifting apart, two `verify.sh` runs, and
-  losing the ability to compare both gateways under identical conditions.
-- A second Unix user inside the one VM is the cheaper variant and was not
-  costed. It keeps one build and one verify run, and `lima/agents.yaml`
-  would have to create the account and split the systemd user services.
+**A second VM** needs no code changes — every script already honours
+`AGENTS_VM` and nothing hardcodes the instance name. It costs **memory**:
+121 GiB total on this host with ~10 GiB available against an 8 GiB VM, and
+vLLM holds most of the rest. Also two base builds drifting apart, two
+`verify.sh` runs, and the loss of being able to compare both gateways under
+identical conditions.
 
-Worth doing when there is a second reason — the agentic-collaboration
-work wants a third-party agent anyway, and there the isolation is a
-feature of the experiment rather than a tax on it.
+**A second Unix user** inside the one VM needs no memory, and four things
+assume there is exactly one agent user:
+
+- `/etc/agent-sandbox/agent-user` holds **one** name, and the lockdown is a
+  single `iptables -m owner --uid-owner` rule. A second user would have **no
+  egress restriction at all** and `verify.sh` would still pass, because it
+  checks the uid it knows about. That is the dangerous shape: less
+  containment than today while appearing to add some.
+- **Pi builds as the Lima user.** Provisioning step 4 is `mode: user` and
+  `pi-session.sh` always lands as that user, so every `systemctl --user` in
+  the build would target the wrong home unless the spec learns `sudo -u`.
+- All four verify suites reach in with `limactl shell … bash -lc`, so each
+  OpenClaw check would need re-pointing or it reads the wrong home.
+- `limactl shell agents` lands you as the Lima user, so talking to the
+  second agent by hand becomes `sudo -u <agent> …`.
+
+If it is ever done, the order is: make `agent-user` a list, switch the rule
+to match a group, **prove `verify.sh` catches a bypass from both users**,
+and only then add the account. The check before the feature — otherwise
+there is no way to tell whether it worked.
+
+Revisit alongside the agentic-collaboration work, which wants a
+third-party agent anyway. There the isolation is a feature of the
+experiment rather than a tax on it, and `lima/agents.yaml` is being
+touched regardless.
 
 ## 5. Other providers
 
