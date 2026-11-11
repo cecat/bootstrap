@@ -78,7 +78,43 @@ tailnet was down when it was written. Spec section 4 tells Pi to skip it
 unless `VLLM_BASE_URL` is set, and to write nothing it cannot source from
 current documentation. A guessed failover config is worse than none.
 
-## 4. Other providers
+## 4. The two agents are not isolated from each other
+
+Both run as the **same Unix user** in one VM. `~/.hermes/` and
+`~/.openclaw/` are directories, not homes, so `0600` protects nothing
+between them: either agent can read the other's Telegram token, Google
+credentials, or keyring password, and a stolen token works because a
+token is all the far end ever checks. OpenClaw's own documentation says
+the same of its skill allowlists — *"not a shell-time authorization
+boundary… that shell can still run external clients or read host files
+that are visible to the execution user."*
+
+**Mitigated, not fixed.** Each agent's `SOUL.md` now tells it to stay out
+of the other's tree (`spec/pi-target-state.md`, `docs/personality.md`).
+That addresses the realistic failure — an agent tidying up and finding a
+credential — and does nothing against a manipulated one. It matters more
+now that one agent reads mail from strangers.
+
+**The real fix is a second Unix user, or a second VM.** Notes toward it,
+from a 2026-11-11 estimate:
+
+- The repo is **already parameterised**: every script honours `AGENTS_VM`
+  and nothing hardcodes the instance name, so a second VM is mostly a
+  second `limactl start` plus a second config set. Cheaper than it looks.
+- **Memory is the constraint on this host**, not the code. 121 GiB total
+  with ~10 GiB available; the VM is 8 GiB and vLLM holds most of the
+  rest. A second VM needs that budget resolved first.
+- The costs are two base builds drifting apart, two `verify.sh` runs, and
+  losing the ability to compare both gateways under identical conditions.
+- A second Unix user inside the one VM is the cheaper variant and was not
+  costed. It keeps one build and one verify run, and `lima/agents.yaml`
+  would have to create the account and split the systemd user services.
+
+Worth doing when there is a second reason — the agentic-collaboration
+work wants a third-party agent anyway, and there the isolation is a
+feature of the experiment rather than a tax on it.
+
+## 5. Other providers
 
 Only the Argo path is implemented. The structure generalises — one
 translation proxy serving `/v1/messages` and `/v1/chat/completions` — and

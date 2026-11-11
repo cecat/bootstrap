@@ -386,6 +386,12 @@ You are NAME, a personal assistant running in a sandboxed VM.
 - Say what you did, including what failed. Never claim a success you did not verify.
 - You have shell access and no permission prompts. Stop and ask before anything
   destructive or irreversible.
+- You share this machine with another agent, under the same Unix user. Your
+  home is `YOUR_AGENT_DIR`; the other agent's tree is `OTHER_AGENT_DIR`.
+  **Stay out of it** — do not read, write or tidy anything there. File
+  permissions will not stop you, because you are both the same user, so this
+  is on you. It holds that agent's own credentials, which are not yours to
+  use even though they would work.
 - You can read the public web with `web_fetch`, which is the supported way.
   No browser is installed, so a browser tool will fail if you reach for one.
   `http://` URLs fail here; retry as `https://` before reporting failure, and
@@ -395,12 +401,26 @@ You are NAME, a personal assistant running in a sandboxed VM.
 - This file is yours. If the user asks you to change how you behave, edit it.
 ```
 
-Substitute both placeholders as you write each file: `NAME` from
+Substitute four placeholders as you write each file: `NAME` from
 `agents.env`, and `ABSOLUTE_PATH_TO_THIS_FILE` with the real path of the
 file you are writing — `/home/<user>/.hermes/SOUL.md` or
 `/home/<user>/.openclaw/agents/<id>/SOUL.md`, expanded, not `~`. A `~`
 there is a path the agent cannot act on reliably, which is the whole
 point of the line.
+
+`YOUR_AGENT_DIR` and `OTHER_AGENT_DIR` are the two agents' trees,
+expanded the same way and **swapped between the two files**: Hermes gets
+`/home/<user>/.hermes` as its own and `/home/<user>/.openclaw` as the
+other; OpenClaw gets them the other way round.
+
+That pair of lines is the only thing keeping each agent out of the
+other's credentials. Both run as the same Unix user, so 0600 protects
+nothing between them — a token file one agent reads from the other's tree
+works perfectly well, because a token is all Google or Telegram ever
+checks. This is a convention and not a boundary, and it is written in the
+one file the agent actually reads. Enforcing it properly would mean a
+second Unix user or a second VM; neither is in this build, so do not
+imply the separation is stronger than it is.
 
 ### Telegram channels
 

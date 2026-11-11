@@ -37,6 +37,33 @@ were told. Ask again naming the absolute path, and have it delete the
 stray `~/SOUL.md` if one appeared. Seeds written by current builds state
 their own path in the first bullet to stop this at the source.
 
+## Keeping each agent out of the other's tree
+
+Both agents run as **the same Unix user**. `~/.hermes/` and `~/.openclaw/`
+are two directories in one home, not two homes — so `0600` protects
+nothing between them, and either agent can read the other's credentials.
+A token read from the other's tree works perfectly well, because a token
+is all Google or Telegram ever checks.
+
+The realistic failure is not theft, it is an agent tidying up, finding a
+credential file, and deciding it is the one it was looking for. The fix is
+to say so in each agent's `SOUL.md`:
+
+> You share this machine with another agent, under the same Unix user.
+> Your home is `/home/<user>/.openclaw`; the other agent's tree is
+> `/home/<user>/.hermes`. Stay out of it — do not read, write or tidy
+> anything there. File permissions will not stop you, because you are both
+> the same user, so this is on you.
+
+Builds from 2026-11-11 seed that line automatically
+(`spec/pi-target-state.md`). **An agent built before then does not have
+it**, and the seed is never re-applied — so add it the way you change
+anything else here: ask the agent to.
+
+Be clear about what this is. It is a **convention, not a boundary**, and a
+determined or manipulated agent can ignore it. Enforcing it would need a
+second Unix user in the VM or a second VM; see `todo.md`.
+
 ## Why not edit the files directly
 
 You can (see below), but it is the worse default, for two reasons that come
