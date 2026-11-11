@@ -145,9 +145,32 @@ account**, not yours:
    single-account app does not otherwise need.
 5. **Credentials → Create credentials → OAuth client ID**, type **Desktop
    app**. Press the **download icon** beside the new client and put the
-   file in `secrets/`, leaving the name Google gives it
-   (`client_secret_*.json`). That directory is gitignored, and nothing is
+   file in `secrets/`. That directory is gitignored, and nothing is
    retyped.
+
+   **Leave the "Use this client for an AI-powered agent" box
+   unchecked.** Its own help text says to tick it *"if your client uses
+   Google MCP tools"* — `gog` does not; it calls the classic REST APIs
+   you enabled above. The label misleads here, because the agent *is* an
+   AI agent; the setting describes the API surface, not the caller.
+   Google's accompanying advice to *"use separate OAuth clients for
+   each"* implies the flag changes how the client is treated, so the
+   plain Desktop client is the known-good configuration — it is what the
+   Hermes add-on uses against the same APIs today.
+
+   **If you run both Google add-ons, rename the file.** The two clients
+   arrive with near-identical names and you will not be able to tell
+   them apart later:
+
+   ```
+   secrets/client_secret_<agent>-<vendor>-<project-number>.json
+   ```
+
+   Keep the `client_secret_` prefix and the `.json` suffix — both
+   installers glob on those — and put whatever you like in between. The
+   installer does not trust the name anyway: it identifies the *other*
+   agent's client by the id inside the file, so a rename cannot cause it
+   to pick the wrong one.
 
    There is nothing to configure for the redirect. Desktop clients accept
    any loopback port by specification, which is what the consent step
