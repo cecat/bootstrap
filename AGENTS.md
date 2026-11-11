@@ -75,7 +75,7 @@ the background and say how long it will take.
 **Where the hand-off does belong**, the script makes it, and says so:
 the user supplies what only they can, the script stops, and it prints
 the exact words to give their coding agent. `bootstrap.sh`'s exit 2 is
-one. `addons/google-workspace/install.sh` ending at "hand over to your
+one. `addons/google-hermes/install.sh` ending at "hand over to your
 coding agent" is another. Mid-procedure is the wrong place to invent a
 new one.
 

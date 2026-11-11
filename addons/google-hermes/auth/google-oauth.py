@@ -321,7 +321,7 @@ def try_open_browser(url):
 
 
 def main():
-    # addons/google-workspace/auth/this-file -> up four to the repo root.
+    # addons/google-hermes/auth/this-file -> up four to the repo root.
     here = os.path.abspath(__file__)
     repo = os.path.normpath(os.path.join(os.path.dirname(here), "..", "..", ".."))
     env_path = os.path.join(repo, "config", "google.env")
@@ -375,7 +375,7 @@ def main():
 
     if env.get("GOOGLE_REFRESH_TOKEN") and "--force" not in sys.argv:
         say("a refresh token is already present; nothing to do.")
-        say("re-consent anyway with: addon-google-workspace.sh auth --force")
+        say("re-consent anyway with: addon-google-hermes.sh auth --force")
         return
 
     # PKCE. A desktop client secret ships inside the app and is not really a
@@ -408,7 +408,7 @@ def main():
     except OSError as exc:
         die(f"could not listen on 127.0.0.1:{port} ({exc}).\n"
             f"       Something else is using it. Pick another with:\n"
-            f"         GOOGLE_OAUTH_PORT=8732 ./scripts/addon-google-workspace.sh auth\n"
+            f"         GOOGLE_OAUTH_PORT=8732 ./scripts/addon-google-hermes.sh auth\n"
             f"       Nothing to change in the Cloud Console -- a Desktop client\n"
             f"       accepts any loopback port. Use the same number in your\n"
             f"       ssh -L tunnel.")
@@ -526,7 +526,7 @@ def main():
 
     ok(f"refresh token written to config/google.env (0600) for {email}")
     ok("google_token.json and google_client_secret.json written to config/ (0600)")
-    say("next: ./scripts/addon-google-workspace.sh install")
+    say("next: ./scripts/addon-google-hermes.sh install")
 
 
 if __name__ == "__main__":

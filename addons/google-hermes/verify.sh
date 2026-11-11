@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------------
 # Evidence for the Google Workspace add-on.
 #
-#   ./scripts/addon-google-workspace.sh verify [instance]
+#   ./scripts/addon-google-hermes.sh verify [instance]
 #
 # Same contract as verify/verify.sh: asserts the limits hold, not just that
 # the happy path works. Pi's summary is a claim; this is the measurement.
@@ -144,7 +144,7 @@ else
   [ -z "$missing" ] \
     && pass "the token carries all eight scopes the skill wants" \
     || fail "the token carries all eight scopes the skill wants" \
-            "missing:$missing -- re-consent host-side: addon-google-workspace.sh auth --force"
+            "missing:$missing -- re-consent host-side: addon-google-hermes.sh auth --force"
 fi
 
 # Gmail stops at modify, and Google enforces it: under this scope the API
@@ -303,7 +303,7 @@ leftover="$(g 'ls -d $HOME/google-mcp-src $HOME/.local/share/agent-sandbox/googl
 [ -z "$(printf '%s' "$leftover" | tr -d '[:space:]')" ] \
   && pass "no leftovers from the old MCP server" \
   || fail "no leftovers from the old MCP server" \
-          "still present: $leftover -- run: addon-google-workspace.sh remove, then install again"
+          "still present: $leftover -- run: addon-google-hermes.sh remove, then install again"
 
 mcpref="$(g 'hermes config get mcp_servers 2>/dev/null')"
 case "$mcpref" in
@@ -376,14 +376,14 @@ else
     *"AUTHENTICATED (partial)"*)
       fail "a real Google API call succeeds" \
            "the token is missing scopes the skill wants. Re-consent host-side:
-        addon-google-workspace.sh auth --force" ;;
+        addon-google-hermes.sh auth --force" ;;
     *AUTHENTICATED*)
       pass "a real Google API call succeeds" "setup.py --check-live reached Google" ;;
     *invalid_grant*)
       fail "a real Google API call succeeds" \
            "invalid_grant -- the refresh token is dead. The usual cause is an OAuth
         consent screen left in Testing, which expires tokens after 7 days.
-        Publish it, then re-run: addon-google-workspace.sh auth --force" ;;
+        Publish it, then re-run: addon-google-hermes.sh auth --force" ;;
     *"No route to host"*|*Errno\ 113*)
       fail "a real Google API call succeeds" \
            "no route -- something is not using the proxy. Check PySocks and

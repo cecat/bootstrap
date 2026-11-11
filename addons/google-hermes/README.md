@@ -103,7 +103,7 @@ The next command reads this file, copies the two values into
 application client is rejected here rather than at the redirect.
 
 If you would rather do it by hand, run
-`./scripts/addon-google-workspace.sh install` once; it creates
+`./scripts/addon-google-hermes.sh install` once; it creates
 `config/google.env`, tells you what it wants, and stops with exit 2 — the
 same handshake `bootstrap.sh` uses. Fill in `GOOGLE_CLIENT_ID` and
 `GOOGLE_CLIENT_SECRET` there instead.
@@ -155,7 +155,7 @@ nothing.
 **On the remote host**, start the consent flow:
 
 ```sh
-./scripts/addon-google-workspace.sh auth
+./scripts/addon-google-hermes.sh auth
 ```
 
 It notices there is no display and prints the consent URL in full, then
@@ -197,7 +197,7 @@ above: the command opens the page itself and there is no tunnel.
 ### 4. Run `install`, then hand over
 
 ```sh
-./scripts/addon-google-workspace.sh install
+./scripts/addon-google-hermes.sh install
 ```
 
 This checks the base build is healthy, pushes your credentials into the VM,
@@ -212,8 +212,8 @@ agent's job, not yours. Open your coding agent in this directory and tell
 it:
 
 > Install the Google Workspace add-on: run
-> `./scripts/addon-google-workspace.sh build`, then supervise Pi and verify
-> it as `addons/google-workspace/README.md` describes.
+> `./scripts/addon-google-hermes.sh build`, then supervise Pi and verify
+> it as `addons/google-hermes/README.md` describes.
 
 It will come back to you once, at the end, with the one check no script can
 perform.
@@ -235,10 +235,10 @@ They stopped at the hand-over on purpose. Your job is the build and the
 reading of it.
 
 ```sh
-./scripts/addon-google-workspace.sh build          # drive Pi (5-15 min)
+./scripts/addon-google-hermes.sh build          # drive Pi (5-15 min)
 ./scripts/pi-session.sh summary                    # what Pi claims it did
 ./scripts/pi-session.sh steps                      # what it actually did
-./scripts/addon-google-workspace.sh verify --live --base
+./scripts/addon-google-hermes.sh verify --live --base
 ```
 
 The user has already run `install`, which checked preconditions, staged the
@@ -456,7 +456,7 @@ a chat is a token in a transcript.
 ## Undoing it
 
 ```sh
-./scripts/addon-google-workspace.sh remove
+./scripts/addon-google-hermes.sh remove
 ```
 
 Deletes the credentials from the VM, clears away anything left from the old

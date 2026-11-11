@@ -4,13 +4,13 @@
 # neither needs nor knows about this.
 #
 # The user does the first two, because they need a browser and a secret:
-#   ./scripts/addon-google-workspace.sh auth      one-time browser consent
-#   ./scripts/addon-google-workspace.sh install   preconditions, push, stage
+#   ./scripts/addon-google-hermes.sh auth      one-time browser consent
+#   ./scripts/addon-google-hermes.sh install   preconditions, push, stage
 #
 # Then their coding agent takes over, because supervising Pi is its job:
-#   ./scripts/addon-google-workspace.sh build     drive Pi
-#   ./scripts/addon-google-workspace.sh verify    the evidence
-#   ./scripts/addon-google-workspace.sh remove    undo it
+#   ./scripts/addon-google-hermes.sh build     drive Pi
+#   ./scripts/addon-google-hermes.sh verify    the evidence
+#   ./scripts/addon-google-hermes.sh remove    undo it
 #
 # Nothing here modifies the base system. It adds files to the VM and gives
 # Pi a second spec; bootstrap.sh, verify/verify.sh, lima/agents.yaml and
@@ -82,7 +82,7 @@ ensure_config() {
   STOP -- this is your turn, and the add-on waits here until you take it.
 
   It needs an OAuth client from Google Cloud Console, which only you can
-  make. The five steps are in addons/google-workspace/README.md.
+  make. The five steps are in addons/google-hermes/README.md.
 
   Then, rather than copying two long strings by hand:
 
@@ -101,7 +101,7 @@ ensure_config() {
   in "Testing", Google expires the refresh token after seven days and the
   add-on quietly stops working every week.
 
-  Then:  ./scripts/addon-google-workspace.sh auth
+  Then:  ./scripts/addon-google-hermes.sh auth
 
 EOF
     exit 2
@@ -116,7 +116,7 @@ require_client() {
     cat >&2 <<EOF
 
   No OAuth client yet. Create one in Google Cloud Console (see
-  addons/google-workspace/README.md), then either:
+  addons/google-hermes/README.md), then either:
 
     - download its JSON and drop it in  secrets/  -- nothing to retype, or
     - fill GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in $ENVFILE
@@ -148,7 +148,7 @@ cmd_install() {
 
   No refresh token yet. Run the consent step first:
 
-      ./scripts/addon-google-workspace.sh auth
+      ./scripts/addon-google-hermes.sh auth
 
 EOF
     exit 2
@@ -210,7 +210,7 @@ allowlist is the one combination this refuses to create."
   # runs.
   email="$(envval GOOGLE_ACCOUNT_EMAIL)"
   [ -n "$email" ] || fail "GOOGLE_ACCOUNT_EMAIL is blank in $ENVFILE.
-Re-run: ./scripts/addon-google-workspace.sh auth --force"
+Re-run: ./scripts/addon-google-hermes.sh auth --force"
 
   TOKENJSON="config/google_token.json"
   SECRETJSON="config/google_client_secret.json"
@@ -221,7 +221,7 @@ If you consented before this add-on moved to the bundled skill, the old
 MCP-format credential will not do -- the skill needs scopes it never
 requested. Re-run:
 
-    ./scripts/addon-google-workspace.sh auth --force"
+    ./scripts/addon-google-hermes.sh auth --force"
   done
 
   step "Pushing the add-on into $INSTANCE"
@@ -268,8 +268,8 @@ requested. Re-run:
   ${B}Tell your coding agent:${Z}
 
       Install the Google Workspace add-on: run
-      ./scripts/addon-google-workspace.sh build, then supervise Pi and
-      verify it as addons/google-workspace/README.md describes.
+      ./scripts/addon-google-hermes.sh build, then supervise Pi and
+      verify it as addons/google-hermes/README.md describes.
 
   It will come back to you once, at the end, with the one check no
   script can do: message the Hermes bot and ask what is on your
@@ -287,8 +287,8 @@ cmd_build() {
 
   limactl shell "$INSTANCE" -- bash -lc 'test -f "$HOME/agent-bootstrap/GOOGLE-ADDON.md"' 2>/dev/null \
     || fail "the add-on spec is not in the VM, so the setup half has not run.
-The user needs to do their part first -- see addons/google-workspace/README.md:
-./scripts/addon-google-workspace.sh auth, then install."
+The user needs to do their part first -- see addons/google-hermes/README.md:
+./scripts/addon-google-hermes.sh auth, then install."
 
   limactl shell "$INSTANCE" -- bash -lc 'test -s "$HOME/google-skill-push/google_token.json" && test -s "$HOME/google-skill-push/google_client_secret.json"' 2>/dev/null \
     || fail "the staged credentials are not in the VM. Run the install step first."
@@ -311,7 +311,7 @@ The user needs to do their part first -- see addons/google-workspace/README.md:
   cat <<EOF
   Read what Pi claims:   ./scripts/pi-session.sh summary
   What it actually did:  ./scripts/pi-session.sh steps
-  Then check it:         ./scripts/addon-google-workspace.sh verify --live --base
+  Then check it:         ./scripts/addon-google-hermes.sh verify --live --base
 
   A summary is a claim; verify.sh is evidence. Push back with
   ./scripts/pi-session.sh say "..." rather than fixing the VM by hand.
