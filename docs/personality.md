@@ -14,8 +14,19 @@ to sync, no file in this repo to change, and no restart needed.
 
 | Agent | File |
 |---|---|
-| OpenClaw | `~/.openclaw/agents/<agent-id>/SOUL.md` (inside the VM) |
-| Hermes | `~/.hermes/SOUL.md` (inside the VM) |
+| OpenClaw | `SOUL.md` in the agent's **workspace** — `~/.openclaw/workspace/` for the default agent, `~/.openclaw/workspace-<id>/` otherwise |
+| Hermes | `~/.hermes/SOUL.md` (or `$HERMES_HOME/SOUL.md`) |
+
+**Ask the tool, do not infer from the filesystem.** OpenClaw's workspace
+path is configurable, so resolve it rather than assuming:
+
+```sh
+limactl shell agents -- openclaw config get agents.entries.<id>.workspace
+```
+
+and `openclaw doctor` reports how many characters of `SOUL.md` were
+actually injected — the only reading that proves which file is live. In a
+chat with the agent, `/context list` prints the same thing.
 
 **Check the file changed; do not take the agent's word for it.**
 (2026-11-07) Asked to edit its `SOUL.md`, Gandalf wrote a convincing 2 kB

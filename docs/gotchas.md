@@ -197,6 +197,41 @@ The cost was not just maintenance. Every platform's toolsets had to be
 named by hand, every credential lived in a second format, and the whole
 apparatus was invisible to the agent that was supposed to use it.
 
+**We put OpenClaw's `SOUL.md` somewhere OpenClaw does not look, then
+blamed the agent for going to the right place.** (2026-11-11) The spec
+said to write `~/.openclaw/agents/<id>/SOUL.md`. That directory is state —
+`agent/openclaw-agent.sqlite`, `sessions/`, `recovery/` — and nothing in
+it is ever loaded as identity. OpenClaw keeps the whole bootstrap set
+(`SOUL.md`, `AGENTS.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md`) in the
+agent's **workspace**, a git repo it initialises itself:
+*"Save this file at the workspace root as `SOUL.md`"*, *"These live in the
+agent workspace, not `~/.openclaw`."*
+
+Asked to edit its soul, the agent went to the workspace, found the
+vendor's template there, and edited it. **That was correct.** The
+supervising agent then called the real file a decoy, told the user the
+update had failed, and had the agent delete it — destroying the one file
+that was in the right place. Four other context files were never affected,
+because we only ever had an opinion about this one.
+
+Three lessons, in order of how much they cost:
+
+- **An invented path is worse than a missing one.** A missing file fails
+  loudly; a file in a path nobody reads looks like success forever.
+- **"The agent wrote to the wrong place" deserves one minute of checking
+  before it is believed.** Twice now the agent was right about where its
+  own files live, and twice the repo was wrong.
+- **Ask the gateway what it loaded.** `openclaw doctor` reports injected
+  character counts per bootstrap file, `/context list` shows the resolved
+  workspace, and `hermes` puts `SOUL.md` in slot #1 of its system prompt.
+  Inferring from `ls` and mtimes is what produced every wrong conclusion
+  here, including a check made at 13:52 that reported failure for an edit
+  the agent completed at 14:01.
+
+Hermes was never wrong: `$HERMES_HOME/SOUL.md` is exactly what Nous
+documents. The two products keep identity in different places, and the
+spec now names each from its own vendor's docs.
+
 **A missing credential file blocks a cron job before it spends anything.**
 Hermes' pre-dispatch validation checks that each attached skill's declared
 `required_credential_files` exist, reports `blocked_config`, alerts once,

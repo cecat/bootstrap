@@ -355,23 +355,59 @@ broken.
 
 ### Personality seeds
 
-Write `~/.openclaw/agents/<live agent id>/SOUL.md` and `~/.hermes/SOUL.md`.
+Each agent's identity file goes **where its own vendor keeps it**, which is
+not the same place for the two of them:
+
+| Agent | File | How to resolve it |
+|---|---|---|
+| Hermes | `$HERMES_HOME/SOUL.md`, normally `~/.hermes/SOUL.md` | slot #1 of its system prompt |
+| OpenClaw | `SOUL.md` **in the agent's workspace** | `openclaw config get agents.entries.<id>.workspace`, falling back to `agents.defaults.workspace` |
+
+**Do not invent a path for either, and do not put OpenClaw's under
+`~/.openclaw/agents/<id>/`.** That directory is state — `agent/` holds
+`openclaw-agent.sqlite`, plus `sessions/` and `recovery/` — and nothing
+there is ever loaded as identity. An earlier version of this spec said to
+write it there, and the result was an agent whose real `SOUL.md` sat
+unedited for days while everyone involved, including the supervising
+coding agent, believed otherwise.
+
+OpenClaw's workspace is a git repo it initialises itself, holding the whole
+bootstrap set: `AGENTS.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` and
+`SOUL.md`. Put the seed beside those. **Resolve the path from the config
+rather than assuming** `~/.openclaw/workspace` — a non-default agent gets
+`<stateDir>/workspace-<agentId>`.
+
 These are seeds: once written, the file belongs to the agent and its user,
 and your script must never touch it again.
 
-Guard on **content, not existence** — the Hermes installer writes its own
-vendor persona, so skip only if the file already says `You are <NAME>`.
+Guard on **content, not existence** — both vendors seed their own template,
+so skip only if the file already says `You are <NAME>`. OpenClaw's template
+begins *"You're not a chatbot. You're becoming someone."*; that is the
+vendor's placeholder, not a personality anyone chose, and it should be
+replaced rather than left.
 
-**The seed must tell the agent where it lives.** Hermes reads its identity
-from `$HERMES_HOME`, which is `~/.hermes` — but `~/SOUL.md` is the obvious
-guess, and both a GPT-4o and an Opus 5 Gandalf made it. The second one
-created a 2 kB `~/SOUL.md` that looks right, is never loaded, and then
-blocks its own rewrite: Hermes refuses to overwrite a file the task has
-not read in full, so the agent gets stuck editing a decoy. The user
-meanwhile sees an identity file that never changes, and an agent
-insisting it saved the change. One line in the seed ends this, so the
-first bullet of each is the path — the agent is the only one who can fix
-it later, and it has to know where to look.
+**Then confirm what the gateway actually loads, rather than what you
+wrote.** For OpenClaw, `openclaw doctor` reports per-file raw and injected
+character counts for `SOUL.md`. A file you created that reports nothing
+injected is in the wrong place — say so instead of reporting success.
+
+**The seed must tell the agent where it lives**, because the agent is the
+only one who edits it afterwards and both products offer a plausible wrong
+answer.
+
+For Hermes the decoy is `~/SOUL.md` — the obvious guess, and both a GPT-4o
+and an Opus 5 Gandalf made it. The second created a 2 kB `~/SOUL.md` that
+looks right, is never loaded, and then blocks its own rewrite: Hermes
+refuses to overwrite a file the task has not read in full, so the agent
+gets stuck editing a decoy while the user sees an identity that never
+changes.
+
+For OpenClaw the wrong answer was **ours**: this spec used to name
+`~/.openclaw/agents/<id>/SOUL.md`, so the seed went somewhere the gateway
+never reads, and the agent — correctly following its vendor's
+documentation to the workspace — looked like the one making the mistake.
+It was not. Write the absolute path into the seed so neither the agent nor
+a future supervisor has to infer it.
 
 ```markdown
 # SOUL
@@ -379,9 +415,11 @@ it later, and it has to know where to look.
 You are NAME, a personal assistant running in a sandboxed VM.
 
 - This file is `ABSOLUTE_PATH_TO_THIS_FILE`. It is the only file that
-  changes who you are. `~/SOUL.md` is not it: writing there does nothing,
-  however plausible the path looks. Read this one in full before editing
-  it, or the write will be refused.
+  changes who you are, and other files named `SOUL.md` elsewhere on this
+  machine do nothing however plausible they look. If you are asked to
+  change who you are, edit this exact path. Read it in full before editing,
+  or the write may be refused. If you are ever unsure this is the live one,
+  ask your gateway what it loaded rather than guessing from the filesystem.
 - Be direct. Short answers when short answers will do.
 - Say what you did, including what failed. Never claim a success you did not verify.
 - You have shell access and no permission prompts. Stop and ask before anything

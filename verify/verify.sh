@@ -694,19 +694,41 @@ want_he="$(g 'set -a; . $HOME/.config/agent-sandbox/agents.env 2>/dev/null; set 
 # fails a correct build.
 agents_out="$(g 'openclaw agents list 2>/dev/null')"
 live_identity="$(printf '%s' "$agents_out" | grep -m1 'Identity:' | sed 's/.*Identity: *//; s/ *(.*//' | tr -d '\r')"
+# Match on CONTAINMENT, not equality. OpenClaw composes the displayed
+# identity from IDENTITY.md, so an agent that fills in an Emoji or Theme
+# shows up as "🜂 LuoJi" -- the configured name correctly applied, plus
+# decoration the agent chose for itself. Requiring equality failed a
+# correct build the first time an agent edited its own identity file,
+# which is a thing this repo explicitly invites it to do.
 if [ -n "$want_oc" ] && [ -n "$live_identity" ]; then
-  if [ "$live_identity" = "$want_oc" ]; then
-    pass "OpenClaw agent identity is as configured" "$live_identity"
-  else
-    fail "OpenClaw agent identity is as configured" "identity is '$live_identity', expected '$want_oc' -- OPENCLAW_AGENT_NAME was not applied"
-  fi
+  case "$live_identity" in
+    *"$want_oc"*)
+      if [ "$live_identity" = "$want_oc" ]; then
+        pass "OpenClaw agent identity is as configured" "$live_identity"
+      else
+        pass "OpenClaw agent identity is as configured" \
+             "$live_identity -- name applied, the rest is from IDENTITY.md"
+      fi ;;
+    *)
+      fail "OpenClaw agent identity is as configured" \
+           "identity is '$live_identity', expected it to contain '$want_oc' -- OPENCLAW_AGENT_NAME was not applied" ;;
+  esac
 else
   skip "OpenClaw agent identity is as configured" "could not read the configured name or the live identity"
 fi
 
-# `Agent dir:` carries a trailing /agent -- SOUL.md sits one level above --
-# and prints a literal ~, which no shell expands when it arrives as data.
-live_dir="$(printf '%s' "$agents_out" | grep -m1 'Agent dir:' | sed 's/.*Agent dir: *//; s#/agent/*$##' | tr -d '\r')"
+# OpenClaw keeps SOUL.md in the agent's WORKSPACE, not under
+# agents/<id>/. That directory is state -- openclaw-agent.sqlite,
+# sessions/, recovery/ -- and nothing in it is ever loaded as identity.
+# The vendor: "Save this file at the workspace root as SOUL.md", and
+# "These live in the agent workspace, not ~/.openclaw."
+#
+# This check used to derive the path from `Agent dir:` and so validated a
+# file the gateway never reads, which is how a seed sat in the wrong place
+# for days while this suite passed. Resolve the workspace from the config
+# the way OpenClaw does: the agent's own entry, then the default.
+live_dir="$(g 'id=$(openclaw agents list --json 2>/dev/null | jq -r ".[0].id // empty");
+  jq -r --arg id "$id" "(.agents.entries[\$id].workspace // .agents.defaults.workspace // empty)" ~/.openclaw/openclaw.json 2>/dev/null' | tr -d '\r' | head -1)"
 case "$live_dir" in "~"*) live_dir="\$HOME${live_dir#\~}" ;; esac
 
 check_soul() {
@@ -723,9 +745,37 @@ check_soul() {
 if [ -n "$live_dir" ]; then
   check_soul "OpenClaw" "$live_dir/SOUL.md" "$want_oc"
 else
-  skip "OpenClaw SOUL.md" "could not read the agent dir from 'openclaw agents', so there is nothing to check -- absent, not passing"
+  skip "OpenClaw SOUL.md" "could not resolve the agent workspace from openclaw.json, so there is nothing to check -- absent, not passing"
 fi
 check_soul "Hermes" '$HOME/.hermes/SOUL.md' "$want_he"
+
+# A SOUL.md anywhere the gateway does not read is a trap, and the agents
+# write to one unprompted: Hermes has twice created ~/SOUL.md, and an
+# OpenClaw agent edited a second copy for days while the live file sat
+# untouched. Nothing fails when it happens -- the user sees an identity
+# that never changes and an agent insisting it saved the change -- so this
+# is exactly the defect a suite should catch and a human cannot.
+#
+# Known-good paths only: the two live files, plus the vendors' own
+# bundled templates and docs, which are theirs and not ours to police.
+# Trash is excluded too -- a deleted file is already the right outcome,
+# and leaving it in scope means this check fails forever over something
+# the user has thrown away.
+strays="$(g "find \$HOME -maxdepth 6 -name SOUL.md \
+    ! -path '$live_dir/SOUL.md' \
+    ! -path \"\$HOME/.hermes/SOUL.md\" \
+    ! -path '*/node_modules/*' \
+    ! -path \"\$HOME/.hermes/hermes-agent/*\" \
+    ! -path \"\$HOME/.local/share/Trash/*\" \
+    2>/dev/null | head -5 | tr '\n' ' '")"
+if [ -z "$(printf '%s' "$strays" | tr -d '[:space:]')" ]; then
+  pass "no stray SOUL.md outside the loaded paths"
+else
+  fail "no stray SOUL.md outside the loaded paths" \
+       "$strays-- a file here is never loaded, but an agent asked to change its
+        personality may edit it and report success. Have the agent delete it and
+        re-apply the change to the live path above"
+fi
 
 # ---------------------------------------------------------------------------
 section "Channels: never reachable without an allowlist"
