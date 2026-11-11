@@ -441,10 +441,12 @@ You are NAME, a personal assistant running in a sandboxed VM.
 
 Substitute four placeholders as you write each file: `NAME` from
 `agents.env`, and `ABSOLUTE_PATH_TO_THIS_FILE` with the real path of the
-file you are writing — `/home/<user>/.hermes/SOUL.md` or
-`/home/<user>/.openclaw/agents/<id>/SOUL.md`, expanded, not `~`. A `~`
-there is a path the agent cannot act on reliably, which is the whole
-point of the line.
+file you are writing — `/home/<user>/.hermes/SOUL.md` for Hermes, and for
+OpenClaw the **resolved workspace** path, normally
+`/home/<user>/.openclaw/workspace/SOUL.md`. Expand it; never a `~`, and
+never a path you have not resolved from the config. A `~` is a path the
+agent cannot act on reliably, and a guessed one is worse: it is the exact
+line that told an agent its identity lived somewhere nothing reads.
 
 `YOUR_AGENT_DIR` and `OTHER_AGENT_DIR` are the two agents' trees,
 expanded the same way and **swapped between the two files**: Hermes gets

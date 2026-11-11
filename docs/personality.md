@@ -99,8 +99,10 @@ denied to it, because a VM repaired by hand looks like success while the repo
 still produces the failure for the next person.
 
 ```sh
-limactl shell agents -- openclaw agents list     # get the id first
-limactl shell agents -- nano ~/.openclaw/agents/<agent-id>/SOUL.md
+# Resolve OpenClaw's workspace rather than assuming it
+limactl shell agents -- openclaw config get agents.defaults.workspace
+limactl shell agents -- nano ~/.openclaw/workspace/SOUL.md
+
 limactl shell agents -- nano ~/.hermes/SOUL.md
 ```
 
