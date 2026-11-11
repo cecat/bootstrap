@@ -60,6 +60,16 @@ At <https://console.cloud.google.com/>:
    the publishing status starts as **Testing**. Press **Publish app** so it
    reads **In production**. This matters more than it looks; see the
    warning below.
+
+   **The button is greyed out until Branding has an App domain.** An
+   external app in production needs three links — application home page,
+   privacy policy, terms of service — plus that domain under *Authorised
+   domains*. Google: *"These links are required for all external
+   production apps."* Measured 2026-11-11: the URLs are **not fetched**
+   at publish time, so pages that do not exist yet are accepted; the
+   domain does have to be one you own and have verified. Leave the logo
+   empty — it is optional, and a custom one invites the verification
+   review this setup does not otherwise need.
 5. **APIs & Services → Credentials → Create credentials → OAuth client
    ID**, application type **Desktop app**. Google then shows the client ID
    and client secret once, in a dialog. Leave it open for the next step, or

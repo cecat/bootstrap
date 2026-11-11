@@ -120,10 +120,29 @@ account**, not yours:
    screen**, filed under **Google Auth Platform → Branding / Audience** in
    newer layouts). User type **External**, any app name, the agent's
    address in both contact fields.
-4. **Publish it.** The status starts as **Testing**, and under Testing
-   Google expires refresh tokens after **seven days** — the add-on would
-   quietly stop working every week, with `invalid_grant` buried in a log.
-   Press **Publish app** so it reads **In production**.
+4. **Publish it**, and expect one hurdle.
+
+   Under **Audience**, the publishing status starts at **Testing**. Press
+   **Publish app** so it reads **In production**. This matters more than
+   it looks: under Testing, Google expires refresh tokens after **seven
+   days**, so the add-on would quietly stop working every week with
+   `invalid_grant` buried in a log.
+
+   **The button is greyed out until Branding has an App domain.** An
+   external app in production needs three links — application home page,
+   privacy policy, terms of service — plus the domain listed under
+   *Authorised domains*. Google's wording: *"These links are required for
+   all external production apps."*
+
+   Measured 2026-11-11: the URLs are **not fetched** when you publish, so
+   pages that do not exist yet are accepted. The domain does have to be
+   one you own and have verified. If you have no domain at all, staying
+   in Testing is defensible — it just means re-consenting every seven
+   days, deliberately rather than by surprise.
+
+   The logo stays empty. It is optional, and a custom logo is one of the
+   things that pushes an app into Google's verification review, which a
+   single-account app does not otherwise need.
 5. **Credentials → Create credentials → OAuth client ID**, type **Desktop
    app**. Press the **download icon** beside the new client and put the
    file in `secrets/`, leaving the name Google gives it
