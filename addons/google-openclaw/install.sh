@@ -320,23 +320,62 @@ EOF
   # The OAuth client has to be in place first. gog stores it in its own
   # config dir; the user downloads the JSON from the Cloud Console exactly
   # as they do for the Hermes add-on.
-  if ! ls "$REPO"/secrets/client_secret_*.json >/dev/null 2>&1; then
-    cat >&2 <<EOF
-  No OAuth client JSON found in secrets/.
+  #
+  # Selecting it is fiddly for one reason: the Hermes add-on keeps ITS
+  # client in the same directory, under the same client_secret_*.json
+  # name. Globbing and taking the first match would hand this agent the
+  # other agent's credentials -- which Google would accept, because a
+  # client id identifies the app, not the account. The user would then
+  # consent as the right account against the wrong project and wonder why
+  # two agents share a quota.
+  #
+  # So: ignore any client already named in the Hermes config, and if more
+  # than one candidate remains, stop and ask rather than guessing.
+  local hermes_cid cj n
+  hermes_cid="$(awk -v k="GOOGLE_CLIENT_ID" '
+    index($0, k "=") == 1 { v = substr($0, length(k) + 2)
+      gsub(/^[ \t"'"'"']+|[ \t\r"'"'"']+$/, "", v); print v; exit }' config/google.env 2>/dev/null)"
 
-  In Google Cloud Console, create an OAuth client of type "Desktop app"
-  for the agent's account, press the download icon beside it, and put the
-  file in  secrets/  -- leave the name as Google gives it. That directory
-  is gitignored and nothing retypes the values.
+  local cands=()
+  for f in "$REPO"/secrets/client_secret_*.json; do
+    [ -e "$f" ] || continue
+    if [ -n "$hermes_cid" ] && grep -qF "$hermes_cid" "$f" 2>/dev/null; then
+      continue   # Gandalf's; not this agent's
+    fi
+    cands+=("$f")
+  done
+
+  n="${#cands[@]}"
+  if [ "$n" -eq 0 ]; then
+    cat >&2 <<EOF
+  No OAuth client JSON for this agent found in secrets/.
+
+EOF
+    [ -n "$hermes_cid" ] && printf '  (There is one there already, but it belongs to the Hermes add-on.\n  This agent needs its own, created under its own Google account.)\n\n' >&2
+    cat >&2 <<EOF
+  In Google Cloud Console, signed in as the AGENT'S account, create an
+  OAuth client of type "Desktop app", press the download icon beside it,
+  and put the file in  secrets/  -- leave the name as Google gives it.
+  That directory is gitignored and nothing retypes the values.
 
   Full steps: addons/google-openclaw/README.md
 
 EOF
     exit 2
-  fi
+  elif [ "$n" -gt 1 ]; then
+    printf '  More than one candidate OAuth client in secrets/:\n\n' >&2
+    printf '      %s\n' "${cands[@]##*/}" >&2
+    cat >&2 <<EOF
 
-  local cj
-  cj="$(ls -1 "$REPO"/secrets/client_secret_*.json | head -1)"
+  Refusing to guess which belongs to this agent -- picking wrong would
+  authorise it against another project. Move the ones you are not using
+  out of secrets/, leaving exactly one, and run this again.
+
+EOF
+    exit 2
+  fi
+  cj="${cands[0]}"
+  ok "using OAuth client ${cj##*/}"
   limactl copy "$cj" "$INSTANCE:/tmp/gog-client.json" \
     || fail "could not copy the OAuth client into the VM."
   limactl shell "$INSTANCE" -- bash -lc '
