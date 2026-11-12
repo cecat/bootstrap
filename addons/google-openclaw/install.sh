@@ -339,14 +339,17 @@ cmd_auth() {
   send="$(envval GOOGLE_ALLOW_SEND)"
   args="--services $services"
   # gog accepts exactly: full|readonly|send|read-send. Not "read", which
-  # it rejects outright -- confirmed from `gog auth add --help` after it
-  # did. Default (unset) is "full", so the flag is only passed when the
-  # user has NOT asked for send, to keep the mailbox read-only.
+  # it rejects outright -- confirmed from `gog auth add --help`.
   #
-  # readonly means gmail.readonly: the agent can read mail but cannot
-  # label, archive, or create drafts. If drafting turns out to be wanted
-  # without sending, this is the line to revisit -- "full" is the mode
-  # that allows drafts, at the cost of also allowing send.
+  # There is no draft-but-cannot-send scope. Google does not publish one:
+  # creating a draft needs gmail.modify, and anything with modify can also
+  # send. So an agent that drafts for human approval necessarily HOLDS the
+  # ability to send, and the restraint is an instruction in its SOUL.md,
+  # not a boundary the grant enforces. Decided knowingly 2026-11-11.
+  #
+  # GOOGLE_ALLOW_SEND therefore records INTENT, and verify.sh asserts the
+  # grant matches it. "no" still narrows to readonly, which is right for
+  # an agent that only reads -- it just cannot draft either.
   [ "$send" = "yes" ] || args="$args --gmail-scope readonly"
 
   cat <<EOF
