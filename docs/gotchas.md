@@ -244,12 +244,9 @@ runtime.
 
 **`openclaw doctor` reported dreaming as enabled while it had failed
 every run it ever attempted.** (2026-11-12) `memory-core` runs a 03:00
-memory-consolidation sweep and auto-manages its own cron job. With
-`memory.search.provider: "none"` — which the base spec *told* Pi to set,
-correctly, back when no embedding model was reachable — every run died.
-Two scheduled runs since the agent was built, two failures, zero
-successes, and nothing visible: the job's delivery is "not requested",
-so it fails in silence.
+memory-consolidation sweep and auto-manages its own cron job. Sixteen
+runs, sixteen failures, zero successes, and nothing visible: the job's
+delivery is "not requested", so it fails in silence.
 
 Doctor's whole report on it was `Dreaming: enabled (cadence 0 3 * * *).`
 Zero findings at any severity, even under `--deep`. The docs say why:
@@ -261,22 +258,77 @@ connected adapter", one layer up.
 The run history was in `openclaw automations runs` the whole time, which
 doctor does not consult. `verify.sh` now reads the job's **status**.
 
-**The error text pointed at the wrong subsystem**, which cost an hour:
-`MCP_AUTHORIZATION_RETIRED`. It names neither memory nor embeddings, and
-there happened to be a brand-new MCP server (the Google add-on, built
-that evening) to suspect. Two things rescued it — the user pointing out
-that correlation is not mechanism, and then the decisive test: disable
-the only MCP server, run the job, **same error**. One command settled
-what an hour of plausible reasoning had not.
+**A separate find, from the same hunt: the base spec had rotted.**
+`memory.search.provider` was `"none"`, which the spec told Pi to set,
+correctly, back when no embedding model was reachable. Nobody
+re-examined it once the gateway was in place, and the gateway serves
+`/v1/embeddings` — `argo:text-embedding-3-small`, 1536 dims, measured.
+A setting that was correct under conditions that have since changed is
+invisible precisely because it was once deliberate.
 
-The habit worth copying: when an error names a subsystem you recently
-touched, remove that subsystem and re-run before theorising about it.
+That was a real latent bug and worth fixing. It was **not** what broke
+dreaming, though it was confidently blamed at the time. See below.
 
-**And the base spec had rotted.** `provider: "none"` was right when
-written and nobody re-examined it once the gateway was in place. The
-gateway serves `/v1/embeddings` — `argo:text-embedding-3-small`, 1536
-dims, measured. A setting that was correct under conditions that have
-since changed is invisible precisely because it was once deliberate.
+## A cron job's real cause of death can be a field you cannot read
+
+**The dreaming sweep's `MCP_AUTHORIZATION_RETIRED` was none of the four
+things it was blamed on. The stored job row itself was bad, and the
+fix was to delete the row.** (2026-11-12) Sixteen consecutive failures,
+~106ms each — too fast for a model call. Deleting the job let
+`memory-core` recreate it within 5 seconds, and the new job ran clean:
+`dreaming promotion complete (workspaces=1, failed=0)`.
+
+```sh
+openclaw automations rm <dreaming job id>   # memory-core recreates it
+```
+
+**The error name is a deliberate lie, and the vendor says so.** The
+thrower is `AuthProfileAuthorizationError`
+(`src/agents/auth-profiles/authorization-contract.ts`), whose own
+comment is *"Keep the original MCP error name/codes for callers of the
+existing authority contract."* `McpConnectionAuthorityError` is a
+re-export alias of it. The failure is an **inference auth-profile**
+assertion; MCP servers are not involved at any point. Upstream has this
+open as a P1 (openclaw/openclaw#196381), where a maintainer states the
+same: the name *"does not by itself identify an MCP server failure."*
+
+**Why it was undiagnosable from the CLI.** `toPublicCronJob`
+(`src/cron/public-job.ts`) strips fourteen private fields from every
+public read — `inferenceBinding`, `runtimeAuthority`,
+`ownerTransferPending`, `operatorSource`, `createdActor` and the rest.
+So `openclaw automations get` showed a job identical to one that works,
+while the field that killed it was never on screen. `doctor --lint`
+said nothing either. Expect this class of bug to be invisible to every
+read command the vendor ships.
+
+**What actually located it: four control jobs, not reasoning.** Each
+added back one difference between a working job and the dreaming one.
+All four passed, which is what proved the payload innocent and left
+only the stored row:
+
+| job | adds | result |
+|---|---|---|
+| A | `sessionTarget: isolated` | ok, ~2.9s |
+| B | isolated via `current` | ok, ~2.4s |
+| C | + `lightContext: true` | ok, 3.3s |
+| D | + the `__openclaw_memory_core_short_term_promotion_dream__` sentinel | **ok**, 1427ms, no tokens |
+
+Job D is payload-identical to the failing job and it succeeded — the
+`NO_REPLY` with zero token usage shows `memory-core`'s hook claimed the
+turn and ran the sweep. That also killed the standing theory that
+`toolsAllow: ["*"]` was to blame: it is the **default** for every
+tool-using cron job (`src/cron/tools-allow.ts`), and all four controls
+carried it.
+
+The habit worth copying, and it is the same one that worked when the
+Google MCP server was wrongly blamed: **build the failing thing up from
+a working one, one property at a time.** Five short Pi turns beat
+several hours of reading plausible source.
+
+**When a managed job misbehaves, delete it before investigating it.**
+Anything a plugin auto-manages is cheap to destroy — `memory-core`
+reconciles every 60 seconds — so the cheapest possible experiment is
+also a candidate fix. Do this *before* reading vendor source.
 
 ## Pi grinding on a failure
 

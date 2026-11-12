@@ -215,14 +215,23 @@ with this paragraph, trust the software and say so.
 
 Then reindex once: `openclaw memory index --force --agent <id>`.
 
-**This also fixes nightly dreaming.** `memory-core` runs a consolidation
-sweep at 03:00 that promotes short-term entries into `MEMORY.md`, and it
-auto-manages its own cron job. With no embedding provider it fails every
-night with `MCP_AUTHORIZATION_RETIRED`, which names neither memory nor
-embeddings and sends people hunting through MCP configuration — it did
-here, for an hour. Confirm the job runs clean afterwards:
-`openclaw automations list`, then trigger it with
+**Then check nightly dreaming separately.** `memory-core` runs a
+consolidation sweep at 03:00 that promotes short-term entries into
+`MEMORY.md`, auto-managing its own cron job. Its delivery is "not
+requested", so it fails in silence and `doctor` still calls it enabled.
+Check it by status, not by configuration:
+
+    openclaw automations list
+
+If the dreaming row shows `error`, **delete it** — `memory-core`
+recreates it within a minute, and a bad stored row is the known cause:
+
+    openclaw automations rm <id>
+
+Then confirm the fresh row runs clean with
 `openclaw automations run <id> --wait` rather than waiting for 3am.
+Its error text is `MCP_AUTHORIZATION_RETIRED`, which names neither
+memory nor MCP; do not go hunting through MCP configuration.
 
 `memory.search.provider: "none"` remains the correct fallback **if** no
 embedding model is reachable, and gives keyword-only search. Do not

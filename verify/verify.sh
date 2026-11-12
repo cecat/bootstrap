@@ -265,29 +265,27 @@ case "$oc_mem" in
              "set to 'none', which is keyword-only. That was correct while no embedding
         model was reachable, and is not any more: the gateway serves
         /v1/embeddings (argo:text-embedding-3-small, 1536 dims, measured
-        2026-11-12). It also leaves memory-core's nightly dreaming sweep
-        failing with MCP_AUTHORIZATION_RETIRED, an error that names neither
-        memory nor embeddings" ;;
+        2026-11-12)" ;;
   *) pass "OpenClaw memory search has a provider that exists" "$oc_mem" ;;
 esac
 
 # Dreaming is memory-core's 03:00 consolidation sweep, promoting short-term
 # entries into MEMORY.md. It auto-manages its own cron job, so it exists
-# whether or not anyone configured it -- and with no embedding provider it
-# fails every night, silently, because delivery is "not requested".
+# whether or not anyone configured it, and its delivery is "not requested"
+# -- so it fails in silence and doctor still reports it enabled.
 #
-# This earns its place by having failed every run since the agent was
-# built, unnoticed, until the agent itself mentioned it in passing. The
-# error text points at MCP, which cost an hour of looking in the wrong
-# place: disabling the only MCP server changed nothing, which is what
-# proved the connection false.
+# This earns its place by having failed 16 consecutive runs unnoticed. The
+# cause was a bad stored job row, and the cure is to delete the row: the
+# plugin recreates it within a minute. Do not chase the error text.
 dream="$(g 'openclaw automations list 2>/dev/null | grep -i "dream" | head -1')"
 case "$dream" in
   "")      skip "the nightly memory sweep is not failing" "no dreaming job found" ;;
   *error*) fail "the nightly memory sweep is not failing" \
-                "memory-core's dreaming job is in error. Usual cause is the embedding
-        provider above, not whatever its error text names. Reproduce on demand:
-        openclaw automations run <id> --wait" ;;
+                "memory-core's dreaming job is in error. Delete it -- the plugin recreates
+        it within a minute and the fresh row runs clean:
+        openclaw automations rm <id>, then automations run <new id> --wait.
+        Its MCP_AUTHORIZATION_RETIRED text is an auth-profile assertion wearing
+        a retired MCP name; no MCP server is involved. See docs/gotchas.md." ;;
   *)       pass "the nightly memory sweep is not failing" ;;
 esac
 
