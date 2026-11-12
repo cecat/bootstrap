@@ -138,3 +138,15 @@ touched regardless.
 Only the Argo path is implemented. The structure generalises — one
 translation proxy serving `/v1/messages` and `/v1/chat/completions` — and
 `AGENTS.md` sketches what adding one involves. Nobody has tried.
+
+## 6. Conference-ops lives in its own repo now
+
+A specification for using LuoJi to run a conference briefly lived at
+`addons/conference-ops/`. It was moved out on 2026-11-12 to
+`~/code/conference-assist` (public, standalone): this repo builds agents
+and is meant to be cloned by anyone, while that one is a project that
+*uses* them. The tell was having to redact the subject matter to make it
+fit here.
+
+Nothing in this repo depends on it. `addons/google-openclaw/` is the
+plumbing it needs and stands alone.
