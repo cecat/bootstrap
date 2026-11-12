@@ -280,20 +280,36 @@ else
     || fail "no credential written into Hermes config" "found in: $leak"
 fi
 
-# This add-on is for one agent. OpenClaw getting Google access would be a
-# quiet expansion of what the other agent can reach.
+# This add-on is for one agent, so it must not be the route by which the
+# other one reaches THIS account.
 #
-# Read the config file directly and require that we actually read it: a
-# negative claim backed by a command that returned nothing is not evidence.
+# Until 2026-11-11 this asserted "OpenClaw has NO Google access" and
+# failed if openclaw.json mentioned google at all. Correct while only
+# Hermes had Google; wrong the moment the OpenClaw add-on shipped, when
+# it fired on a deliberate, separately-consented second account. A check
+# that fails on the intended end state is noise, and noise is what gets
+# suites ignored.
+#
+# The invariant that still holds is that the two agents are on DIFFERENT
+# Google accounts. Assert that instead.
+#
+# Read the config directly and require that we actually read it: a
+# negative claim backed by a command that returned nothing is not
+# evidence.
+he_addr="$(awk -v k="GOOGLE_ACCOUNT_EMAIL" '
+  index($0, k "=") == 1 { v = substr($0, length(k) + 2)
+    gsub(/^[ \t"'"'"']+|[ \t\r"'"'"']+$/, "", v); print v; exit }' config/google.env 2>/dev/null)"
+
 if ! g 'test -s $HOME/.openclaw/openclaw.json' >/dev/null 2>&1; then
-  skip "OpenClaw has NO Google access" "openclaw.json not readable -- nothing was checked"
+  skip "OpenClaw cannot reach the Hermes Google account" "openclaw.json not readable -- nothing was checked"
+elif [ -z "$he_addr" ]; then
+  skip "OpenClaw cannot reach the Hermes Google account" "no GOOGLE_ACCOUNT_EMAIL in config/google.env to compare against"
+elif g "grep -qF -- '$he_addr' \$HOME/.openclaw/openclaw.json" >/dev/null 2>&1; then
+  fail "OpenClaw cannot reach the Hermes Google account" \
+       "openclaw.json names this add-on's Google account -- the two agents would
+        act as one identity, which is what separate accounts exist to prevent"
 else
-  oc="$(g 'cat $HOME/.openclaw/openclaw.json 2>/dev/null')"
-  case "$oc" in
-    *google*)
-      fail "OpenClaw has NO Google access" "openclaw.json mentions google -- this add-on is meant to be Hermes-only" ;;
-    *) pass "OpenClaw has NO Google access" "this add-on is Hermes-only" ;;
-  esac
+  pass "OpenClaw cannot reach the Hermes Google account" "it has its own account, or none"
 fi
 
 # The MCP server this add-on used to install. A machine upgraded in place

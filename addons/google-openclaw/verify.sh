@@ -166,16 +166,37 @@ esac
 # Registered is not reachable. OpenClaw's own words: "Saving a definition
 # proves nothing about reachability -- the check does."
 name="$(g 'jq -r "(.mcp.servers // {}) | keys[]" ~/.openclaw/openclaw.json 2>/dev/null | grep -iE "gog|google" | head -1' | tr -d '\r')"
+# Start the server and ask it to enumerate its tools. That is the real
+# reachability test: it loads the binary, unlocks the keyring from the
+# environment, and returns the tool surface the agent will see.
+#
+# NOT `openclaw mcp doctor --probe`, which this check used first and
+# which fails against a healthy install. It "requires exclusive offline
+# state ownership" and a running gateway holds that lock, so it refuses
+# with a message about stopping the Gateway -- nothing to do with the
+# server. That read as unreachable and failed a build Pi had got right.
+# `openclaw mcp list` is no substitute either: it only prints config, so
+# it passes whether or not anything works.
+#
+# The env file is the one Pi writes for the gateway. Sourcing it here is
+# the point -- if the keyring variables are missing or wrong, this fails,
+# which is exactly the defect worth catching.
 if [ -n "$name" ]; then
-  if g "openclaw mcp doctor '$name' --probe 2>&1" | grep -qiE '\bok\b|healthy|success'; then
-    pass "the MCP server answers a probe" "openclaw mcp doctor --probe"
-  else
-    fail "the MCP server answers a probe" "defined but not reachable -- usually the
-        keyring environment, because the server re-opens the keyring per call
-        in a subprocess rather than unlocking once at startup"
-  fi
+  acct="$(envval GOOGLE_ACCOUNT)"
+  tools="$(g "set -a; . \"\$HOME/.config/systemd/user/openclaw-gog.env\" 2>/dev/null; set +a; export DBUS_SESSION_BUS_ADDRESS=disabled:; timeout 60 gog --account '$acct' mcp --list-tools 2>&1 | head -40")"
+  n_tools="$(printf '%s' "$tools" | grep -c '"name":' || true)"
+  case "$tools" in
+    *'"tools"'*)
+      pass "the MCP server starts and serves tools" "${n_tools:-?} tools enumerated, keyring unlocked" ;;
+    *keyring*|*password*)
+      fail "the MCP server starts and serves tools" "the keyring did not unlock -- check that
+        GOG_KEYRING_BACKEND and GOG_KEYRING_PASSWORD reach the gateway's
+        environment, not merely a login shell" ;;
+    *)
+      fail "the MCP server starts and serves tools" "$(printf '%s' "$tools" | tr -d '\r' | head -2 | paste -sd' ' - | cut -c1-160)" ;;
+  esac
 else
-  skip "the MCP server answers a probe" "no gog server found to probe"
+  skip "the MCP server starts and serves tools" "no gog server found to test"
 fi
 
 # ---------------------------------------------------------------------------
