@@ -3,6 +3,12 @@
 # Google access for the OpenClaw agent. OPTIONAL -- the base build neither
 # needs nor knows about this, and the Hermes agent is untouched by it.
 #
+# RUN EVERY COMMAND HERE ON THE MACHINE THAT HOSTS THE VM -- never on a
+# laptop. The only thing you do elsewhere is open a URL in a browser, and
+# this script tells you when. No SSH tunnel is needed: consent happens
+# inside the VM and hands you a URL, rather than waiting on a loopback
+# port the way the Hermes add-on does.
+#
 # The user does the first two, because they need a browser and an account:
 #   ./scripts/addon-google-openclaw.sh auth      one-time consent
 #   ./scripts/addon-google-openclaw.sh install   preconditions, push, stage
@@ -12,12 +18,8 @@
 #   ./scripts/addon-google-openclaw.sh verify    the evidence
 #   ./scripts/addon-google-openclaw.sh remove    undo it
 #
-# This is a SEPARATE add-on from google-hermes, not a variant of it: the
-# two agents reach Google by entirely different mechanisms. See PLAN.md.
-#
-# Nothing here modifies the base system or the Hermes add-on.
-#
-# NOT YET BUILT -- see PLAN.md. This script has never been run.
+# A SEPARATE add-on from google-hermes, not a variant: the two agents
+# reach Google by entirely different mechanisms. See PLAN.md.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -690,6 +692,9 @@ case "${1:-}" in
   verify)  shift; cmd_verify "$@" ;;
   remove)  cmd_remove ;;
   *)
-    sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    # Must cover the whole header block above, to its last line. Printing
+    # a fixed range that stops mid-sentence is how this shipped the first
+    # time; `awk` to the end of the comment block cannot drift again.
+    awk 'NR>2 && /^# -----/{exit} NR>2 && /^# /{sub(/^# ?/,""); print; next} NR>2 && /^#$/{print ""; next} NR>2 && !/^#/{exit}' "${BASH_SOURCE[0]}"
     exit 2 ;;
 esac

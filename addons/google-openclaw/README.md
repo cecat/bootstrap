@@ -55,6 +55,31 @@ other. Real containment would need a second Unix user or a second VM —
 that is a change to the base build, not to an add-on, and it is recorded in
 `todo.md`.
 
+## Which machine runs what
+
+**Every command in this add-on runs on the machine that hosts the VM.**
+Nothing is run on a laptop. The only thing you do elsewhere is open a URL
+in a browser, and the script says when.
+
+**No SSH tunnel is needed**, which is a real difference from the Hermes
+add-on and worth understanding so you do not go looking for one.
+
+| | Hermes add-on | This add-on |
+|---|---|---|
+| Where consent runs | on the **host**, in a Python script | **inside the VM**, in `gog` |
+| What waits for the browser | a real listener on `127.0.0.1:8731` | nothing listens at all |
+| Tunnel needed? | **yes** — your browser must reach that listener | **no** |
+| How the code gets back | the listener catches it | you copy the failed URL into a file |
+
+The Hermes flow opens a genuine loopback server to catch Google's
+redirect, so a browser on your laptop has to reach a port on the host —
+hence `ssh -L`. `gog` instead reserves a loopback port number, lets the
+redirect fail, and reads the authorisation code out of the URL you paste
+back. Nothing listens, so there is nothing to tunnel to.
+
+The cost of that simplicity is the copy-paste step: two long strings move
+through files in `config/` rather than over a socket.
+
 ## Your part, then your agent's
 
 Steps 1–4 are yours, because they need a browser, an account and a
