@@ -390,7 +390,7 @@ case "$AGENTS" in
     # --lint --all is not optional: a bare `openclaw doctor` selects 39 of
     # 69 checks and has reported ok:true findings:[] while the full run
     # found 33.
-    oc_out="$(g 'openclaw doctor --lint --all --json 2>/dev/null')"
+    oc_out="$(g 'openclaw doctor --lint --all --deep --json 2>/dev/null')"
     if [ -z "$(printf '%s' "$oc_out" | tr -d '[:space:]')" ]; then
       skip "openclaw doctor is still clean" "could not run openclaw doctor"
     else

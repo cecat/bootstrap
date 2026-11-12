@@ -226,7 +226,7 @@ before you finish.
 never piped. This applies to Pi too, and is in its spec.
 
 **After any add-on, re-run the vendor's doctor for every gateway it
-touched** — `hermes doctor`, and `openclaw doctor --lint --all --json`
+touched** — `hermes doctor`, and `openclaw doctor --lint --all --deep --json`
 if OpenClaw was involved. Add-ons edit config, install into an agent's
 interpreter and patch bundled files, so a doctor that was clean before
 one says nothing about after. Judge both on parsed output, never exit

@@ -240,6 +240,44 @@ guard, and it fires on a file's *existence*, not its usefulness — the
 Google skill demands a `google_client_secret.json` that nothing reads at
 runtime.
 
+## A vendor's doctor says "enabled", not "working"
+
+**`openclaw doctor` reported dreaming as enabled while it had failed
+every run it ever attempted.** (2026-11-12) `memory-core` runs a 03:00
+memory-consolidation sweep and auto-manages its own cron job. With
+`memory.search.provider: "none"` — which the base spec *told* Pi to set,
+correctly, back when no embedding model was reachable — every run died.
+Two scheduled runs since the agent was built, two failures, zero
+successes, and nothing visible: the job's delivery is "not requested",
+so it fails in silence.
+
+Doctor's whole report on it was `Dreaming: enabled (cadence 0 3 * * *).`
+Zero findings at any severity, even under `--deep`. The docs say why:
+*"The summary does not register plugin runtime code or probe models or
+embeddings."* It reads configuration, not outcomes. **Enabled is not
+working** — the same distinction as "a running service is not a
+connected adapter", one layer up.
+
+The run history was in `openclaw automations runs` the whole time, which
+doctor does not consult. `verify.sh` now reads the job's **status**.
+
+**The error text pointed at the wrong subsystem**, which cost an hour:
+`MCP_AUTHORIZATION_RETIRED`. It names neither memory nor embeddings, and
+there happened to be a brand-new MCP server (the Google add-on, built
+that evening) to suspect. Two things rescued it — the user pointing out
+that correlation is not mechanism, and then the decisive test: disable
+the only MCP server, run the job, **same error**. One command settled
+what an hour of plausible reasoning had not.
+
+The habit worth copying: when an error names a subsystem you recently
+touched, remove that subsystem and re-run before theorising about it.
+
+**And the base spec had rotted.** `provider: "none"` was right when
+written and nobody re-examined it once the gateway was in place. The
+gateway serves `/v1/embeddings` — `argo:text-embedding-3-small`, 1536
+dims, measured. A setting that was correct under conditions that have
+since changed is invisible precisely because it was once deliberate.
+
 ## Pi grinding on a failure
 
 **Pi will retry a hopeless command dozens of times unless told not to.**

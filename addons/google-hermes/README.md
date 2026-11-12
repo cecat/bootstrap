@@ -287,7 +287,7 @@ agent's interpreter, and patch bundled files. `verify.sh` here runs
 `hermes doctor` for exactly that reason, because this add-on is
 Hermes-only.
 
-An add-on that touches OpenClaw must run `openclaw doctor --lint --all
+An add-on that touches OpenClaw must run `openclaw doctor --lint --all --deep
 --json` as well — copy the check from `verify/verify.sh`, and keep the
 `--lint --all`: a bare `openclaw doctor` selects 39 of 69 checks and has
 reported `ok:true, findings:[]` while the full run found 33.

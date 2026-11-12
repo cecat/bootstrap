@@ -338,7 +338,7 @@ tell the user to do step 6.
 ## This add-on touches both gateways' health
 
 It modifies OpenClaw, but both gateways share a machine, so `verify.sh`
-runs `openclaw doctor --lint --all --json` **and** `hermes doctor`. Keep
+runs `openclaw doctor --lint --all --deep --json` **and** `hermes doctor`. Keep
 the `--lint --all`: a bare `openclaw doctor` selects 39 of 69 checks and
 has reported `ok:true, findings:[]` while the full run found 33.
 

@@ -246,7 +246,7 @@ add-on broke nothing. Then tell the user to do step 5.
 
 **Re-run the vendor's own doctor for every gateway this touched.** Unlike
 the Google add-on, which is Hermes-only, this one can touch **both** — so
-`verify.sh` runs `hermes doctor` *and* `openclaw doctor --lint --all
+`verify.sh` runs `hermes doctor` *and* `openclaw doctor --lint --all --deep
 --json` when OpenClaw is configured. Keep the `--lint --all`: a bare
 `openclaw doctor` selects 39 of 69 checks and has reported
 `ok:true, findings:[]` while the full run found 33.

@@ -196,13 +196,37 @@ A rejected summary leaves history uncompacted — and under the configured
 false**. That is the same warning loop Hermes produced; it is worth
 avoiding once rather than diagnosing twice.
 
-**Memory indexing needs a provider that exists.** `memory.search.provider`
-unset means OpenAI embeddings, and there is no OpenAI key here — so
-indexing stops, while the `session-memory` hook keeps writing memory
-files. The agent accumulates memories it can never search and appears, over
-weeks, to forget things it was told. Nothing errors. Set
-`memory.search.provider: "none"` for keyword-only search and reindex
-once (`openclaw memory index --force --agent <id>`).
+**Memory indexing needs a provider that exists, and the gateway has one.**
+`memory.search.provider` unset means OpenAI embeddings, and there is no
+OpenAI key here — so indexing stops while the `session-memory` hook keeps
+writing memory files. The agent accumulates memories it can never search
+and appears, over weeks, to forget things it was told. Nothing errors.
+
+Point it at the same gateway everything else uses. Measured 2026-11-12:
+`POST $VM_BASE_URL/v1/embeddings` with `argo:text-embedding-3-small`
+returns a 1536-dimension vector. `ada-002` and `3-large` are listed too.
+
+Use the **`openai-compatible`** provider — the vendor describes it as the
+"Generic `/v1/embeddings` endpoint" — with the gateway's base URL
+(ending `/v1`, as everywhere else) and `CREDENTIAL` as the key. Work out
+the exact key names from `openclaw config` and the vendor's memory
+configuration reference rather than guessing; if what you find disagrees
+with this paragraph, trust the software and say so.
+
+Then reindex once: `openclaw memory index --force --agent <id>`.
+
+**This also fixes nightly dreaming.** `memory-core` runs a consolidation
+sweep at 03:00 that promotes short-term entries into `MEMORY.md`, and it
+auto-manages its own cron job. With no embedding provider it fails every
+night with `MCP_AUTHORIZATION_RETIRED`, which names neither memory nor
+embeddings and sends people hunting through MCP configuration — it did
+here, for an hour. Confirm the job runs clean afterwards:
+`openclaw automations list`, then trigger it with
+`openclaw automations run <id> --wait` rather than waiting for 3am.
+
+`memory.search.provider: "none"` remains the correct fallback **if** no
+embedding model is reachable, and gives keyword-only search. Do not
+choose it while the gateway offers embeddings.
 
 ### Hermes
 
