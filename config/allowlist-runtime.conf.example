@@ -20,8 +20,9 @@
 apps.inside.anl.gov
 
 # --- Local fallback model ---------------------------------------------------
-# DGX Spark vLLM over Tailscale, port 8000. UNVERIFIED -- docs/failover.md.
-spark-ts
+# A vLLM host over Tailscale, port 8000. UNVERIFIED -- docs/failover.md.
+# Name yours here if you set VLLM_BASE_URL; nothing is listed by default.
+# my-vllm-host
 
 # --- Chat channels ----------------------------------------------------------
 # Who may MESSAGE a bot is the control that matters, and it is not this file:

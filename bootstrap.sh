@@ -48,25 +48,55 @@ ok()   { printf '%s  ok%s  %s\n' "$G" "$Z" "$*"; }
 # ===========================================================================
 step "Preflight"
 
-for c in jq curl openssl diff limactl; do
+# python3 is here because verify.sh and pi-session.sh parse JSON with it on
+# the host; without it the build runs and the reading of it fails.
+for c in jq curl openssl diff python3 limactl; do
   command -v "$c" >/dev/null 2>&1 || fail "$c is required but not installed.
 On macOS limactl is 'brew install lima'; on Linux take the release binary,
-as distro packages lag badly. Then see docs/gotchas.md."
+as distro packages lag badly. See docs/linux.md."
 done
-ok "jq, curl, openssl, diff, lima $(limactl --version 2>&1 | head -1 | awk '{print $NF}')"
 
-# Warn, never fail: a frozen artifact may legitimately change on the platform
-# that owns it, and wedging a build over a hash would be worse than the drift.
-# Saying it out loud every run is the point -- see scripts/check-frozen.sh.
-./scripts/check-frozen.sh >/dev/null 2>&1 \
-  || warn "a platform-frozen artifact has changed -- run ./scripts/check-frozen.sh"
+# lima/agents.yaml declares minimumLimaVersion 1.0.0. An older limactl
+# fails on it with a message about YAML, not about its own age.
+lima_v="$(limactl --version 2>&1 | head -1 | awk '{print $NF}')"
+case "${lima_v%%.*}" in
+  ''|*[!0-9]*) warn "could not read the Lima version from '$lima_v'; 1.0.0 or newer is required." ;;
+  0) fail "Lima $lima_v is too old; 1.0.0 or newer is required. Distro packages
+lag badly -- take the release binary from github.com/lima-vm/lima/releases." ;;
+esac
+ok "jq, curl, openssl, diff, python3, lima $lima_v"
 
 if [ "$(uname -s)" = "Linux" ]; then
+  # Lima drives QEMU on Linux and does not install it. Without the binary
+  # 'limactl start' fails several minutes in, with a message that names
+  # neither QEMU nor a package.
+  case "$(uname -m)" in
+    aarch64|arm64) qemu=qemu-system-aarch64; qpkg="qemu-system-arm qemu-utils qemu-efi-aarch64" ;;
+    *)             qemu=qemu-system-x86_64;  qpkg="qemu-system-x86 qemu-utils ovmf" ;;
+  esac
+  command -v "$qemu" >/dev/null 2>&1 || fail "$qemu is not installed. On Ubuntu or DGX OS:
+    sudo apt-get install -y $qpkg"
+  ok "$qemu"
+
   [ -e /dev/kvm ] || fail "/dev/kvm does not exist; QEMU would fall back to
 emulation, which is far too slow to use."
-  { [ -r /dev/kvm ] && [ -w /dev/kvm ]; } || fail "/dev/kvm is not accessible.
-Add yourself to the kvm group and start a new shell:  sudo usermod -aG kvm \$USER
-Do not use setfacl -- the grant does not survive a qemu package upgrade."
+  if ! { [ -r /dev/kvm ] && [ -w /dev/kvm ]; }; then
+    # In the kvm group on paper but not in this process: the usual state
+    # of a coding agent's shell right after 'usermod -aG kvm', and one the
+    # user cannot fix without restarting the agent. `sg` picks the group
+    # up at once and needs no password, so re-run under it rather than
+    # send them away. Once only -- the variable stops a loop.
+    if [ -z "${BOOTSTRAP_UNDER_SG:-}" ] && command -v sg >/dev/null 2>&1 \
+       && id -nG "$(id -un)" 2>/dev/null | tr ' ' '\n' | grep -qx kvm; then
+      say "this shell predates your kvm group membership; re-running under 'sg kvm'"
+      cmd="BOOTSTRAP_UNDER_SG=1 exec $(printf '%q ' "$REPO/bootstrap.sh" "$@")"
+      exec sg kvm -c "$cmd"
+    fi
+    fail "/dev/kvm is not accessible.
+Add yourself to the kvm group:  sudo usermod -aG kvm \$USER
+then re-run this; no new shell is needed. Do not use setfacl -- the grant
+does not survive a qemu package upgrade."
+  fi
   ok "/dev/kvm accessible"
 fi
 
@@ -236,6 +266,29 @@ fi
     esac
   done )
 ok "config/agents.env validated"
+
+# Ask Telegram about the tokens now. A mistyped one is otherwise found by
+# Pi, inside the VM, half an hour from here -- or not found, and the
+# agent is simply mute. Rejected is fatal; unreachable is not, because
+# some networks block api.telegram.org outright and that says nothing
+# about the token.
+# shellcheck disable=SC1091
+( set -a; . config/agents.env; set +a
+  [ "${OPENCLAW_TELEGRAM_BOT_TOKEN:-}" != "${HERMES_TELEGRAM_BOT_TOKEN:-}" ] ) \
+  || fail "both agents have the same Telegram bot token. Telegram allows one
+connection per bot, so the two gateways would fight over it. Make a second
+bot with @BotFather and give each agent its own."
+tok_out="$(./scripts/check-telegram-tokens.sh 2>&1 || true)"
+printf '%s\n' "$tok_out" | sed 's/^/    /'
+if grep -q 'REJECTED' <<<"$tok_out"; then
+  fail "Telegram rejected a bot token (above). Fix it in config/agents.env
+and re-run -- copy it again from @BotFather rather than retyping it."
+elif grep -q 'UNREACHABLE' <<<"$tok_out"; then
+  warn "could not reach api.telegram.org from this host, so the tokens are
+unchecked. If this network blocks Telegram, the agents will be mute on it too."
+else
+  ok "both bot tokens accepted by Telegram -- those are the bots to message at the end"
+fi
 
 # ===========================================================================
 step "VM"

@@ -33,20 +33,28 @@ PROFILE="$CFG/model-access.env"
 [ -f "$PROFILE" ] || fail "config/model-access.env missing. Run ./scripts/detect-model-access.sh"
 # shellcheck disable=SC1090
 set -a; . "$PROFILE"; set +a
-[ -f "$CFG/agents.env" ] || fail "config/agents.env missing. See AGENTS.md Step 4."
+[ -f "$CFG/agents.env" ] || fail "config/agents.env missing. Run ./bootstrap.sh, which creates it and says what to fill in."
 
 case "${PROVIDER_KIND:-}" in
   gateway) MODEL_URL="$VM_BASE_URL"; GATEWAY="$VM_GATEWAY" ;;
-  argo)    MODEL_URL="$UPSTREAM_BASE_URL"; GATEWAY="" ;;
-  *)       fail "provider '${PROVIDER_KIND:-unknown}' is not implemented. See todo.md." ;;
+  *)       fail "provider '${PROVIDER_KIND:-unknown}' is not implemented: this build needs a
+local Argo gateway on the host's loopback. See README.md, 'Before you start'." ;;
 esac
+
+# The model Pi itself runs on, and the one the gates below call. From
+# agents.env so there is one place to change it; the default is what every
+# build so far has used.
+PI_MODEL="$( set -a; . "$CFG/agents.env" 2>/dev/null; set +a; printf %s "${PI_MODEL:-argo:claude-4.5-sonnet}" )"
+AGENT_MODEL="$( set -a; . "$CFG/agents.env" 2>/dev/null; set +a; printf %s "${AGENT_MODEL:-argo:claude-5-opus}" )"
+case "$PI_MODEL$AGENT_MODEL" in *[!A-Za-z0-9.:_/-]*) fail "PI_MODEL or AGENT_MODEL in config/agents.env has characters outside [A-Za-z0-9.:_/-]." ;; esac
 
 # A host-side tunnel must actually be up, or everything downstream fails
 # confusingly. Check before touching the VM.
 if [ -n "$GATEWAY" ]; then
   curl -fsS --noproxy '*' --max-time 8 "$UPSTREAM_BASE_URL/health" >/dev/null 2>&1 \
     || fail "nothing is answering on $UPSTREAM_BASE_URL.
-Bring up your SSH tunnel first (the one behind 'claude-argo-home'), then re-run."
+That is the model gateway your coding agent uses (argo-proxy, or the SSH
+tunnel to it). Bring it up, then re-run."
   say "host gateway is live; the VM will use $MODEL_URL"
 fi
 
@@ -81,10 +89,8 @@ cat > "$CFG/pi-models.json" <<JSON
       "api": "anthropic-messages",
       "apiKey": "\$ARGO_CREDENTIAL",
       "models": [
-        { "id": "argo:claude-5-sonnet" },
-        { "id": "argo:claude-4.5-sonnet" },
-        { "id": "argo:claude-5-opus" },
-        { "id": "argo:claude-4.5-haiku" }
+        { "id": "$PI_MODEL" },
+        { "id": "$AGENT_MODEL" }
       ]
     }
   }
@@ -238,7 +244,7 @@ for attempt in 1 2 3; do
   RESP="$(limactl shell "$INSTANCE" -- bash -c "
     curl -sN --noproxy '*' --max-time 90 -X POST '$MODEL_URL/v1/messages' \
       -H 'content-type: application/json' \
-      -d '{\"model\":\"argo:claude-4.5-sonnet\",\"max_tokens\":16,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: PATH_OK\"}]}'
+      -d '{\"model\":\"$PI_MODEL\",\"max_tokens\":16,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: PATH_OK\"}]}'
   " 2>/dev/null)"
   # Reassemble the text_delta fragments before matching. A stream splits the
   # marker across deltas ("PATH" + "_OK"), so grepping the raw SSE for

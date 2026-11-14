@@ -29,7 +29,10 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTANCE="${AGENTS_VM:-agents}"
 WORKDIR="agent-bootstrap"
 SESSION_ID="${PI_SESSION_ID:-agent-bootstrap-build}"
-MODEL="${PI_MODEL:-argo:claude-4.5-sonnet}"
+# The environment wins, then config/agents.env, then the model every build
+# so far has used.
+MODEL="${PI_MODEL:-$( set -a; . "$REPO/config/agents.env" 2>/dev/null; set +a; printf %s "${PI_MODEL:-}" )}"
+MODEL="${MODEL:-argo:claude-4.5-sonnet}"
 PROVIDER="${PI_PROVIDER:-argo}"
 LOGDIR="$REPO/logs"
 LAST="$LOGDIR/pi-last.log"

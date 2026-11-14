@@ -64,8 +64,10 @@ fi
 shopt -u nullglob
 
 [ -n "$BASE_URL" ] || fail "could not determine a model endpoint.
-Run this from inside the coding agent that already has model access, or set
-ANTHROPIC_BASE_URL. See AGENTS.md -> 'Model access'."
+This build needs a local Argo gateway (argo-proxy or equivalent) and a
+coding agent pointed at it: ANTHROPIC_BASE_URL=http://127.0.0.1:<port> in
+this shell, or in a ~/.claude/settings*.json. See README.md, 'Before you
+start'."
 
 MODEL_OPUS="${ANTHROPIC_DEFAULT_OPUS_MODEL:-}"
 MODEL_SONNET="${ANTHROPIC_DEFAULT_SONNET_MODEL:-}"
@@ -113,7 +115,9 @@ IS_GATEWAY=0
 case "$BASE_HOST" in
   127.0.0.1|localhost|::1)
     IS_GATEWAY=1
-    [ -n "$BASE_PORT" ] || BASE_PORT=44497
+    # No guessing a port: the default here used to be one machine's.
+    [ -n "$BASE_PORT" ] || fail "the endpoint $BASE_URL names no port.
+Set ANTHROPIC_BASE_URL to the gateway's full address, e.g. http://127.0.0.1:44497"
     VM_BASE_URL="http://$LIMA_HOST_GATEWAY:$BASE_PORT"
     say "host-side gateway detected on port $BASE_PORT"
     say "the VM will reach it at $VM_BASE_URL (from $GW_SOURCE)"
@@ -147,8 +151,12 @@ if [ "$IS_GATEWAY" = "1" ]; then
 else
 case "$BASE_HOST" in
   apps.inside.anl.gov)
-    PROVIDER_KIND="argo"
-    PROVIDER_STATUS="implemented"
+    # Argo itself, not a gateway in front of it. This was once marked
+    # implemented and could never have worked: the agents need the
+    # Anthropic and OpenAI wire formats and the argo: model names, which
+    # is what the local gateway provides.
+    PROVIDER_KIND="argo_direct"
+    PROVIDER_STATUS="unimplemented"
     ;;
   api.anthropic.com)
     PROVIDER_KIND="anthropic"
@@ -165,7 +173,7 @@ fi
 # Argo authenticates by ANL username plus network position: no spend to cap.
 # Anything key-shaped crossing into a sandbox is a different matter.
 CREDENTIAL_RISK="unknown"
-if [ "$PROVIDER_KIND" = "argo" ] || [ "$PROVIDER_KIND" = "gateway" ]; then
+if [ "$PROVIDER_KIND" = "gateway" ]; then
   CREDENTIAL_RISK="low"
 elif [ -z "$CREDENTIAL" ]; then
   CREDENTIAL_RISK="none"
@@ -212,13 +220,15 @@ if [ "$PROVIDER_STATUS" = "unimplemented" ]; then
   ------------------------------------------------------------------
   Provider kind '$PROVIDER_KIND' is detected but NOT implemented.
 
-  Only the Argo path is built out. The structure generalizes -- the VM
-  runs a translation proxy exposing Anthropic to Pi/OpenClaw and
-  OpenAI to Hermes -- but the non-Argo backend (LLM-Rosetta) is not
-  wired up. Hermes in particular needs an OpenAI-compatible surface
-  that $BASE_HOST does not provide on its own.
+  What is built is one path: a gateway on THIS machine's loopback
+  (argo-proxy or equivalent, in front of Argo) that serves /v1/messages,
+  /v1/chat/completions and /v1/embeddings under argo: model names. The
+  VM reaches it through Lima's host address; nothing in the VM
+  translates anything. Pi speaks the Anthropic shape; Hermes and
+  OpenClaw speak the OpenAI one, which $BASE_HOST does not offer alone.
 
-  See AGENTS.md -> 'Adding a provider'.
+  Start that gateway, point your coding agent at it, and re-run. For a
+  different provider see AGENTS.md, 'Adding a provider'.
   ------------------------------------------------------------------
 UNIMPL
   [ "$DRY_RUN" -eq 1 ] || fail "refusing to write a profile for an unimplemented provider."
@@ -242,7 +252,7 @@ UPSTREAM_HOST=$BASE_HOST
 IS_GATEWAY=$IS_GATEWAY
 VM_BASE_URL=$VM_BASE_URL
 VM_GATEWAY=${VM_BASE_URL#http://}
-PROXY_PORT=${BASE_PORT:-44497}
+PROXY_PORT=${BASE_PORT:-}
 CREDENTIAL=$CREDENTIAL
 CREDENTIAL_SOURCE=$CRED_SOURCE
 CREDENTIAL_RISK=$CREDENTIAL_RISK

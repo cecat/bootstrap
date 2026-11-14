@@ -145,13 +145,18 @@ esac
 # lived only inside the VM. A user talked to an agent for weeks without
 # knowing, and found out only by reading a transcript that smelled wrong.
 # Whatever these report, pass or fail, the name is printed.
-WANT_MODEL="argo:claude-5-opus"
+#
+# The model is named once, as AGENT_MODEL in config/agents.env, and both
+# the spec and this check read it from there. It used to live in two
+# files that had to be edited together.
+WANT_MODEL="$( set -a; . "$REPO_DIR/config/agents.env" 2>/dev/null; set +a; printf %s "${AGENT_MODEL:-argo:claude-5-opus}" )"
+PI_MODEL_ID="$( set -a; . "$REPO_DIR/config/agents.env" 2>/dev/null; set +a; printf %s "${PI_MODEL:-argo:claude-4.5-sonnet}" )"
 
 he_model="$(g 'hermes config get model.default 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-zA-Z0-9.:_/-')"
 case "$he_model" in
   "")            skip "Hermes runs $WANT_MODEL" "could not read hermes config get model.default" ;;
-  *claude-5-opus*|*claude-opus-5*|*claudeopus5*) pass "Hermes runs $WANT_MODEL" "$he_model" ;;
-  *)             fail "Hermes runs $WANT_MODEL" "running '$he_model' -- the spec names $WANT_MODEL; an installer default is not a choice" ;;
+  *"$WANT_MODEL"*) pass "Hermes runs $WANT_MODEL" "$he_model" ;;
+  *)             fail "Hermes runs $WANT_MODEL" "running '$he_model' -- config/agents.env names $WANT_MODEL; an installer default is not a choice" ;;
 esac
 
 # Read the configured model, not every argo: string in the file --
@@ -162,8 +167,8 @@ esac
 oc_model="$(g 'jq -r ".agents.defaults.model.primary // empty" $HOME/.openclaw/openclaw.json 2>/dev/null' | tr -d '\r')"
 case "$oc_model" in
   "")            skip "OpenClaw runs $WANT_MODEL" "no argo: model id found in openclaw.json" ;;
-  *claude-5-opus*|*claude-opus-5*|*claudeopus5*) pass "OpenClaw runs $WANT_MODEL" "$oc_model" ;;
-  *)             fail "OpenClaw runs $WANT_MODEL" "found '$oc_model' -- the spec names $WANT_MODEL" ;;
+  *"$WANT_MODEL"*) pass "OpenClaw runs $WANT_MODEL" "$oc_model" ;;
+  *)             fail "OpenClaw runs $WANT_MODEL" "found '$oc_model' -- config/agents.env names $WANT_MODEL" ;;
 esac
 
 # The gateway caps generation at 4096 tokens when the client sends none,
@@ -1020,7 +1025,7 @@ else
   # non-streaming check passes on a path whose SSE is broken.
   sse="$(g "curl -sN --noproxy '*' --max-time 60 -X POST http://$gw/v1/messages \
            -H 'content-type: application/json' \
-           -d '{\"model\":\"argo:claude-4.5-sonnet\",\"max_tokens\":16,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: SSE_OK\"}]}' 2>&1")"
+           -d '{\"model\":\"$PI_MODEL_ID\",\"max_tokens\":16,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: SSE_OK\"}]}' 2>&1")"
   # Reassemble the text_delta fragments first: a stream splits "SSE_OK"
   # across deltas, so grepping the raw SSE for it never matches.
   sse_text="$(grep -o '"text": *"[^"]*"' <<<"$sse" | sed 's/.*: *"//; s/"$//' | tr -d '\n')"
@@ -1059,9 +1064,9 @@ else
 
   # The proxy check above reads a config value, and stayed green for a whole
   # build while web_fetch returned nothing. Fetch something instead.
-  out="$(g "timeout 180 openclaw agent --model '$ocmodel' --message 'Use web_fetch on https://tpc25.org and reply with exactly: FETCH_OK if you got page text' 2>&1")"
+  out="$(g "timeout 180 openclaw agent --model '$ocmodel' --message 'Use web_fetch on https://example.com and reply with exactly: FETCH_OK if you got page text' 2>&1")"
   if grep -q 'FETCH_OK' <<<"$out"; then
-    pass "OpenClaw can fetch a web page" "web_fetch reached https://tpc25.org"
+    pass "OpenClaw can fetch a web page" "web_fetch reached https://example.com"
   else
     fail "OpenClaw can fetch a web page" "$(tr -d '\r' <<<"$out" | grep -viE 'key|token|secret' | tail -2 | paste -sd' | ' -)"
   fi
@@ -1116,7 +1121,7 @@ printf '  %s%d passed%s, %s%d failed%s, %s%d skipped%s\n' "$G" "$PASS" "$Z" "$R"
 printf '\n  %sModels%s  Hermes: %s\n' "$B" "$Z" "${he_model:-unknown}"
 printf '          OpenClaw: %s\n' "${oc_model:-unknown}"
 printf '          To change one, tell your coding agent which model you want;\n'
-printf '          it edits spec/pi-target-state.md and has Pi re-apply it.\n'
+printf '          it sets AGENT_MODEL in config/agents.env and has Pi re-apply it.\n'
 if [ "$FAIL" -eq 0 ] && [ "$DO_MODELS" -eq 0 ]; then
   printf '\n  Structure and egress look right, but NO COMPLETION WAS MADE.\n'
   printf '  A gateway can be up and still have a dead model path. Run with\n'
