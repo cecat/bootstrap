@@ -6,6 +6,75 @@ Open items only. Things that went wrong once and were fixed live in
 
 ---
 
+## 0. Hardening pass — in progress on branch `hardening`
+
+Started 2026-11-14 from a review of the base build and the Hermes Google
+add-on. Audience assumed: Argonne people with Argo. Delete each line as
+it lands; delete this section when stage 7 is done.
+
+**The standing rule: the running `agents` VM is not touched until stage
+7, and only on the owner's say-so.** Tests run on a throwaway VM,
+`agents-test`, from a separate checkout (`~/code/bootstrap-test` on the
+Spark) with `AGENTS_VM=agents-test` on every command.
+
+**Stage 1 — checks first.** Each sandbox finding gets a `verify.sh`
+check that fails on it, run read-only against the live VM as evidence.
+
+- [ ] squid refuses the host on any port but the model gateway's
+      (`http_access allow model_gw` matches address only — read from
+      config, unprobed)
+- [ ] the "private network is DENIED" check goes through squid; it has
+      skipped on every recorded run because `NO_PROXY` names the host
+- [ ] IPv6 is blocked, direct and through squid (no `ip6tables` rules;
+      `fec0::/10` missing from the private ACL — unprobed)
+- [ ] the agent user cannot `sudo` once the build is locked
+- [ ] stop printing the Telegram user id; `verify.sh:200` relative path
+- [ ] retire the Hermes adapter journal check (wrong four times)
+
+**Stage 2 — sandbox fixes**, tested on `agents-test` incl. stop/start.
+
+- [ ] model gateway allowed on its one port; `fec0::/10` private
+- [ ] `ip6tables` rules; narrow the port-53 rule if testing allows
+- [ ] sudo open while Pi builds, removed by `finish-build.sh`; host
+      scripts reach root through one helper guarded by a host-held
+      secret. Lima's own boot uses sudo — expect a second attempt
+- [ ] nodesource: download, checksum, run — not `curl | bash`
+- [ ] `.claude/settings.json`: `--rebuild` and `--reboot` ask; prose
+      in `AGENTS.md` matches the file
+
+**Stage 3 — clone path.**
+
+- [ ] README says Argo + a host gateway up front, and what it serves
+- [ ] model names in `agents.env`, one home; drop `spark-ts`, port
+      44497, `claude-argo-home`, `tpc25.org`
+- [ ] preflight: QEMU, `python3`, Lima version, `sg kvm` re-exec, bot
+      tokens validated and usernames printed
+- [ ] remove the dead direct-Argo branch and the frozen-hash mechanism
+- [ ] `bootstrap.sh` re-run does not reopen a finished VM; document
+      changing a token or a name
+- [ ] `verify.sh` prints vendor versions; a short update procedure
+- [ ] replace `docs/spark-handoff.md`; fix stale references; README
+      gets an add-ons section
+
+**Stage 4 — spec.** Move dated history to `docs/gotchas.md`, leave
+every instruction as written, add the model variable and the sudo rule.
+
+**Stage 5 — Hermes Google add-on.**
+
+- [ ] agent runs `install` and `auth`; user keeps console + browser
+- [ ] stop sourcing `google.env`; rewrite its example; spec step numbers
+- [ ] own Pi session; complete `remove`; one host copy of the token
+- [ ] document re-applying after a Hermes upgrade
+
+**Stage 6 — acceptance.** From-scratch build on `agents-test`, then
+`verify.sh --models --reboot`, then the Google add-on. Needs two
+throwaway Telegram bots and the owner messaging them.
+
+**Stage 7 — the real VM.** Prove an in-place upgrade on a throwaway VM
+built from `main` first, then apply to `agents` (one stop/start), then
+merge and push. vLLM (`vllm-qwen3-coder-next`) was stopped on
+2026-11-14 to free memory for the test VM: `docker start` it after.
+
 ## 1. macOS: built from scratch and merged
 
 **A from-scratch macOS build works.** On 2026-11-04/05 a Mac (Darwin
