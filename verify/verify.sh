@@ -522,6 +522,17 @@ if [ "$phase" = "runtime" ]; then
             "sudo -n true succeeded as the agent user. Any agent can run
         'sudo agent-egress unlock' or simply 'sudo curl', so the egress
         lockdown is advisory"
+
+  # The one door left open is agent-admin, which the agent user MAY run --
+  # so what keeps an agent out is the secret, and only the secret. Knock
+  # with the wrong one. `id -u` printing 0 would mean it ran as root.
+  knock="$(g 'printf "not-the-secret\nid -u\n" | sudo -n /usr/local/sbin/agent-admin 2>&1; echo "rc=$?"' | tr -d '\r')"
+  case "$knock" in
+    *refused*rc=1*) pass "the admin helper refuses a wrong secret" ;;
+    *"no admin secret installed"*)
+      fail "the admin helper refuses a wrong secret" "no hash is installed, so the host has no way to root either -- run ./scripts/install-config.sh" ;;
+    *) fail "the admin helper refuses a wrong secret" "$(printf '%s' "$knock" | tail -2 | paste -sd' | ' -)" ;;
+  esac
 else
   skip "the agent user cannot become root" "phase is '${phase:-none}': sudo is open while Pi builds and closes when finish-build.sh locks the VM"
 fi
