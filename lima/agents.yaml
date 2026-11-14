@@ -3,16 +3,19 @@
 #
 #   limactl start --name=agents lima/agents.yaml
 #
-# Host support: Linux (qemu + KVM) is verified. macOS (vz) passed an earlier
-# build and is stale -- see todo.md.
+# Host support: Linux (qemu + KVM) and macOS (vz) have both been built
+# from scratch. See docs/linux.md.
 #
 # The isolation, all of it:
 #   * No mounts. The guest cannot see the host filesystem. Config is pushed
 #     in afterwards with `limactl copy` (scripts/install-config.sh).
 #   * User-mode NAT only, no host port forwards: nothing in the guest is
 #     reachable from the host or the LAN.
-#   * Agent-user egress goes through a loopback squid proxy, enforced by an
-#     iptables OUTPUT rule matched on uid -- /usr/local/sbin/agent-egress.
+#   * Agent-user egress goes through a loopback squid proxy, enforced by
+#     iptables and ip6tables OUTPUT rules matched on uid --
+#     /usr/local/sbin/agent-egress.
+#   * Once the build is locked the agent user has no sudo. Root is exempt
+#     from the uid rule, so this is what makes the rule binding.
 #
 # Provision scripts re-run on every boot, so every one of them must be
 # idempotent.
@@ -539,9 +542,10 @@ probes:
 message: |
   VM is up. Nothing is locked down yet and no agents exist.
 
-  Next:
+  ./bootstrap.sh does the rest of the deterministic half; if you started
+  this VM by hand, the steps are:
     1. ./scripts/install-config.sh      push config, lock egress down
     2. ./scripts/pi-session.sh build    hand spec/pi-target-state.md to Pi
-    3. ./verify/verify.sh               check the result
+    3. ./scripts/finish-build.sh        lock the VM and verify
 
   Shell in with:  limactl shell {{.Name}}

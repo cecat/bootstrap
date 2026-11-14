@@ -61,7 +61,7 @@ groot() { vm_root "$VM" "$1" 2>&1; }
 section "Host and VM"
 
 if ! command -v limactl >/dev/null 2>&1; then
-  fail "limactl on PATH" "install Lima first; see docs/spark-handoff.md on Linux"
+  fail "limactl on PATH" "install Lima first; see docs/linux.md on Linux"
   echo; echo "Cannot continue without limactl."; exit 1
 fi
 pass "limactl on PATH" "$(limactl --version 2>&1 | head -1)"
@@ -992,7 +992,7 @@ else
   if ! g 'test -x ~/agent-bootstrap/setup.sh' >/dev/null 2>&1; then
     skip "setup.sh is idempotent" "~/agent-bootstrap/setup.sh not found"
   elif [ "$phase" != "bootstrap" ]; then
-    skip "setup.sh is idempotent" "needs the bootstrap allowlist; currently '$phase'. To re-check after a fix: ./scripts/install-config.sh (returns the VM to the bootstrap phase), then ./verify/verify.sh --idempotence, then ./scripts/finish-build.sh to narrow egress again."
+    skip "setup.sh is idempotent" "needs the bootstrap allowlist; currently '$phase'. To re-check after a fix: ./scripts/install-config.sh --reopen (returns the VM to the build phase), then ./verify/verify.sh --idempotence, then ./scripts/finish-build.sh to lock it again."
   else
     idem="$(g 'cd ~/agent-bootstrap && ./setup.sh 2>&1')"
     # Count announced actions that are NOT immediately retracted by an
@@ -1134,6 +1134,16 @@ printf '  %s%d passed%s, %s%d failed%s, %s%d skipped%s\n' "$G" "$PASS" "$Z" "$R"
 # Say which models are running, every time, in the part people read. A
 # build shipped both agents on an obsolete model for weeks because this
 # line did not exist: the information was inside the VM and nowhere else.
+# And which software. Both vendors are installed from "latest", so two
+# builds a month apart are not the same build, and the spec is full of
+# behaviour measured against one version. When something that worked
+# stops working, this line is the first thing to compare.
+v_oc="$(g 'openclaw --version 2>/dev/null | head -1' | tr -d '\r' | cut -c1-60)"
+v_he="$(g 'hermes --version 2>/dev/null | head -1' | tr -d '\r' | cut -c1-60)"
+printf '\n  %sVersions%s OpenClaw: %s\n' "$B" "$Z" "${v_oc:-unknown}"
+printf '          Hermes: %s\n' "${v_he:-unknown}"
+printf '          Pi: %s\n' "${pi_v:-unknown}"
+
 printf '\n  %sModels%s  Hermes: %s\n' "$B" "$Z" "${he_model:-unknown}"
 printf '          OpenClaw: %s\n' "${oc_model:-unknown}"
 printf '          To change one, tell your coding agent which model you want;\n'

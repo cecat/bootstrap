@@ -3,6 +3,15 @@
 # Push local config into the VM and lock egress down.
 #
 #   ./scripts/install-config.sh [instance]      (default instance: agents)
+#   ./scripts/install-config.sh --reopen        ...and return a finished VM
+#                                               to the build phase
+#
+# A VM that is already locked (phase `runtime`) STAYS locked: config is
+# re-pushed and the same phase re-applied. This used to drop every VM back
+# to the build phase, so re-running bootstrap.sh on a working system
+# quietly reopened it -- which now would also hand the agents sudo. Going
+# back is a decision, so it has a flag: --reopen, for re-checking
+# idempotence or letting Pi repair something that needs root.
 #
 # No model gateway runs in the VM. The host has one; detection recorded
 # where, and the VM reaches it through Lima's host gateway.
@@ -13,16 +22,25 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# Honour AGENTS_VM like every other script here. This one did not, so run
-# on its own against a second instance it would have reconfigured the
-# first.
-INSTANCE="${1:-${AGENTS_VM:-agents}}"
 CFG="$REPO/config"
 # shellcheck source=scripts/lib-vm.sh
 . "$REPO/scripts/lib-vm.sh"
 
 say()  { printf '\033[1m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# Honour AGENTS_VM like every other script here. This one did not, so run
+# on its own against a second instance it would have reconfigured the
+# first.
+REOPEN=0 INSTANCE=""
+for a in "$@"; do
+  case "$a" in
+    --reopen) REOPEN=1 ;;
+    -*) fail "unknown option: $a" ;;
+    *)  INSTANCE="$a" ;;
+  esac
+done
+INSTANCE="${INSTANCE:-${AGENTS_VM:-agents}}"
 
 command -v limactl >/dev/null 2>&1 || fail "limactl not found."
 [ "$(limactl list --format '{{.Status}}' "$INSTANCE" 2>/dev/null | head -1)" = "Running" ] \
@@ -222,9 +240,17 @@ done
 vm_root "$INSTANCE" "$root_script" || fail "could not install the egress policy files in the VM."
 
 # --- 4. Lock egress down ---------------------------------------------------
-say "applying bootstrap egress policy"
-vm_root "$INSTANCE" '/usr/local/sbin/agent-egress bootstrap' \
-  || fail "could not apply the bootstrap egress policy."
+PREV_PHASE="$(limactl shell "$INSTANCE" -- cat /etc/agent-sandbox/phase 2>/dev/null | tr -dc 'a-z' || true)"
+if [ "$PREV_PHASE" = "runtime" ] && [ "$REOPEN" = "0" ]; then
+  PHASE=runtime
+  say "this VM is finished and locked; re-applying the runtime policy and leaving it locked"
+else
+  PHASE=bootstrap
+  [ "$PREV_PHASE" != "runtime" ] || say "--reopen: returning a finished VM to the build phase (sudo open to the agents until ./scripts/finish-build.sh)"
+  say "applying the build-phase egress policy"
+fi
+vm_root "$INSTANCE" "/usr/local/sbin/agent-egress $PHASE" \
+  || fail "could not apply the $PHASE egress policy."
 
 # --- 5. Gate on a real completion ------------------------------------------
 # Not /health: it answers 200 from local state even when the upstream is dead.
@@ -298,4 +324,12 @@ esac
 echo
 say "done. egress status:"
 vm_root "$INSTANCE" '/usr/local/sbin/agent-egress status'
-printf '\nNext: ./scripts/pi-session.sh build\n'
+if [ "$PHASE" = "runtime" ]; then
+  printf '\nConfig re-pushed; the VM is still locked. If you changed a value an\n'
+  printf 'agent uses (a token, a name, a model), have Pi re-apply it -- see\n'
+  printf 'docs/updating.md.\n'
+elif [ "$PREV_PHASE" = "runtime" ]; then
+  printf '\nReopened. When you are done: ./scripts/finish-build.sh\n'
+else
+  printf '\nNext: ./scripts/pi-session.sh build\n'
+fi

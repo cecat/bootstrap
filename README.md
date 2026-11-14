@@ -11,6 +11,11 @@ They are installed not by a script but by **Pi**, a coding agent living
 agent supervising it. The agents end up using the same models your coding
 agent already uses; nothing to look up.
 
+**This is built for Argonne's Argo.** It needs an Argo gateway
+(argo-proxy or equivalent) running on the machine that will host the VM,
+and a coding agent already pointed at it. Without that it stops at the
+first step and says so. See *Before you start*.
+
 ## Quickstart
 
 Make your two Telegram bots first (see *Before you start*), then:
@@ -68,29 +73,43 @@ and a shared token means the gateways fight over it. Then message
 **@userinfobot** for your numeric user id, the only account they will
 answer.
 
-**Shared model access.** The agents use the same endpoint and credential
-your coding agent uses right now; `bootstrap.sh` reads the live
-`ANTHROPIC_BASE_URL` of the shell it runs in, plus
-`~/.claude/settings*.json` for the key helper, and copies that in. That is
-the reason the coding agent should be the one to run it.
-**They will spend against it** — the sandbox limits where a key can be
-sent, not what it can spend. Your host must be on whatever network the
-endpoint needs; the VM inherits your host's networking.
+**An Argo gateway on this machine.** This is the one prerequisite the
+repo cannot supply. Something must be listening on this host's loopback —
+argo-proxy, or an SSH tunnel to one — that speaks for Argo in three
+shapes and lists its models under `argo:` names:
 
-Both agents are built on **`argo:claude-5-opus`**, named in
-`spec/pi-target-state.md` and asserted by `verify.sh`, which prints what
+| Path | Used by |
+|---|---|
+| `/v1/messages` (Anthropic) | Pi, while it builds |
+| `/v1/chat/completions` (OpenAI) | both agents |
+| `/v1/embeddings` | OpenClaw's memory search |
+
+Your coding agent must already be using it: `ANTHROPIC_BASE_URL` set to
+`http://127.0.0.1:<port>`, with your ANL username as the credential.
+`bootstrap.sh` reads that from the shell it runs in, plus
+`~/.claude/settings*.json` for the key helper, and copies it in — which is
+why the coding agent should be the one to run it. Nothing in the VM
+translates anything; the VM reaches your gateway through Lima's host
+address, on that one port and no other.
+
+**It has to stay up.** If the gateway or its tunnel stops, both agents go
+quiet with no error on Telegram. And your host must be on whatever
+network Argo needs; the VM inherits your host's networking.
+
+Both agents are built on **`argo:claude-5-opus`**, named as `AGENT_MODEL`
+in `config/agents.env` and asserted by `verify.sh`, which prints what
 they are actually running in its summary. Check that line: a build once
-put both agents on an obsolete model for weeks, because the spec left the
-choice to the installer and nothing ever reported the result. To run
-something else, tell your coding agent which model you want — the change
-belongs in the spec, not in the VM, or the next build reverts it.
+put both agents on an obsolete model for weeks, because the choice was
+left to an installer and nothing ever reported the result. To run
+something else, tell your coding agent which model you want — it changes
+that one value and has Pi re-apply it (`docs/updating.md`).
 
 **Software** — Lima (macOS: `brew install lima`; Linux: the release binary
 from [lima-vm/lima](https://github.com/lima-vm/lima/releases), since distro
 packages are often older than the required 1.0.0, plus QEMU and a usable
-`/dev/kvm`), and `jq`, `openssl`, `curl`, `diff`. On Linux read
-`docs/spark-handoff.md` first. The VM uses 8 GiB of RAM and up to 60 GiB of
-disk.
+`/dev/kvm`), and `jq`, `openssl`, `curl`, `diff`, `python3`. `bootstrap.sh`
+checks for each and says what is missing. On Linux see `docs/linux.md`.
+The VM uses 8 GiB of RAM and up to 60 GiB of disk.
 
 ---
 
@@ -133,16 +152,19 @@ Ns -- killing a turn that has stopped working`, record it and say what Pi
 was doing — it has not yet fired across a healthy build, so the first time
 it does is worth knowing about.
 
-**Idempotence is checked in the bootstrap phase only.**
-`finish-build.sh` runs that check itself, while the VM still has the wide
-allowlist, because Pi's `setup.sh` fetches from pypi.org. Afterwards
-`verify.sh --idempotence` declines with *"needs the bootstrap allowlist;
-currently 'runtime'"*. If you fix idempotence after that point, the way
-back is `./scripts/install-config.sh` (it returns the VM to the bootstrap
-phase and re-pushes config), then `--idempotence`, then
-`./scripts/finish-build.sh` to narrow egress again. The check's own skip
-message spells this out. Re-pushing config is not reaching into the VM by
-hand; editing the VM to make the check pass would be.
+**Idempotence is checked in the build phase only.** The VM has two
+phases. In `bootstrap`, the build phase, the agent user has `sudo`,
+because the vendors' installers look for it. `finish-build.sh` runs the
+idempotence check there and then locks the VM into `runtime`, where
+`sudo` is gone. Afterwards `verify.sh --idempotence` declines with a
+message saying so. If you fix idempotence after that point, the way back
+is `./scripts/install-config.sh --reopen`, then `--idempotence`, then
+`./scripts/finish-build.sh` to lock it again. Re-pushing config is not
+reaching into the VM by hand; editing the VM to make the check pass
+would be.
+
+Without `--reopen`, re-running `install-config.sh` or `bootstrap.sh` on a
+finished VM leaves it locked.
 
 ## The check nothing automated covers
 
@@ -216,17 +238,17 @@ what it reported and run it again. Two flags:
 ./verify/verify.sh --all           # everything
 ```
 
-A plain run checks about forty things, and it **asserts the negatives** —
-that the private network answers 403 through the proxy, and that an agent
-going around the proxy reaches nothing at all. A check that only confirms
+A plain run checks about sixty things, and it **asserts the negatives** —
+that the private network and the host answer 403 through the proxy, that
+an agent going around the proxy reaches nothing at all, over IPv4 or
+IPv6, and that the agent user cannot become root. A check that only confirms
 the allowed path proves nothing. It does not prove the model path, and says
 so: a gateway can be up with a dead endpoint behind it, which is what
 `--models` costs quota to settle — and it no longer trusts configuration
 for web access either: it has OpenClaw actually `web_fetch` a page, after a
 build went green for a day on a `proxy.proxyUrl` setting while fetches
-returned nothing. `--idempotence` needs the wide bootstrap allowlist and
-skips once egress has narrowed; see *Four places it goes wrong* for the way
-back.
+returned nothing. `--idempotence` needs the build phase and skips once the VM
+is locked; see *Four places it goes wrong* for the way back.
 
 ## Using the agents
 
@@ -272,11 +294,18 @@ stays up.
   (`config/allowlist-*.conf`). It is not what keeps the agents off your
   network.
 - **Enforced, not merely configured.** An iptables rule matched on the
-  agent user's uid means an agent that ignores the proxy settings reaches
-  nothing. The verification suite tests this by trying.
+  agent user's uid, with an ip6tables twin, means an agent that ignores
+  the proxy settings reaches nothing. The verification suite tests this
+  by trying.
+- **The agents cannot become root.** That uid rule is the whole
+  enforcement and root is exempt from it, so once the build is locked the
+  agent user has no `sudo`. The host scripts reach root through one
+  helper that wants a secret kept in `config/admin-secret`, on the host
+  and nowhere else.
 - **One deliberate hole in the private denial:** the model endpoint, a
   single fixed host and port, allowed before the private ranges are
-  refused — otherwise completions hang silently.
+  refused — otherwise completions hang silently. Until 2026-11-14 that
+  rule matched the host's address on *every* port; see `docs/gotchas.md`.
 
 The threat model is a misbehaving or manipulated agent, not a hostile
 kernel. A live agent has shell access and no permission prompts, which is
@@ -295,7 +324,8 @@ verify/verify.sh        the checks
 config/                 your local config; only *.example is committed
 docs/
   gotchas.md            read before debugging anything
-  spark-handoff.md      read FIRST if you are on Linux
+  linux.md              what a Linux host needs
+  updating.md           changing a value, updating a vendor, add-ons after
   tmux.md               surviving a dropped SSH session
   personality.md        how SOUL.md works
   snapshots.md          backup and recovery
@@ -343,6 +373,20 @@ provider; and the vLLM fallback is unverified. Above all, **nothing
 automated proves an agent answers on Telegram** — the suite now declines
 to claim it rather than passing over it, which is an improvement in
 honesty, not in coverage.
+
+## Add-ons
+
+Optional, and only on top of a base build that verifies. Each has its
+own directory under `addons/` with a README, a spec for Pi and a verify
+script, and the base build neither needs nor knows about any of them.
+Tell your coding agent which one you want; it runs the scripts and stops
+for the parts only you can do.
+
+| | |
+|---|---|
+| `addons/google-hermes/` | Gmail, Calendar, Drive, Docs, Sheets and Contacts for the **Hermes** agent, through Hermes' own bundled skill. Built and in use. |
+| `addons/google-openclaw/` | Google for the **OpenClaw** agent, on an account of its own, through `gog`. Read its README for its state. |
+| `addons/signal/` | Signal as a second chat channel. Planned, not built. |
 
 ## Credit
 

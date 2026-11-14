@@ -92,13 +92,14 @@ because it only asked whether a completion succeeded.
 `verify.sh` now prints both in its summary. Repeat it in your own
 report rather than assuming they read it.
 
-**The user may change a model, and should be told they can.** The spec
-names `argo:claude-5-opus` for both agents; the gateway offers more
-(`curl -s "$VM_BASE_URL/v1/models"` lists them). When they ask for a
-different one, the change belongs in `spec/pi-target-state.md` and then
-in `verify.sh`'s `WANT_MODEL` — edit both, have Pi re-apply, and re-run
-the suite. Changing it only inside the VM is the "fix the spec, not the
-VM" violation, and the next build silently reverts it.
+**The user may change a model, and should be told they can.**
+`config/agents.env` names `argo:claude-5-opus` as `AGENT_MODEL`; the
+gateway offers more (its `/v1/models` lists them). When they ask for a
+different one, that value is the one place it lives — the spec and
+`verify.sh` both read it — so: they edit it, you re-run `./bootstrap.sh`,
+have Pi re-apply, and re-run the suite (`docs/updating.md`). Changing it
+only inside the VM is the "fix the spec, not the VM" violation, and the
+next build silently reverts it.
 
 ## Work out where you are first
 
@@ -223,6 +224,15 @@ before you finish.
 
 **`agent-egress unlock` is for debugging only.** Re-lock immediately.
 
+**A finished VM gives the agents no `sudo`, and that is the sandbox.**
+The egress lockdown matches the agent user's uid and root is exempt, so
+an agent that can become root is not confined. `finish-build.sh` closes
+it; `install-config.sh --reopen` opens it again for a repair that needs
+root, and every minute it is open the live bots sit in front of an
+unconfined agent. Reopen deliberately, say so, and lock it again. The
+host's own way to root afterwards is `config/admin-secret` — never push
+that file into the VM, and never print it.
+
 **Curl-to-bash installers** get downloaded, checksummed and then executed —
 never piped. This applies to Pi too, and is in its spec.
 
@@ -300,9 +310,11 @@ add a sync script or a tracked `agents/` directory. See
 
 ## Adding a provider
 
-Only Argo is implemented. The VM runs one translation proxy serving
-`/v1/messages` (Anthropic shape → Pi, OpenClaw) and `/v1/chat/completions`
-(OpenAI shape → Hermes). Hermes is why a translator is needed at all.
+Only Argo is implemented, and only through a gateway on the **host's**
+loopback: nothing in the VM translates anything. That gateway serves
+`/v1/messages` (Anthropic shape → Pi), `/v1/chat/completions` (OpenAI
+shape → Hermes and OpenClaw) and `/v1/embeddings` (OpenClaw's memory).
+The two shapes are why a gateway is needed at all.
 
 To add one: extend the `case "$BASE_HOST"` classifier in
 `scripts/detect-model-access.sh`, add its install step to

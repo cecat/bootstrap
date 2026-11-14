@@ -18,6 +18,50 @@ of **what to build** belongs in the spec.
 
 ---
 
+## The sandbox was three holes wide and one check short
+
+**Read the egress rules for what they allow, not for what they were
+meant to allow.** (2026-11-14) Four things were wrong at once, all found
+by reading `lima/agents.yaml` rather than by anything failing:
+
+- **Squid allowed the model gateway's address on every port.**
+  `http_access allow model_gw` matched an address, placed ahead of the
+  port rules. Under user-mode networking that address is the host's own
+  loopback — so the "single fixed host and port" in the README was every
+  service the host binds to `127.0.0.1`. Measured: a request through
+  squid to the host's port 22 connected. It is now an address *and* a
+  port.
+- **The agents had passwordless sudo.** Lima gives its user that, the
+  agents run as that user, and the lockdown is a uid match that root is
+  exempt from — `verify.sh` even used root as the control that proves
+  it. Pi's own logs show it running `sudo -E HTTP_PROXY=...` to get
+  round a block. A finished VM now has no sudo for the agent user.
+- **No IPv6 rule at all**, and `fec0::/10` — QEMU's user-mode prefix —
+  in neither private range. Latent on the Spark, whose guest has no IPv6
+  address; it would not have been latent everywhere.
+- **Port 53 was open to any address**, not to the resolvers.
+
+**And the check that should have caught the first one had never run.**
+"private network is DENIED by squid" printed SKIP on every recorded
+build. The login shell exports `NO_PROXY` naming the host, curl honours
+that over `--proxy`, so the request never reached squid; it met the
+iptables reject, returned 000, and the check called that "inconclusive".
+A skip is not a pass, and this suite says so itself — but a skip that
+appears on *every* run stops being read. If a check has never once
+passed, find out why before believing the section it sits in.
+
+The general lesson is the one already in this file, one layer down: the
+suite verified that the allowed path worked and that *a* denied path was
+denied, never that the exception was as narrow as the sentence
+describing it.
+
+**The two phases are not the same thing with two names any more.** An
+earlier note here said the bootstrap and runtime allowlists differ in
+nothing on ports 80 and 443, and that is still true of the allowlists.
+What differs now is sudo: open in `bootstrap` so the vendors' installers
+work, closed in `runtime`. `install-config.sh` no longer drops a
+finished VM back to `bootstrap`; that takes `--reopen`.
+
 ## Supervising Pi
 
 **Pi over-claims. Read `verify.sh`, not the summary.** (2026-10-29) It
@@ -392,17 +436,17 @@ hosts needed on other ports. Measured on a runtime-phase VM: "public web is
 reachable through squid".
 
 Consequence: a `pip install` failing under the runtime phase is a real
-failure, not an egress one, so do not reach for `install-config.sh` to
-widen the allowlist.
+failure, not an egress one, so do not reach for `install-config.sh
+--reopen` to widen the allowlist — it widens nothing on those ports, and
+it hands the agents sudo.
 
 Two places still carry the older reasoning. The README, under *Four places
 it goes wrong*, says idempotence is bootstrap-only "because Pi's `setup.sh`
 fetches from pypi.org" — the behaviour it describes is right and the way
 back it gives is right, only the stated cause is stale.
-`spec/pi-target-state.md` tells Pi the same thing. That one is frozen and
-it is Pi's prompt, so it is left alone deliberately: editing it changes the
-next build, and all it costs is Pi sequencing its work more conservatively
-than it needs to.
+`spec/pi-target-state.md` tells Pi the same thing. It is Pi's prompt, so
+it is left alone deliberately: editing it changes the next build, and all
+it costs is Pi sequencing its work more conservatively than it needs to.
 
 **Mind your own pipes.** (2026-10-29) Piping `finish-build.sh` through
 `tail` reported tail's exit code, so a run that printed "The build is NOT
