@@ -1105,11 +1105,16 @@ else
     else
       rhe="n/a"
     fi
+    # sudo too. The lock is a sudoers file, cloud-init owns the grant it
+    # overrides, and both get a say at boot -- so a reboot is exactly when
+    # a locked VM could quietly come back open.
+    rsudo="$(g 'sudo -n true 2>/dev/null && echo OPEN || echo locked' | tr -dc 'A-Za-z')"
+    [ "$phase" = "runtime" ] || rsudo="n/a"
     if [ "$rphase" = "$phase" ] && [ "$rlock" = "active" ] && [ "$roc" = "active" ] \
-       && { [ "$rhe" = "active" ] || [ "$rhe" = "n/a" ]; }; then
-      pass "survives a reboot" "phase=$rphase lockdown=$rlock openclaw=up hermes=$rhe"
+       && { [ "$rhe" = "active" ] || [ "$rhe" = "n/a" ]; } && [ "$rsudo" != "OPEN" ]; then
+      pass "survives a reboot" "phase=$rphase lockdown=$rlock sudo=$rsudo openclaw=up hermes=$rhe"
     else
-      fail "survives a reboot" "phase=$rphase lockdown=$rlock openclaw=$roc hermes=$rhe"
+      fail "survives a reboot" "phase=$rphase lockdown=$rlock sudo=$rsudo openclaw=$roc hermes=$rhe"
     fi
     # iptables rules are not persistent on their own; agent-egress.service
     # re-applies them. A reboot that comes back unlocked is the worst case,
