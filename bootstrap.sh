@@ -96,7 +96,8 @@ if [ "$REBUILD" = "1" ]; then
   re-supplying it is part of the test. local/ is untouched."
   limactl delete -f "$INSTANCE" 2>/dev/null || true
   rm -f config/allowlist-bootstrap.conf config/allowlist-runtime.conf \
-        config/model-access.env config/model-gateway config/pi-models.json \
+        config/model-access.env config/model-gateway config/model-gateway-ip \
+        config/model-gateway-port config/pi-models.json config/admin-secret \
         config/agents.env
   ok "deleted"
 fi

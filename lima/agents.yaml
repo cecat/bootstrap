@@ -101,7 +101,14 @@ provision:
         fi
       fi
       if [ "$need_node" -eq 1 ]; then
-        curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+        # Download then execute -- never pipe an installer into a shell.
+        # This line was `curl ... | bash -` until 2026-11-14, breaking the
+        # rule this repo holds Pi to, in the one script nobody supervises.
+        mkdir -p /opt/agent-sandbox/installers
+        curl -fsSL --max-time 120 https://deb.nodesource.com/setup_22.x \
+          -o /opt/agent-sandbox/installers/nodesource-setup_22.x.sh
+        sha256sum /opt/agent-sandbox/installers/nodesource-setup_22.x.sh
+        bash /opt/agent-sandbox/installers/nodesource-setup_22.x.sh
         apt-get install -y -qq nodejs
       fi
       node --version
@@ -160,6 +167,10 @@ provision:
       # install-config.sh overwrites it when there is a real gateway.
       [ -s /etc/agent-sandbox/model-gateway-ip ] \
         || echo 255.255.255.255 > /etc/agent-sandbox/model-gateway-ip
+      # Same for the port file. Port 1 with an address nothing can name
+      # allows nothing.
+      [ -s /etc/agent-sandbox/model-gateway-port ] \
+        || echo 1 > /etc/agent-sandbox/model-gateway-port
 
       cat > /etc/squid/squid.conf <<'SQUID'
       # Forward proxy for the sandboxed agents. No TLS interception.
@@ -189,13 +200,24 @@ provision:
       # squid, and the failure is silent: the stream opens and hangs.
       # Written by scripts/install-config.sh; absent when the model path
       # does not cross the host boundary.
+      #
+      # Address AND port. Under user-mode networking this address is the
+      # host's own loopback, so allowing the address alone -- as this did
+      # until 2026-11-14 -- let an agent reach every service the host
+      # binds to 127.0.0.1. Measured that day: a request through squid to
+      # port 22 of the host connected. One host, one port.
       acl model_gw dst "/etc/agent-sandbox/model-gateway-ip"
-      http_access allow model_gw
+      acl model_gw_port port "/etc/agent-sandbox/model-gateway-port"
+      http_access allow model_gw model_gw_port
 
       # The private ranges, plus this machine. Everything the agents could
       # use to reach the host or its neighbours.
       acl private dst 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16
       acl private dst 127.0.0.0/8 ::1 fc00::/7 fe80::/10
+      # fec0::/10 is deprecated site-local space, and it is what QEMU's
+      # user-mode network hands the guest: <prefix>::2 is the host. It
+      # falls in neither range above.
+      acl private dst fec0::/10
 
       http_access deny private
       http_access deny !Safe_ports
@@ -221,7 +243,14 @@ provision:
       #   agent-egress bootstrap   wide allowlist (installing OpenClaw/Hermes)
       #   agent-egress runtime     narrow allowlist (steady state)
       #   agent-egress status      show phase, rules and active allowlist
+      #   agent-egress log         the last 200 lines of squid's access log
       #   agent-egress unlock      remove the iptables lockdown (debugging)
+      #
+      # The phase also decides whether the agent user can become root:
+      # sudo is open in `bootstrap`, because the vendors' installers look
+      # for it, and closed in `runtime`. The uid rule below is the whole
+      # enforcement and root is exempt from it, so an agent with a shell
+      # and a passwordless sudo is not confined by anything here.
       set -euo pipefail
 
       LISTS=/etc/agent-sandbox/allowlists
@@ -230,6 +259,40 @@ provision:
       AGENT_USER="$(cat /etc/agent-sandbox/agent-user)"
       AGENT_UID="$(id -u "$AGENT_USER")"
       CHAIN=AGENT_EGRESS
+      SUDOERS=/etc/sudoers.d/zz-agent-sandbox
+      ADMIN_HASH=/etc/agent-sandbox/admin.sha256
+
+      # Take root away from the agent user, keeping three commands: the
+      # secret-guarded admin helper the host scripts use, and two read-only
+      # views Pi and a supervisor need. sudoers takes the LAST match, and
+      # this file sorts after cloud-init's blanket grant.
+      lock_sudo() {
+        # Never lock a VM the host could not get back into. The admin
+        # helper is the only way to root afterwards, and it needs the hash
+        # that scripts/install-config.sh installs.
+        if [ ! -s "$ADMIN_HASH" ]; then
+          echo "sudo left OPEN: $ADMIN_HASH is missing, so locking now would" >&2
+          echo "leave no way back to root. Run scripts/install-config.sh." >&2
+          return 0
+        fi
+        local tmp; tmp="$(mktemp)"
+        {
+          echo "# Written by agent-egress. Do not edit; it is rewritten on every boot."
+          echo "$AGENT_USER ALL=(ALL:ALL) !ALL"
+          echo "$AGENT_USER ALL=(root) NOPASSWD: /usr/local/sbin/agent-admin, /usr/local/sbin/agent-egress status, /usr/local/sbin/agent-egress log"
+        } > "$tmp"
+        if visudo -cf "$tmp" >/dev/null 2>&1; then
+          install -o root -g root -m 0440 "$tmp" "$SUDOERS"
+          echo "sudo: locked for $AGENT_USER"
+        else
+          echo "sudoers fragment rejected by visudo; sudo left as it was." >&2
+        fi
+        rm -f "$tmp"
+      }
+      unlock_sudo() {
+        rm -f "$SUDOERS"
+        echo "sudo: open for $AGENT_USER (build phase)"
+      }
 
       apply_rules() {
         # Rebuild from scratch so repeated runs converge on the same state.
@@ -239,8 +302,17 @@ provision:
         # The agent user may talk to loopback (squid, argo-proxy) and resolve
         # DNS. Everything else must go through the proxy, which allowlists it.
         iptables -A "$CHAIN" -o lo -j ACCEPT
-        iptables -A "$CHAIN" -p udp --dport 53 -j ACCEPT
-        iptables -A "$CHAIN" -p tcp --dport 53 -j ACCEPT
+        # DNS, to the resolvers this machine is actually configured with
+        # and nothing else. This was "port 53, anywhere" -- a way out to
+        # any host willing to listen on 53, and a route to that port on the
+        # LAN. The stub resolver on 127.0.0.53 is covered by the loopback
+        # rule above; these lines are for clients that read the upstream
+        # list and go direct.
+        for ns in $(awk '/^nameserver/ {print $2}' /run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null \
+                    | grep -E '^[0-9]+(\.[0-9]+){3}$' | grep -v '^127\.' | sort -u); do
+          iptables -A "$CHAIN" -d "$ns" -p udp --dport 53 -j ACCEPT
+          iptables -A "$CHAIN" -d "$ns" -p tcp --dport 53 -j ACCEPT
+        done
 
         # The model gateway, when one is configured outside loopback. It
         # bypasses squid deliberately: a single fixed host:port is not open
@@ -256,12 +328,28 @@ provision:
         iptables -A "$CHAIN" -j REJECT --reject-with icmp-admin-prohibited
 
         iptables -A OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN"
+
+        # The same lockdown for IPv6, which iptables does not touch. There
+        # is nothing to allow: squid and the stub resolver are on loopback
+        # and the model gateway is an IPv4 address. Not fatal if the kernel
+        # has no IPv6 at all -- verify.sh asserts the rule is there.
+        apply_rules6 || echo "WARNING: could not apply the IPv6 lockdown" >&2
+      }
+
+      apply_rules6() {
+        ip6tables -D OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN" 2>/dev/null || true
+        ip6tables -F "$CHAIN" 2>/dev/null || ip6tables -N "$CHAIN" || return 1
+        ip6tables -A "$CHAIN" -o lo -j ACCEPT || return 1
+        ip6tables -A "$CHAIN" -j REJECT --reject-with icmp6-adm-prohibited || return 1
+        ip6tables -A OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN" || return 1
       }
 
       remove_rules() {
-        iptables -D OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN" 2>/dev/null || true
-        iptables -F "$CHAIN" 2>/dev/null || true
-        iptables -X "$CHAIN" 2>/dev/null || true
+        for t in iptables ip6tables; do
+          $t -D OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN" 2>/dev/null || true
+          $t -F "$CHAIN" 2>/dev/null || true
+          $t -X "$CHAIN" 2>/dev/null || true
+        done
       }
 
       set_phase() {
@@ -287,6 +375,7 @@ provision:
         systemctl enable squid >/dev/null 2>&1 || true
         systemctl restart squid
         apply_rules
+        if [ "$phase" = "runtime" ]; then lock_sudo; else unlock_sudo; fi
         echo "egress phase: $phase ($(grep -cvE '^\s*(#|$)' "$ACTIVE") domains allowed)"
       }
 
@@ -301,13 +390,44 @@ provision:
           echo "agent user: $AGENT_USER (uid $AGENT_UID)"
           echo "squid:      $(systemctl is-active squid 2>/dev/null || true)"
           echo "lockdown:   $(iptables -C OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN" 2>/dev/null && echo active || echo INACTIVE)"
+          echo "lockdown6:  $(ip6tables -C OUTPUT -m owner --uid-owner "$AGENT_UID" -j "$CHAIN" 2>/dev/null && echo active || echo INACTIVE)"
+          echo "sudo:       $([ -f "$SUDOERS" ] && echo locked || echo OPEN)"
           echo "--- allowed domains ---"
           grep -vE '^\s*(#|$)' "$ACTIVE" 2>/dev/null || echo "<no active allowlist>"
           ;;
-        *) echo "usage: agent-egress {bootstrap|runtime|status|unlock}" >&2; exit 2 ;;
+        log) tail -n 200 /var/log/squid/access.log ;;
+        *) echo "usage: agent-egress {bootstrap|runtime|status|log|unlock}" >&2; exit 2 ;;
       esac
       EGRESS
       chmod 0755 /usr/local/sbin/agent-egress
+
+      # ---- agent-admin: the host's way to root once sudo is locked ----------
+      # The host scripts need root after the lock -- to re-push config, to
+      # reopen the build phase, to read policy state for verify.sh -- and
+      # they arrive as the same Unix user the agents run as, because that
+      # is the only account Lima gives them. So the door has to be one the
+      # agents cannot open: this helper runs a script as root only when
+      # the first line of stdin is a secret whose hash matches a root-only
+      # file. The secret stays on the host, in config/admin-secret, and is
+      # never written to this machine.
+      cat > /usr/local/sbin/agent-admin <<'ADMIN'
+      #!/bin/bash
+      # usage: { secret; echo; script; } | sudo agent-admin
+      set -uo pipefail
+      HASH=/etc/agent-sandbox/admin.sha256
+      [ -s "$HASH" ] || { echo "agent-admin: no admin secret installed" >&2; exit 1; }
+      IFS= read -r secret || true
+      got="$(printf '%s' "$secret" | sha256sum | cut -d' ' -f1)"
+      unset secret
+      if [ "$got" != "$(tr -dc 'a-f0-9' < "$HASH")" ]; then
+        sleep 2
+        echo "agent-admin: refused" >&2
+        exit 1
+      fi
+      exec /bin/bash -s
+      ADMIN
+      chown root:root /usr/local/sbin/agent-admin
+      chmod 0755 /usr/local/sbin/agent-admin
 
       # Re-apply the lockdown on every boot (iptables rules are not persistent).
       cat > /etc/systemd/system/agent-egress.service <<'UNIT'

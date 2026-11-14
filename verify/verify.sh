@@ -51,7 +51,11 @@ skip() { SKIP=$((SKIP+1)); printf '  %sSKIP%s  %s\n' "$Y" "$Z" "$1"; [ $# -gt 1 
 # through a login shell so it sees the same .profile the agents see --
 # PATH, the proxy variables and NODE_USE_ENV_PROXY all live there.
 g()     { limactl shell "$VM" -- bash -lc "$1" 2>&1; }
-groot() { limactl shell "$VM" -- sudo bash -c "$1" 2>&1; }
+# Root in the guest. Not a bare `sudo`: a finished VM has taken sudo away
+# from the agent user, which is the user this arrives as. See lib-vm.sh.
+# shellcheck source=scripts/lib-vm.sh
+. "$REPO_DIR/scripts/lib-vm.sh"
+groot() { vm_root "$VM" "$1" 2>&1; }
 
 # ---------------------------------------------------------------------------
 section "Host and VM"
@@ -360,7 +364,7 @@ case "$phase" in
     if [ "$DO_IDEM" -eq 1 ]; then
       pass "egress phase" "bootstrap (wide) -- expected during --idempotence; narrow to runtime when done"
     else
-      fail "egress phase" "still 'bootstrap' (wide allowlist). Run: limactl shell $VM -- sudo agent-egress runtime"
+      fail "egress phase" "still 'bootstrap': the build phase, with sudo open to the agents. Lock it: ./scripts/finish-build.sh"
     fi
     ;;
   *)         fail "egress phase" "'${phase:-none}' -- no policy has been applied" ;;
@@ -469,6 +473,15 @@ elif [ "$direct" = "000" ]; then
 else
   fail "lockdown is scoped to the agent uid" "root -> ${rootdirect:-000}"
 fi
+
+# 4a. Port 53 is not a way out. The lockdown used to accept DNS to any
+#     address, which is a direct connection to whatever listens on 53
+#     anywhere -- including on the LAN. It should reach the configured
+#     resolvers and nothing else.
+dns_out="$(g 'timeout 6 bash -c "exec 3<>/dev/tcp/1.1.1.1/53" 2>/dev/null && echo OPEN || echo CLOSED' | tr -dc 'A-Z')"
+[ "$dns_out" = "CLOSED" ] \
+  && pass "port 53 is not a way round the proxy" "direct TCP to 1.1.1.1:53 is refused" \
+  || fail "port 53 is not a way round the proxy" "the agent user connected to 1.1.1.1:53 directly -- the DNS exemption is open to any host"
 
 # 4b. The same bypass over IPv6. iptables rules do not apply to IPv6, so a
 #     uid filter with no ip6tables twin leaves a second road out for any

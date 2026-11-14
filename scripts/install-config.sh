@@ -12,15 +12,20 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-INSTANCE="${1:-agents}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Honour AGENTS_VM like every other script here. This one did not, so run
+# on its own against a second instance it would have reconfigured the
+# first.
+INSTANCE="${1:-${AGENTS_VM:-agents}}"
 CFG="$REPO/config"
+# shellcheck source=scripts/lib-vm.sh
+. "$REPO/scripts/lib-vm.sh"
 
 say()  { printf '\033[1m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 command -v limactl >/dev/null 2>&1 || fail "limactl not found."
-[ "$(limactl list --format '{{.Status}}' "$INSTANCE" 2>/dev/null)" = "Running" ] \
+[ "$(limactl list --format '{{.Status}}' "$INSTANCE" 2>/dev/null | head -1)" = "Running" ] \
   || fail "instance '$INSTANCE' is not running."
 
 # --- 1. The detected model profile -----------------------------------------
@@ -94,13 +99,18 @@ printf '%s\n' "$GATEWAY" > "$CFG/model-gateway"
 # Never empty: squid will not start on an empty `acl dst` file, and that
 # would take all egress down. 255.255.255.255 matches nothing.
 printf '%s\n' "${GATEWAY:-255.255.255.255}" | cut -d: -f1 > "$CFG/model-gateway-ip"
+# And the port, because squid allows the pair and not the address alone:
+# under user-mode networking that address is the host's loopback, every
+# port of it. Port 1 beside an address nothing can name allows nothing.
+if [ -n "$GATEWAY" ]; then printf '%s\n' "${GATEWAY##*:}"; else echo 1; fi > "$CFG/model-gateway-port"
 
 # --- 3. Copy into the guest ------------------------------------------------
 say "copying config into $INSTANCE"
 limactl shell "$INSTANCE" -- rm -rf /tmp/agent-config
 limactl shell "$INSTANCE" -- mkdir -p /tmp/agent-config
-for f in agents.env model-access.env allowlist-bootstrap.conf allowlist-runtime.conf \
-         pi-models.json model-gateway model-gateway-ip; do
+# Only the agent user's own files travel this way. The egress policy files
+# do not: see the root-owned half below.
+for f in agents.env model-access.env pi-models.json; do
   limactl copy "$CFG/$f" "$INSTANCE:/tmp/agent-config/$f"
 done
 
@@ -116,6 +126,7 @@ limactl shell "$INSTANCE" -- bash -eo pipefail -c '
   # chain, so a missing sessions/ dir aborts the run with ENOENT. Create both.
   install -d -m 0700 "$HOME/.pi/agent" "$HOME/.pi/agent/sessions"
   install -m 0600 /tmp/agent-config/pi-models.json "$HOME/.pi/agent/models.json"
+  rm -rf /tmp/agent-config
 
   # Export the credentials that the SecretRefs above resolve against.
   #
@@ -175,18 +186,39 @@ limactl shell "$INSTANCE" -- bash -eo pipefail -c '
       echo "$PROFILE_END"
   } >> "$HOME/.profile"
 
-  sudo install -d -m 0755 /etc/agent-sandbox/allowlists
-  sudo install -m 0644 /tmp/agent-config/allowlist-bootstrap.conf /etc/agent-sandbox/allowlists/
-  sudo install -m 0644 /tmp/agent-config/allowlist-runtime.conf   /etc/agent-sandbox/allowlists/
-  sudo install -m 0644 /tmp/agent-config/model-gateway    /etc/agent-sandbox/model-gateway
-  sudo install -m 0644 /tmp/agent-config/model-gateway-ip /etc/agent-sandbox/model-gateway-ip
-
-  rm -rf /tmp/agent-config
 '
+
+# The root-owned half. Through vm_root rather than a bare sudo, so that
+# re-running this against a finished VM -- where the agent user no longer
+# has sudo -- still works. The hash goes in first, while sudo is open.
+#
+# The policy files are sent INSIDE the root script, as here-documents, not
+# staged in /tmp for root to pick up. /tmp is the agents' to write, and a
+# file root installs from there is a file an agent can swap first -- which
+# would let it name its own host and port as "the model gateway".
+vm_admin_init "$INSTANCE" || fail "could not install the admin secret hash in the VM."
+root_script='set -e
+install -d -m 0755 /etc/agent-sandbox/allowlists
+'
+for pair in \
+    "allowlist-bootstrap.conf:/etc/agent-sandbox/allowlists/allowlist-bootstrap.conf" \
+    "allowlist-runtime.conf:/etc/agent-sandbox/allowlists/allowlist-runtime.conf" \
+    "model-gateway:/etc/agent-sandbox/model-gateway" \
+    "model-gateway-ip:/etc/agent-sandbox/model-gateway-ip" \
+    "model-gateway-port:/etc/agent-sandbox/model-gateway-port"; do
+  src="$CFG/${pair%%:*}"; dst="${pair#*:}"
+  ! grep -q '^AGENT_SANDBOX_EOF$' "$src" || fail "$src contains the here-document marker."
+  root_script+="install -m 0644 /dev/stdin '$dst' <<'AGENT_SANDBOX_EOF'
+$(cat "$src")
+AGENT_SANDBOX_EOF
+"
+done
+vm_root "$INSTANCE" "$root_script" || fail "could not install the egress policy files in the VM."
 
 # --- 4. Lock egress down ---------------------------------------------------
 say "applying bootstrap egress policy"
-limactl shell "$INSTANCE" -- sudo /usr/local/sbin/agent-egress bootstrap
+vm_root "$INSTANCE" '/usr/local/sbin/agent-egress bootstrap' \
+  || fail "could not apply the bootstrap egress policy."
 
 # --- 5. Gate on a real completion ------------------------------------------
 # Not /health: it answers 200 from local state even when the upstream is dead.
@@ -259,5 +291,5 @@ esac
 
 echo
 say "done. egress status:"
-limactl shell "$INSTANCE" -- sudo /usr/local/sbin/agent-egress status
+vm_root "$INSTANCE" '/usr/local/sbin/agent-egress status'
 printf '\nNext: ./scripts/pi-session.sh build\n'

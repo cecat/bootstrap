@@ -16,6 +16,8 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 INSTANCE="${1:-${AGENTS_VM:-agents}}"
+# shellcheck source=scripts/lib-vm.sh
+. "$REPO/scripts/lib-vm.sh"
 
 if [ -t 1 ]; then B=$'\033[1m'; R=$'\033[31m'; Y=$'\033[33m'; G=$'\033[32m'; Z=$'\033[0m'
 else B=''; R=''; Y=''; G=''; Z=''; fi
@@ -78,10 +80,16 @@ from scratch: ./bootstrap.sh --rebuild"
 fi
 
 # ===========================================================================
-step "Narrow egress to the runtime allowlist"
+step "Lock the VM: runtime allowlist, and no more sudo for the agents"
 
-limactl shell "$INSTANCE" -- sudo /usr/local/sbin/agent-egress runtime \
-  || fail "could not switch to the runtime allowlist."
+# This is also where the agent user loses root. The egress lockdown is
+# matched on uid and root is exempt, so an agent that can sudo is not
+# confined by it; sudo was only open because the vendors' installers look
+# for it while Pi builds. Make sure the host can still get back in before
+# closing the door: agent-egress refuses to lock without the hash.
+vm_admin_init "$INSTANCE" || fail "could not install the admin secret hash in the VM."
+vm_root "$INSTANCE" '/usr/local/sbin/agent-egress runtime' \
+  || fail "could not switch to the runtime phase."
 ok "egress phase: runtime"
 
 # ===========================================================================
