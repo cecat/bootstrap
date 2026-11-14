@@ -58,9 +58,43 @@ port 22 connected.
   `spark-handoff.md`, both gone. It is the record of a finished port and
   was left as written.
 
-**Stage 6 — acceptance.** From-scratch build on `agents-test`, then
-`verify.sh --models --reboot`, then the Google add-on. Needs two
-throwaway Telegram bots and the owner messaging them.
+**Stage 6 — acceptance. In progress; paused 2026-11-14 when the
+laptop closed.** Pick up here.
+
+Where it stands, on `agents-test` (checkout `~/code/bootstrap-test`,
+always `AGENTS_VM=agents-test`), bots `@Cheetah_cec_bot` (OpenClaw) and
+`@Puma_cec_bot` (Hermes):
+
+- `bootstrap.sh` from nothing: passed, incl. the Telegram token check.
+- Pi built both agents from the edited spec in 38 min, on
+  `argo:claude-5-opus`. Two push-backs to reach `plaintext=0`: it had
+  re-run `openclaw onboard` eight times, each leaving a plaintext auth
+  profile, and could not find `openclaw models auth logout <profileId>
+  --yes`. **Add that command to the spec.**
+- `finish-build.sh` locked the VM: **59 passed, 4 failed, 2 skipped.**
+  Every sandbox check passes with real agents in it; OpenClaw completes
+  and fetches a page.
+- A third push-back was sent for the four failures and **was still
+  running** when work stopped (`logs/pi-say3.out`, then
+  `./scripts/pi-session.sh summary`): Hermes completion returning "Your
+  request was not processed"; `OPENCLAW_GATEWAY_TOKEN` conflicting with
+  `gateway.auth.token` in openclaw doctor; OpenClaw `userTimezone`
+  unset; hermes doctor "Skills Hub directory not initialized".
+
+Next, in order:
+
+- [ ] read Pi's summary for that turn against `./verify/verify.sh --models`
+- [ ] add "Chromium not installed" to `DOCTOR_OK` in both verify
+      scripts — Hermes v0.23.1 reworded the no-browser warning, and no
+      browser is a recorded decision (item 2)
+- [ ] `./verify/verify.sh --models --reboot`
+- [ ] the owner messages both test bots and has each fetch a web page
+- [ ] Google add-on on the test VM. **Not authorised yet**: the owner
+      has not said whether the existing Google credentials may be copied
+      into the test checkout. Ask.
+- [ ] check idempotence once more (`install-config.sh --reopen`,
+      `verify.sh --idempotence`, `finish-build.sh`) — Pi ran `setup.sh`
+      25 times getting here
 
 **Stage 7 — the real VM.** Prove an in-place upgrade on a throwaway VM
 built from `main` first, then apply to `agents` (one stop/start), then
