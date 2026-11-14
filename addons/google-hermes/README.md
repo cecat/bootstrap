@@ -12,13 +12,24 @@ Calendar, Drive, Docs, Sheets and Contacts. OpenClaw gets nothing.
 > and deliberately does not summarise them. If the base is not finished and
 > verifying, `install` below refuses to run.
 
-## Your part, then your agent's
+## Start here
 
-Steps 1–4 are yours, because they need a browser, a secret that must not
-pass through a chat, and a file only you can edit. Step 4 ends by handing
-over, and step 5 is the one check at the end that no script can do.
-Everything in between — Pi building, and the reading of what it claims
-against what the checks measure — belongs to your coding agent.
+Open your coding agent in this directory and tell it:
+
+> Add the Google add-on for Hermes, as `addons/google-hermes/README.md`
+> describes.
+
+**The coding agent runs every command below.** It will stop and come to
+you three times, for the three things no script can do:
+
+1. make an OAuth client in Google Cloud Console and put its JSON in
+   `secrets/` — steps 1 and 2;
+2. approve the consent screen in a browser, from a URL it gives you —
+   step 3;
+3. message the Hermes bot at the end — step 5.
+
+Everything else — pushing credentials, Pi building, and the reading of
+what Pi claims against what the checks measure — is the agent's.
 
 Budget about twenty minutes of your attention: roughly ten clicking
 through the Google Cloud Console, and ten on the consent step, which is
@@ -108,15 +119,14 @@ Leave the name as Google gives it — the add-on finds it by that pattern.
 client ID copied by hand arrived with a leading space once and cost an
 afternoon of `invalid_client`.
 
-The next command reads this file, copies the two values into
-`config/google.env`, and checks the client is a **Desktop app** — a Web
-application client is rejected here rather than at the redirect.
+Then tell your coding agent it is there. Its next command reads this
+file, copies the two values into `config/google.env`, and checks the
+client is a **Desktop app** — a Web application client is rejected here
+rather than at the redirect.
 
-If you would rather do it by hand, run
-`./scripts/addon-google-hermes.sh install` once; it creates
-`config/google.env`, tells you what it wants, and stops with exit 2 — the
-same handshake `bootstrap.sh` uses. Fill in `GOOGLE_CLIENT_ID` and
-`GOOGLE_CLIENT_SECRET` there instead.
+If you would rather type the two values than download a file, fill in
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `config/google.env`
+instead; the agent's first run creates that file and says so.
 
 **Either way, never paste these into a chat with your coding agent.** A
 secret in a conversation is a secret in a transcript you do not control.
@@ -131,10 +141,11 @@ secret in a conversation is a secret in a transcript you do not control.
 > your laptop; the thing that asked is the remote host. Bridging that gap
 > is an SSH tunnel, and the ten minutes it takes are a one-off.
 >
-> You need: **the terminal you run `auth` in**, and **one shell on your
-> laptop** for the tunnel. The tunnel backgrounds itself, so that shell is
-> yours again immediately. The URL is printed in full for you to select —
-> no file to open, nothing to scp, nothing to retype.
+> You need **one shell on your laptop** for the tunnel, and a browser.
+> The tunnel backgrounds itself, so that shell is yours again
+> immediately. Your coding agent starts the consent command, which waits
+> ten minutes, and gives you the tunnel line and the URL to paste — no
+> file to open, nothing to scp, nothing to retype.
 >
 > **You do this once, ever.** The refresh token it produces does not
 > expire once the consent screen is published, and it survives re-running
@@ -162,16 +173,18 @@ remote host — the command dials out from the laptop. Run inside an existing
 remote session it would forward that host to itself and silently do
 nothing.
 
-**On the remote host**, start the consent flow:
+**Your coding agent**, on the remote host, starts the consent flow in the
+background and relays what it prints:
 
 ```sh
 ./scripts/addon-google-hermes.sh auth
 ```
 
-It notices there is no display and prints the consent URL in full, then
-waits ten minutes.
+It notices there is no display, prints the tunnel line and the consent
+URL in full, then waits ten minutes. (The URL is not a secret: it names
+the OAuth client and a one-time challenge, not a token.)
 
-**Back on your laptop:** select that URL, paste it into your browser, and
+**Back on your laptop:** paste that URL into your browser, and
 approve. Your browser is sent to `127.0.0.1:8731`, the tunnel carries it to
 the waiting command, and `auth` finishes on its own and writes the tokens.
 
@@ -204,29 +217,12 @@ above: the command opens the page itself and there is no tunnel.
 | Consent succeeds, then "can't reach this site" at 127.0.0.1:8731 | The tunnel is not up, or was opened after the fact. Start terminal A, then re-run `auth`. |
 | `auth` says the port is in use | Something else holds 8731. Pick another with `GOOGLE_OAUTH_PORT=8732` and use the same number in the `ssh -L` line. Nothing to change in the Cloud Console. |
 
-### 4. Run `install`, then hand over
+### 4. Nothing for you: the agent installs and builds
 
-```sh
-./scripts/addon-google-hermes.sh install
-```
-
-This checks the base build is healthy, pushes your credentials into the VM,
-and stages the spec Pi will work from. It takes 3–6 minutes, almost all of
-it re-running the base `verify.sh`, and it prints a log path you can
-`tail -f` while you wait.
-
-**It stops at the hand-over rather than running on into the build**, and
-tells you so. That boundary is deliberate: what remains is Pi building and
-someone reading its claims against the evidence, and that is a coding
-agent's job, not yours. Open your coding agent in this directory and tell
-it:
-
-> Install the Google Workspace add-on: run
-> `./scripts/addon-google-hermes.sh build`, then supervise Pi and verify
-> it as `addons/google-hermes/README.md` describes.
-
-It will come back to you once, at the end, with the one check no script can
-perform.
+Your coding agent now runs `install`, `build` and `verify`, described in
+the next section. Expect twenty to thirty minutes, unattended: `install`
+re-runs the base `verify.sh` (3–6 minutes), Pi works for 5–15, and the
+checks take a few more. It comes back to you once, with step 5.
 
 ### 5. The check nothing automated covers
 
@@ -239,22 +235,37 @@ it is not optional.
 
 # Installing it — for the coding agent
 
-The human has done steps 1–4 above: credentials are in `config/`, pushed
-into the VM, and the spec is staged at `~/agent-bootstrap/GOOGLE-ADDON.md`.
-They stopped at the hand-over on purpose. Your job is the build and the
-reading of it.
+**You run all five commands.** The user's part is a Google Cloud
+Console, a file dropped in `secrets/`, a browser, and a Telegram message
+— nothing else, and no script.
 
 ```sh
-./scripts/addon-google-hermes.sh build          # drive Pi (5-15 min)
+./scripts/addon-google-hermes.sh auth              # consent; see below
+./scripts/addon-google-hermes.sh install           # preconditions, push, stage (3-6 min)
+./scripts/addon-google-hermes.sh build             # drive Pi (5-15 min)
 ./scripts/pi-session.sh summary                    # what Pi claims it did
 ./scripts/pi-session.sh steps                      # what it actually did
 ./scripts/addon-google-hermes.sh verify --live --base
 ```
 
-The user has already run `install`, which checked preconditions, staged the
-credentials at `~/google-skill-push/`, and put the spec at
+**`auth` and `install` exit 2 when they are waiting on the user** — the
+same handshake as `bootstrap.sh`. With no OAuth client yet, relay steps
+1 and 2 above and stop until they say the JSON is in `secrets/`. Never
+ask for the client secret in conversation.
+
+**Run `auth` in the background and relay what it prints.** On a headless
+host it prints an `ssh -L` line and a consent URL, then waits up to ten
+minutes for the user's browser. Give the user both, tunnel first, and
+wait for the command to exit: it finishes by itself when they approve.
+The URL is also in `config/google-consent-url.txt` while it waits. If it
+times out, run it again; an unused URL costs nothing. Once it has
+succeeded it is a no-op, so running it first every time is safe.
+
+`install` checks preconditions, stages the credentials at
+`~/google-skill-push/`, and puts the spec at
 `~/agent-bootstrap/GOOGLE-ADDON.md`. `build` refuses if any of that is
-missing rather than starting a turn that cannot succeed.
+missing rather than starting a turn that cannot succeed. Pi works in a
+session of its own (`addon-google-hermes`), not the base build's.
 
 `build` drives Pi through the ordinary `./scripts/pi-session.sh say`, so
 supervise it exactly as `AGENTS.md` describes for the base build.
@@ -435,6 +446,13 @@ message the Hermes bot can read your mail, so the allowlist stops being a
 configuration detail and becomes the whole exposure. If the Hermes channel
 is deliberately off, either turn it on or leave this add-on uninstalled.
 
+## After a Hermes update
+
+Re-run `verify --live`. A Hermes update builds a new environment and
+restores its bundled skills, which silently removes PySocks and the
+contacts patch; nothing fails at the time, and Google calls then hang at
+the lockdown. `build` re-applies both. See `docs/updating.md`.
+
 ## Where the credentials live
 
 Consent happens **on your machine**, never in the VM — the VM has no browser
@@ -470,7 +488,9 @@ a chat is a token in a transcript.
 ```
 
 Deletes the credentials from the VM, clears away anything left from the old
-MCP-server layout, and tells you the two config edits to have Pi undo. It
+MCP-server layout, and prints the one message to send Pi so that it undoes
+what it changed inside Hermes — the auto-load, the proxy passthrough and
+the contacts patch. It
 does **not** revoke the token at Google's end — only you can do that, at
 <https://myaccount.google.com/permissions>. If you are removing this because
 something went wrong, revoke there too, then delete the two files in

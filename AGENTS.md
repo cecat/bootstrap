@@ -75,10 +75,14 @@ the background and say how long it will take.
 
 **Where the hand-off does belong**, the script makes it, and says so:
 the user supplies what only they can, the script stops, and it prints
-the exact words to give their coding agent. `bootstrap.sh`'s exit 2 is
-one. `addons/google-hermes/install.sh` ending at "hand over to your
-coding agent" is another. Mid-procedure is the wrong place to invent a
-new one.
+what it is waiting for. `bootstrap.sh`'s exit 2 is one. The Google
+add-on's `auth` is another: it exits 2 until the user has made an OAuth
+client, then prints a consent URL only their browser can open — you run
+it, they click. Mid-procedure is the wrong place to invent a new one.
+
+(That add-on's `install` used to end by telling the *user* to go and
+brief their coding agent. Nothing in it needed a human; it was this
+section's failure mode with the direction reversed.)
 
 ## Tell the user which models their agents run
 

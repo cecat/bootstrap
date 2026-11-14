@@ -2,8 +2,10 @@
 """One-time Google OAuth consent, on the host, for the Hermes add-on.
 
 Reads GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from config/google.env,
-walks the consent flow, and writes GOOGLE_REFRESH_TOKEN and
-GOOGLE_ACCOUNT_EMAIL back into the same file at 0600.
+walks the consent flow, and writes config/google_token.json and
+config/google_client_secret.json at 0600 -- the two files Hermes' bundled
+skill declares. The refresh token is in google_token.json and nowhere
+else on the host; google.env gets only the account's address.
 
 Standard library only, deliberately. This runs on the user's machine before
 anything is installed, so it cannot assume a venv, and asking someone to pip
@@ -373,7 +375,12 @@ def main():
             "       Google's start with 'GOCSPX-'. Check for a stray space or\n"
             "       quote, and that you did not paste the client id twice.")
 
-    if env.get("GOOGLE_REFRESH_TOKEN") and "--force" not in sys.argv:
+    # The token file is the record of consent. GOOGLE_REFRESH_TOKEN in
+    # google.env is honoured too: that is where it lived before
+    # 2026-11-14, when it was written to both, and an install from then
+    # must not be sent back through the browser.
+    have_token = os.path.isfile(os.path.join(repo, "config", "google_token.json"))
+    if (have_token or env.get("GOOGLE_REFRESH_TOKEN")) and "--force" not in sys.argv:
         say("a refresh token is already present; nothing to do.")
         say("re-consent anyway with: addon-google-hermes.sh auth --force")
         return
@@ -509,7 +516,10 @@ def main():
             "file is named after it.\n       Re-run auth; if it keeps "
             "happening, check that the userinfo.email scope is still granted.")
 
-    write_env_value(env_path, "GOOGLE_REFRESH_TOKEN", refresh)
+    # One copy of the refresh token on the host, in the file that is
+    # pushed. It used to be written here as well, which made two files to
+    # protect, to delete on removal, and to forget.
+    write_env_value(env_path, "GOOGLE_REFRESH_TOKEN", "")
     write_env_value(env_path, "GOOGLE_ACCOUNT_EMAIL", email)
 
     # Both files are named exactly as the skill's required_credential_files
@@ -524,7 +534,7 @@ def main():
     if os.path.exists(url_path):
         os.remove(url_path)
 
-    ok(f"refresh token written to config/google.env (0600) for {email}")
+    ok(f"consent recorded for {email}")
     ok("google_token.json and google_client_secret.json written to config/ (0600)")
     say("next: ./scripts/addon-google-hermes.sh install")
 

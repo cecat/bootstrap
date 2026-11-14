@@ -17,54 +17,46 @@ it lands; delete this section when stage 7 is done.
 `agents-test`, from a separate checkout (`~/code/bootstrap-test` on the
 Spark) with `AGENTS_VM=agents-test` on every command.
 
-**Stage 1 — checks first.** Each sandbox finding gets a `verify.sh`
-check that fails on it, run read-only against the live VM as evidence.
+**Stages 1–5 are written and committed** (2026-11-14). What that does
+and does not mean:
 
-- [ ] squid refuses the host on any port but the model gateway's
-      (`http_access allow model_gw` matches address only — read from
-      config, unprobed)
-- [ ] the "private network is DENIED" check goes through squid; it has
-      skipped on every recorded run because `NO_PROXY` names the host
-- [ ] IPv6 is blocked, direct and through squid (no `ip6tables` rules;
-      `fec0::/10` missing from the private ACL — unprobed)
-- [ ] the agent user cannot `sudo` once the build is locked
-- [ ] stop printing the Telegram user id; `verify.sh:200` relative path
-- [ ] retire the Hermes adapter journal check (wrong four times)
+*Proven on `agents-test`* — a VM provisioned from this branch, with no
+agents built in it: every new sandbox check passes in both phases; the
+lock survives a reboot; `limactl stop`/`start` works with sudo closed;
+the admin helper runs root scripts for the host and refuses a wrong
+secret; `install-config.sh` re-pushes onto a locked VM and leaves it
+locked. Against the live `agents` VM the same checks failed four ways,
+which is the evidence the findings were real: through squid the host's
+port 22 connected.
 
-**Stage 2 — sandbox fixes**, tested on `agents-test` incl. stop/start.
+*Written but not yet run* — stage 6 is where these are first exercised:
 
-- [ ] model gateway allowed on its one port; `fec0::/10` private
-- [ ] `ip6tables` rules; narrow the port-53 rule if testing allows
-- [ ] sudo open while Pi builds, removed by `finish-build.sh`; host
-      scripts reach root through one helper guarded by a host-held
-      secret. Lima's own boot uses sudo — expect a second attempt
-- [ ] nodesource: download, checksum, run — not `curl | bash`
-- [ ] `.claude/settings.json`: `--rebuild` and `--reboot` ask; prose
-      in `AGENTS.md` matches the file
+- [ ] a Pi build from the edited spec (sudo rule, `AGENT_MODEL` read
+      from `agents.env`). The spec is a prompt; a reword can change what
+      gets built
+- [ ] `finish-build.sh` locking a VM that has real agents in it, and the
+      gateways working with no sudo
+- [ ] `bootstrap.sh`'s Telegram token check against real tokens, and its
+      `sg kvm` re-exec (the Spark user is already in the group)
+- [ ] `verify.sh`'s Versions lines, and `AGENT_MODEL` matching
+- [ ] the whole Google add-on flow as rewritten: agent-run `auth` and
+      `install`, its own Pi session, one host copy of the token, the
+      fuller `remove`
+- [ ] changing a value in `agents.env` on a finished VM
+      (`docs/updating.md` says this path is unexercised)
 
-**Stage 3 — clone path.**
+*Decided against, so nobody re-proposes them:*
 
-- [ ] README says Argo + a host gateway up front, and what it serves
-- [ ] model names in `agents.env`, one home; drop `spark-ts`, port
-      44497, `claude-argo-home`, `tpc25.org`
-- [ ] preflight: QEMU, `python3`, Lima version, `sg kvm` re-exec, bot
-      tokens validated and usernames printed
-- [ ] remove the dead direct-Argo branch and the frozen-hash mechanism
-- [ ] `bootstrap.sh` re-run does not reopen a finished VM; document
-      changing a token or a name
-- [ ] `verify.sh` prints vendor versions; a short update procedure
-- [ ] replace `docs/spark-handoff.md`; fix stale references; README
-      gets an add-ons section
-
-**Stage 4 — spec.** Move dated history to `docs/gotchas.md`, leave
-every instruction as written, add the model variable and the sudo rule.
-
-**Stage 5 — Hermes Google add-on.**
-
-- [ ] agent runs `install` and `auth`; user keeps console + browser
-- [ ] stop sourcing `google.env`; rewrite its example; spec step numbers
-- [ ] own Pi session; complete `remove`; one host copy of the token
-- [ ] document re-applying after a Hermes upgrade
+- **Removing the two egress phases.** They now differ in something real
+  — sudo — so the phase is kept and `--reopen` is the way back.
+- **A table generating both the spec's settings and their checks.** More
+  machinery than the duplication costs.
+- **Shrinking the spec much.** History came out and the sudo and model
+  paragraphs went in; it is 563 lines, not shorter. Every further cut is
+  a change to a prompt that has to be paid for with a build.
+- `MACOS-TEST.md` still mentions `check-frozen.sh` and
+  `spark-handoff.md`, both gone. It is the record of a finished port and
+  was left as written.
 
 **Stage 6 — acceptance.** From-scratch build on `agents-test`, then
 `verify.sh --models --reboot`, then the Google add-on. Needs two

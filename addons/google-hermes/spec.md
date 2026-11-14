@@ -17,9 +17,9 @@ idempotent script. Put every change in it and run the script.
 2. **Hermes only.** OpenClaw gets nothing from this. Do not edit its config.
 3. **Never print a credential.** Do not `cat`, `echo` or `grep` the
    contents of `~/.hermes/google_token.json`,
-   `~/.hermes/google_client_secret.json` or
-   `~/.config/agent-sandbox/google.env`, and never put a value from any of
-   them in your summary. Your whole session is logged on the host and read
+   `~/.hermes/google_client_secret.json` or anything under
+   `~/google-skill-push/`, and never put a value from any of them in your
+   summary. Your whole session is logged on the host and read
    back by a supervisor; displaying one puts a refresh token in a transcript
    nobody can un-write. Check properties instead: `test -s`, `stat -c %a`,
    or a line count.
@@ -32,7 +32,7 @@ idempotent script. Put every change in it and run the script.
    `setup.py --auth-url` or `--auth-code`, and do not try to re-authenticate
    if something fails. The only `setup.py` commands you may run are
    `--check` and `--check-live`, which are read-only.
-6. **Do not edit the bundled skill, except for the one patch in step 6.**
+6. **Do not edit the bundled skill, except for the one patch in step 5.**
    Changing any file under
    `~/.hermes/skills/productivity/google-workspace/` marks it
    `user_modified` and stops it tracking upstream. Everything else you
@@ -40,6 +40,9 @@ idempotent script. Put every change in it and run the script.
    second edit, stop and say so instead — one tracked exception is a
    known cost, two is a fork.
 7. **Guard every step before acting**, so a second run changes nothing.
+8. **You have no `sudo` here.** The base build is locked, and nothing
+   below needs root. If a step seems to, stop and say which — do not
+   look for another way to become root.
 
 ## What you have been given
 
