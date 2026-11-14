@@ -8,10 +8,15 @@
       "Bash(limactl list*)",
       "Bash(limactl shell agents -- cat /etc/agent-sandbox/phase)"
     ],
+    "ask": [
+      "Bash(./bootstrap.sh*--rebuild*)",
+      "Bash(./verify/verify.sh*--reboot*)",
+      "Bash(./verify/verify.sh*--all*)"
+    ],
     "deny": [
       "Bash(limactl delete*)",
       "Bash(limactl stop*)",
-      "Bash(limactl shell agents -- sudo /usr/local/sbin/agent-egress unlock)"
+      "Bash(limactl shell *agent-egress unlock*)"
     ]
   }
 }

@@ -64,10 +64,11 @@ like their decision"* is not a reason. A real reason is one of:
 
 `.claude/settings.json` allows `./bootstrap.sh`, `./scripts/*.sh`,
 `./verify/verify.sh`, `git`, and two read-only `limactl` probes
-unattended. It denies `limactl shell agents -- <anything else>`, which
-is the "fix the spec, not the VM" rule as a permission. Being blocked
-there means stop reaching into the VM — not hand the user a shell
-command to run on your behalf.
+unattended. Any other `limactl shell agents -- ...` is deliberately not
+on that list, so it stops for the user's approval — and that prompt is
+the "fix the spec, not the VM" rule surfacing. Being stopped there means
+stop reaching into the VM: do not ask the user to approve it, and do not
+hand them a shell command to run on your behalf.
 
 A long-running script is not a reason to hand it over either. Run it in
 the background and say how long it will take.
@@ -244,11 +245,21 @@ Allow unattended: `./bootstrap.sh`, `./scripts/*.sh`, `./verify/verify.sh`,
 `git`, `limactl list`, and
 `limactl shell agents -- cat /etc/agent-sandbox/phase`.
 
-Deny: `limactl shell agents -- <anything else>`, `limactl delete|stop`, and
-`agent-egress unlock`. The asymmetry is the point — the two read-only probes
-above are named deliberately, the general form is not. "Fix the spec, not
-the VM" is enforceable as a permission; as prose it has already been
-violated twice.
+Ask first: `./bootstrap.sh --rebuild`, which destroys the VM, both agents
+and `config/agents.env`, and `./verify/verify.sh --reboot` (or `--all`),
+which stops and restarts a VM someone may be talking to. Both used to run
+unattended under the patterns above while `limactl delete` and `limactl
+stop` were denied — the same two actions, one command further in.
+
+Deny: `limactl delete|stop` and `agent-egress unlock`.
+
+Everything else under `limactl shell agents -- ...` is on neither list, so
+it prompts. The asymmetry is the point — the two read-only probes above
+are named deliberately, the general form is not. Treat that prompt as a
+refusal: "fix the spec, not the VM" has been violated twice as prose.
+(This file used to say the general form was *denied*. It never was; a
+deny rule would also have blocked the two probes, since deny outranks
+allow.)
 
 **Do not ask the user to bypass permissions wholesale.** An allowlist gives
 you a working session without removing the one guardrail that keeps you out
