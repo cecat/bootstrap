@@ -197,7 +197,7 @@ esac
 # on the wrong day. Compare against what the user asked for rather than
 # merely checking it is non-empty: inheriting the right answer by luck is
 # the thing being fixed.
-want_tz="$( set -a; . config/agents.env 2>/dev/null; set +a; printf %s "${AGENT_TIMEZONE:-}" )"
+want_tz="$( set -a; . "$REPO_DIR/config/agents.env" 2>/dev/null; set +a; printf %s "${AGENT_TIMEZONE:-}" )"
 he_tz="$(g 'hermes config get timezone 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'A-Za-z0-9/_+-')"
 # A blank AGENT_TIMEZONE fails rather than skips. Skipping would mean the
 # one deployment most likely to be on the wrong zone -- a clone whose
@@ -396,20 +396,54 @@ esac
 #
 #    Hits the host's own gateway address, which is the most consequential
 #    thing in reach and the one a confused agent is most likely to find.
+#
+#    --noproxy '' is load-bearing. The agents' login shell exports
+#    NO_PROXY naming the host address, and curl honours that even when
+#    --proxy is given -- so without it this request never reached squid at
+#    all, went direct into the iptables reject, and came back 000. The
+#    check then skipped as "inconclusive" on every recorded run from
+#    2026-11-02 to 2026-11-14: the suite's headline negative assertion had
+#    never once been made. An empty --noproxy clears the exemption.
+via_squid() {
+  g "curl -g -sS -m 15 -o /dev/null -w '%{http_code}' --noproxy '' --proxy http://127.0.0.1:3128 '$1' 2>/dev/null" | tr -dc '0-9'
+}
 hostip="$(g 'ip route show default 2>/dev/null' | sed -nE 's/^default via ([0-9.]+).*/\1/p' | head -1)"
+
+# Link-local needs nothing listening and no knowledge of the host, so it
+# is the one private-range probe that can never be inconclusive.
+pcode="$(via_squid http://169.254.169.254/)"
+[ "$pcode" = "403" ] \
+  && pass "private network is DENIED by squid" "link-local -> 403" \
+  || fail "private network is DENIED by squid" "http://169.254.169.254 -> ${pcode:-no response}, expected squid's 403"
+
+# The host is the consequential target, and it is also the model gateway's
+# address -- which squid must allow, on ONE port. Under user-mode
+# networking that address is the host's loopback, so an allow that matches
+# the address alone hands the agents every service the host binds to
+# 127.0.0.1. Ask for two ports that are not the gateway's. Anything but
+# 403 means squid was willing to connect: 503 is "tried, nothing there",
+# which is the policy saying yes.
 if [ -n "$hostip" ]; then
-  pcode="$(g "curl -sS -m 15 -o /dev/null -w '%{http_code}' --proxy http://127.0.0.1:3128 http://$hostip/ 2>/dev/null")"
-  case "$pcode" in
-    403)     pass "private network is DENIED by squid" "http://$hostip (the host) -> 403" ;;
-    # 000 means the connection failed before squid ruled on it -- nothing is
-    # listening there. That is not a denial, and reporting it as one would
-    # be a green light for a policy that was never exercised.
-    000|'')  skip "private network is DENIED by squid" "http://$hostip -> no response; nothing is listening, so squid never ruled on it. Inconclusive, not a pass." ;;
-    *)       fail "private network is DENIED by squid" "http://$hostip -> $pcode, expected 403. An agent can reach the host and whatever else runs on this LAN." ;;
-  esac
+  h80="$(via_squid "http://$hostip/")"; h22="$(via_squid "http://$hostip:22/")"
+  if [ "$h80" = "403" ] && [ "$h22" = "403" ]; then
+    pass "the host is DENIED by squid off the model port" "http://$hostip :80 and :22 -> 403"
+  else
+    fail "the host is DENIED by squid off the model port" \
+         ":80 -> ${h80:-none}, :22 -> ${h22:-none}, expected 403 for both. Squid allows the
+        model gateway's ADDRESS on every port, and that address is the host's
+        loopback -- an agent can reach whatever the host runs on 127.0.0.1"
+  fi
 else
-  skip "private network is DENIED by squid" "could not read the guest's default route"
+  skip "the host is DENIED by squid off the model port" "could not read the guest's default route"
 fi
+
+# IPv6 is the same boundary by another road. QEMU's user-mode network
+# hands the guest an fec0::/64 address and maps <prefix>::2 to the host,
+# and fec0::/10 is in neither fc00::/7 nor fe80::/10.
+v6code="$(via_squid 'http://[fec0::2]/')"
+[ "$v6code" = "403" ] \
+  && pass "private IPv6 is DENIED by squid" "[fec0::2] (the host, over IPv6) -> 403" \
+  || fail "private IPv6 is DENIED by squid" "http://[fec0::2] -> ${v6code:-no response}, expected 403. fec0::/10 is missing from the private ranges"
 
 # 3. Around the proxy entirely; the iptables chain rejects it. This is what
 #    makes the proxy policy binding rather than advisory -- an agent that
@@ -434,6 +468,44 @@ elif [ "$direct" = "000" ]; then
   skip "lockdown is scoped to the agent uid" "root is blocked too (HTTP ${rootdirect:-000}). Either the rule is not uid-scoped, or this host has no route to 1.1.1.1 -- in which case test 2 above proved nothing. Check manually."
 else
   fail "lockdown is scoped to the agent uid" "root -> ${rootdirect:-000}"
+fi
+
+# 4b. The same bypass over IPv6. iptables rules do not apply to IPv6, so a
+#     uid filter with no ip6tables twin leaves a second road out for any
+#     agent that asks for an AAAA record. Assert the rule, because whether
+#     there is anything at the far end depends on the host's own IPv6 --
+#     and try it as well, with root as the control, where there is.
+agent_uid="$(g "id -u ${au:-nobody}" | tr -dc '0-9')"
+v6rule="$(groot "ip6tables -S OUTPUT 2>/dev/null | grep -c -- '--uid-owner ${agent_uid:-x} '" | tr -dc '0-9')"
+v6agent="$(g 'curl -g -6 -sS -m 8 -o /dev/null -w "%{http_code}" --noproxy "*" "http://[2606:4700:4700::1111]/" 2>/dev/null' | tr -dc '0-9')"
+v6root="$(groot 'curl -g -6 -sS -m 8 -o /dev/null -w "%{http_code}" --noproxy "*" "http://[2606:4700:4700::1111]/" 2>/dev/null' | tr -dc '0-9')"
+v6addr="$(g 'ip -6 -o addr show scope global 2>/dev/null | wc -l' | tr -dc '0-9')"
+if [ "${v6agent:-000}" != "000" ]; then
+  fail "direct bypass is BLOCKED over IPv6" "agent got HTTP $v6agent from an IPv6 address with no proxy -- the lockdown is IPv4 only"
+elif [ "${v6rule:-0}" -ge 1 ]; then
+  pass "direct bypass is BLOCKED over IPv6" "ip6tables carries the uid rule (root over IPv6 -> ${v6root:-000}, ${v6addr:-0} global address(es))"
+else
+  fail "direct bypass is BLOCKED over IPv6" \
+       "no ip6tables rule for uid ${agent_uid:-?}. The guest has ${v6addr:-0} global IPv6
+        address(es) and root over IPv6 -> ${v6root:-000}; nothing was reachable just now,
+        but nothing is stopping it either"
+fi
+
+# 4c. None of the above binds an agent that can become root. The uid rule
+#     is the whole enforcement, test 4 shows root is exempt from it, and
+#     the agents have a shell -- so a passwordless sudo is the sandbox with
+#     the door propped open. It is needed while Pi builds and must be gone
+#     once the build is locked.
+if [ "$phase" = "runtime" ]; then
+  cansudo="$(g 'sudo -n true 2>/dev/null && echo CAN || echo CANNOT' | tr -dc 'A-Z')"
+  [ "$cansudo" = "CANNOT" ] \
+    && pass "the agent user cannot become root" "sudo -n true is refused" \
+    || fail "the agent user cannot become root" \
+            "sudo -n true succeeded as the agent user. Any agent can run
+        'sudo agent-egress unlock' or simply 'sudo curl', so the egress
+        lockdown is advisory"
+else
+  skip "the agent user cannot become root" "phase is '${phase:-none}': sudo is open while Pi builds and closes when finish-build.sh locks the VM"
 fi
 
 # 5. Positive control: the model gateway bypasses squid by design, via one
@@ -592,56 +664,15 @@ if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
     fail "hermes-gateway" "Telegram is configured but the gateway is $hactive -- run: hermes gateway install"
   fi
 
-  # A running service is not a working adapter: the plugin ships disabled
-  # and its dependency comes from pypi.org, allowlisted only in bootstrap.
-  # Miss either and the service sits active reporting "No adapter
-  # available for telegram".
-  #
-  # Scope to the CURRENT service start and take the last adapter event, not
-  # the last *connect* -- otherwise one historical success reports
-  # "connected" forever, including while the adapter is failing to
-  # reconnect. A drop it never recovers from is what this catches.
-  #
-  # A long-poll drops and reconnects routinely, so a lone network error is
-  # only a failure if it persists: re-read after a pause and judge the
-  # second sample. Without that this check flapped PASS/FAIL/SKIP between
-  # runs minutes apart and failed whole builds over a transient.
-  #
-  # The flapping is damped, not cured: on 2026-11-02 this reported FAIL
-  # under finish-build.sh and SKIP minutes later, on an adapter the user
-  # then found answering on Telegram. Two causes are in play and neither
-  # is the agent being broken -- a reconnect this samples mid-drop, and
-  # the Conflict branch below, which names check-telegram-polling.sh as
-  # the rival getUpdates consumer while verify.sh runs that very script
-  # later in this same file. Treat a FAIL or SKIP here as "unproven, go
-  # message the bot", never as "the agent is down".
-  adapter_event() {
-    g 'journalctl --user -u hermes-gateway.service --no-pager _SYSTEMD_INVOCATION_ID="$(systemctl --user show -p InvocationID --value hermes-gateway.service)" 2>/dev/null | grep -iE "\[Telegram\] Connected|No adapter available for telegram|adapter creation failed|Telegram network error|Conflict: terminated" | tail -1'
-  }
-  # A transient needs a long enough window to recover in, and 20s was not
-  # it. This check has claimed "not reconnecting on its own" three times
-  # about an adapter that was reconnecting: twice on Linux, once on macOS
-  # right after a reboot, where the very next run 18 seconds later read
-  # PASS. Sample for up to two minutes and stop at the first success.
-  jr="$(adapter_event)"
-  case "$jr" in
-    *"network error"*)
-      for _ in 1 2 3 4 5 6; do
-        sleep 20
-        jr="$(adapter_event)"
-        case "$jr" in *"Connected to Telegram"*) break ;; esac
-      done ;;
-  esac
-  # `sed 's/.*: //'` renders "httpx.ConnectError: " as nothing at all, which
-  # printed a failure message with an empty reason. Keep the whole line.
-  jr_msg="$(printf '%s' "$jr" | sed 's/^.*\] //')"
-  case "$jr" in
-    *"Connected to Telegram"*) pass "Hermes Telegram adapter" "connected (polling), this service start" ;;
-    "")                        skip "Hermes Telegram adapter" "no adapter activity since the service started" ;;
-    *"Conflict: terminated"*)  skip "Hermes Telegram adapter" "another getUpdates consumer took the poll -- usually check-telegram-polling.sh, or two gateway restarts inside Telegram's session-expiry window; the adapter reconnects on its own" ;;
-    *"network error"*)         skip "Hermes Telegram adapter" "${jr_msg:-network error} -- still down after 2 minutes. Long-polls drop and reconnect, and this check has been wrong about it before, so: message the bot. That settles it and nothing here can." ;;
-    *)                         fail "Hermes Telegram adapter" "${jr_msg:-unrecognised adapter state} -- check: hermes plugins enable telegram-platform, and that pypi was reachable when it first started" ;;
-  esac
+  # There used to be a check here that read the gateway's journal to decide
+  # whether the Telegram adapter was connected. It is gone, deliberately.
+  # It called a working bot down or unproven at least four times -- twice
+  # on Linux, once on macOS, and again on 2026-11-14, when the owner then
+  # messaged the bot and it answered -- and each rewrite only damped the
+  # flapping. It matched on log wording, which is the mistake this file's
+  # header warns about, and it slept for up to two minutes to do it.
+  # Whether a bot answers is the manual check at the end of the build, and
+  # nothing here substitutes for it.
 else
   pass "hermes-gateway" "no Telegram credentials in ~/.hermes/.env; gateway not required"
 fi
@@ -815,6 +846,10 @@ section "Channels: never reachable without an allowlist"
 #
 # Checking whether a channel is enabled, or whether a bot is polling, both
 # pass while the restriction is absent. Assert the restriction itself.
+# How many ids an allowlist holds -- never the ids themselves. A user id is
+# not a secret, but it is the one value that says who may command an agent
+# with a shell, and this output gets pasted into reports.
+n_ids() { printf '%s' "$1" | tr ',' '\n' | grep -c '[0-9]' || true; }
 want_id="$(grep -E '^TELEGRAM_ALLOWED_USER_ID=' "$REPO_DIR/config/agents.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -dc '0-9')"
 
 oc_has_tg="$(g 'jq -e ".channels.telegram" ~/.openclaw/openclaw.json >/dev/null 2>&1 && echo yes' | tr -d '\r')"
@@ -822,16 +857,16 @@ if [ "$oc_has_tg" = "yes" ]; then
   oc_pol="$(g 'jq -r ".channels.telegram.dmPolicy // \"unset\"" ~/.openclaw/openclaw.json 2>/dev/null' | tr -d '\r')"
   oc_alw="$(g 'jq -r "(.channels.telegram.allowFrom // []) | join(\",\")" ~/.openclaw/openclaw.json 2>/dev/null' | tr -d '\r')"
   if [ "$oc_pol" = "allowlist" ] && [ -n "$oc_alw" ]; then
-    pass "OpenClaw Telegram is restricted" "dmPolicy=allowlist, allowFrom=$oc_alw"
+    pass "OpenClaw Telegram is restricted" "dmPolicy=allowlist, allowFrom has $(n_ids "$oc_alw") id(s)"
   else
-    fail "OpenClaw Telegram is restricted" "dmPolicy=$oc_pol allowFrom=${oc_alw:-empty} -- anyone who finds this bot could talk to an agent with shell access"
+    fail "OpenClaw Telegram is restricted" "dmPolicy=$oc_pol, allowFrom has $(n_ids "$oc_alw") id(s) -- anyone who finds this bot could talk to an agent with shell access"
   fi
   # `case`, not `[ ... != *glob* ]` -- inside `[ ]` the pattern is compared
   # literally and reports a mismatch every time.
   if [ -n "$want_id" ]; then
     case ",$oc_alw," in
       *",$want_id,"*) : ;;
-      *) fail "OpenClaw allowFrom matches the configured user" "allowFrom=$oc_alw does not contain TELEGRAM_ALLOWED_USER_ID -- you would not be able to talk to it, and someone else might" ;;
+      *) fail "OpenClaw allowFrom matches the configured user" "allowFrom ($(n_ids "$oc_alw") id(s)) does not contain TELEGRAM_ALLOWED_USER_ID -- you would not be able to talk to it, and someone else might" ;;
     esac
   fi
 else
@@ -849,9 +884,9 @@ if g 'grep -qE "^TELEGRAM_BOT_TOKEN=.+" ~/.hermes/.env' >/dev/null 2>&1; then
       esac
     fi
     if [ "$he_ok" = "1" ]; then
-      pass "Hermes Telegram is restricted" "TELEGRAM_ALLOWED_USERS=$he_alw"
+      pass "Hermes Telegram is restricted" "TELEGRAM_ALLOWED_USERS has $(n_ids "$he_alw") id(s), including the configured one"
     else
-      fail "Hermes Telegram is restricted" "TELEGRAM_ALLOWED_USERS=$he_alw does not contain the configured user id"
+      fail "Hermes Telegram is restricted" "TELEGRAM_ALLOWED_USERS ($(n_ids "$he_alw") id(s)) does not contain the configured user id"
     fi
   else
     fail "Hermes Telegram is restricted" "TELEGRAM_ALLOWED_USERS is empty or absent -- an unrestricted bot answers anyone who finds it"
@@ -867,9 +902,9 @@ oc_ch="$(g 'jq -r "(.channels // {}) | to_entries | map(select(.value.enabled !=
 if [ "${oc_ch:-0}" = "0" ]; then
   pass "OpenClaw channel safety" "no channel enabled (restriction not load-bearing yet)"
 elif [ "${oc_pol:-}" = "allowlist" ] && [ -n "${oc_alw:-}" ]; then
-  pass "OpenClaw channel safety" "$oc_ch channel(s) enabled, restricted to $oc_alw"
+  pass "OpenClaw channel safety" "$oc_ch channel(s) enabled, restricted to $(n_ids "$oc_alw") id(s)"
 else
-  fail "OpenClaw channel safety" "$oc_ch channel(s) enabled with dmPolicy=${oc_pol:-unset} allowFrom=${oc_alw:-empty} -- a reachable agent with shell access that anyone could message. Disable it: openclaw config set channels.telegram.enabled false"
+  fail "OpenClaw channel safety" "$oc_ch channel(s) enabled with dmPolicy=${oc_pol:-unset}, allowFrom has $(n_ids "${oc_alw:-}") id(s) -- a reachable agent with shell access that anyone could message. Disable it: openclaw config set channels.telegram.enabled false"
 fi
 
 # Hermes has no enable flag: the adapter polls from the moment the gateway
@@ -881,7 +916,7 @@ if g 'ls ~/.hermes/channel_directory.json' >/dev/null 2>&1; then
   if [ "${he_ch:-0}" = "0" ]; then
     pass "Hermes channel safety" "channel directory lists none enabled; reachability is the adapter's, restriction asserted above"
   elif [ -n "${he_alw:-}" ]; then
-    pass "Hermes channel safety" "$he_ch enabled, restricted to $he_alw"
+    pass "Hermes channel safety" "$he_ch enabled, restricted to $(n_ids "$he_alw") id(s)"
   else
     fail "Hermes channel safety" "$he_ch enabled with no TELEGRAM_ALLOWED_USERS"
   fi
