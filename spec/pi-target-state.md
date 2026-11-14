@@ -23,6 +23,15 @@ summary.
    the infrastructure it runs on. If something is blocked, report it. Do
    not run `agent-egress unlock`, edit iptables, or edit the allowlist.
 
+   **You have `sudo` while you build; the agents will not have it
+   afterwards.** The lockdown applies to your user and not to root, so
+   `sudo curl`, `sudo -E ...` and the like go straight round it — that is
+   weakening the sandbox, and it also proves nothing, because the agents
+   cannot do the same. Use `sudo` for what an installer needs and for
+   reading state (`sudo agent-egress status`, `sudo agent-egress log` for
+   squid's access log). Nothing you build may need root to *run*: once
+   this build is locked the agent user has no `sudo` at all.
+
 2. **Never let a bot be reachable without an allowlist.** A live agent has
    shell access and no permission prompts, and Telegram delivers a
    stranger's DM straight to it. `api.telegram.org` is itself allowlisted,
@@ -78,33 +87,37 @@ it. `~/.config/agent-sandbox/model-access.env` gives you `VM_BASE_URL` (use
 this one — `UPSTREAM_BASE_URL` is a host-side address that is nothing from
 here), `CREDENTIAL`, and model names.
 
-**Both agents run `argo:claude-5-opus`.** Not the installer's default, not
-whatever an onboarding flag suggests, and not a model you saw in an
-example. The whole point of this build is that the agents reach the same
-models the supervising coding agent uses, so configure:
+**Both agents run the model named in `AGENT_MODEL`**, in
+`~/.config/agent-sandbox/agents.env` — `argo:claude-5-opus` unless the
+user chose another, and that same default if the variable is absent. Not
+the installer's default, not whatever an onboarding flag suggests, and
+not a model you saw in an example. The whole point of this build is that
+the agents reach the same models the supervising coding agent uses, so
+configure:
 
-- OpenClaw: the provider's model id — `--custom-model-id "argo:claude-5-opus"`
-- Hermes: `hermes config set model.default argo:claude-5-opus`
+- OpenClaw: the provider's model id — `--custom-model-id "$AGENT_MODEL"`
+- Hermes: `hermes config set model.default "$AGENT_MODEL"`
+
+Read it from the file in `setup.sh` rather than writing the name into
+the script, so that a changed value and a re-run are all it takes.
+`AGENT_AUX_MODEL` (default `argo:gemini-3.8-flash`) is the cheap model
+for mechanical work, used below wherever this file says so.
 
 `model-access.env` carries `MODEL_OPUS`, `MODEL_SONNET` and `MODEL_HAIKU`
 as the host's own aliases (`claudeopus5` and friends). The gateway accepts
-either spelling; prefer the `argo:` form above, which is what
-`/v1/models` lists.
+either spelling; prefer the `argo:` form, which is what `/v1/models`
+lists.
 
-This is written down because it went wrong: a build set both agents to
-`argo:gpt-4o` — an installer default, never chosen — and nothing caught
-it for weeks, because `verify.sh` only asked whether a completion
-succeeded and gpt-4o completes fine. A user then spent an evening being
-confidently lied to by an agent about files it had not written. If you
-cannot set a model, say so loudly rather than accepting a default.
+If you cannot set a model, say so loudly rather than accepting a
+default. A build once ran both agents on an installer's default for
+weeks, and nothing failed.
 
 The endpoint is argo-proxy and serves both shapes: `/v1/messages`
 (Anthropic) and `/v1/chat/completions` (OpenAI). Both were confirmed
 working on 2026-11-09. Pi uses the Anthropic path; **Hermes and OpenClaw
 both use the OpenAI one** — OpenClaw's provider is `api:
-"openai-completions"`. An earlier version of this file claimed OpenClaw
-was on the Anthropic path, which was simply untrue, and it matters
-because some output-cap behaviour is adapter-specific.
+"openai-completions"`. It matters because some output-cap behaviour is
+adapter-specific.
 Reach it **directly, `--noproxy '*'`** — it is allowed by uid as a single
 fixed host:port. Everything else goes through `127.0.0.1:3128`, already in
 your environment.
@@ -187,8 +200,8 @@ wrong here and none of them fail loudly:
   this file will misread it. Delete the entry.
 
 **Compaction must not run on the main model.** Set
-`agents.defaults.compaction.model` to the same cheap model Hermes uses
-for compression, and `compaction.thinkingLevel: "off"`. Unset, compaction
+`agents.defaults.compaction.model` to `AGENT_AUX_MODEL`, the same cheap
+model Hermes uses for compression, and `compaction.thinkingLevel: "off"`. Unset, compaction
 summarises on Opus with reasoning enabled, and the vendor warns the
 allowance can be spent on thinking tokens before any summary is emitted.
 A rejected summary leaves history uncompacted — and under the configured
@@ -257,7 +270,7 @@ the adapter connected; a running service proves nothing.
 **Compression must fit in 4096 output tokens.** Set both:
 
     compression.threshold_tokens: 60000
-    auxiliary.compression.model: argo:gemini-3.8-flash
+    auxiliary.compression.model: <AGENT_AUX_MODEL>
 
 The gateway caps generation at 4096 tokens when the client sends no
 `max_tokens`, and Hermes deliberately sends none to a custom
@@ -277,8 +290,9 @@ enough to land.
 
 The model override is the second half: compression is mechanical work
 that otherwise runs on the main Opus model, slowly and expensively, for
-no benefit. Any `*-flash` the gateway lists will do — confirm with a real
-completion, not `/v1/models`.
+no benefit. Confirm `AGENT_AUX_MODEL` with a real completion, not
+`/v1/models`; if it does not complete, say so and stop rather than
+substituting another.
 
 **Point the other auxiliary work at the same cheap model.** Compression
 was not the only mechanical task defaulting to Opus:
@@ -399,10 +413,7 @@ not the same place for the two of them:
 **Do not invent a path for either, and do not put OpenClaw's under
 `~/.openclaw/agents/<id>/`.** That directory is state — `agent/` holds
 `openclaw-agent.sqlite`, plus `sessions/` and `recovery/` — and nothing
-there is ever loaded as identity. An earlier version of this spec said to
-write it there, and the result was an agent whose real `SOUL.md` sat
-unedited for days while everyone involved, including the supervising
-coding agent, believed otherwise.
+there is ever loaded as identity.
 
 OpenClaw's workspace is a git repo it initialises itself, holding the whole
 bootstrap set: `AGENTS.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` and
@@ -428,19 +439,12 @@ injected is in the wrong place — say so instead of reporting success.
 only one who edits it afterwards and both products offer a plausible wrong
 answer.
 
-For Hermes the decoy is `~/SOUL.md` — the obvious guess, and both a GPT-4o
-and an Opus 5 Gandalf made it. The second created a 2 kB `~/SOUL.md` that
-looks right, is never loaded, and then blocks its own rewrite: Hermes
-refuses to overwrite a file the task has not read in full, so the agent
-gets stuck editing a decoy while the user sees an identity that never
-changes.
-
-For OpenClaw the wrong answer was **ours**: this spec used to name
-`~/.openclaw/agents/<id>/SOUL.md`, so the seed went somewhere the gateway
-never reads, and the agent — correctly following its vendor's
-documentation to the workspace — looked like the one making the mistake.
-It was not. Write the absolute path into the seed so neither the agent nor
-a future supervisor has to infer it.
+For Hermes the decoy is `~/SOUL.md` — the obvious guess, which agents
+have made more than once. A file there looks right, is never loaded, and
+then blocks its own rewrite: Hermes refuses to overwrite a file the task
+has not read in full. For OpenClaw the decoy is
+`~/.openclaw/agents/<id>/SOUL.md`. Write the absolute path into the seed
+so neither the agent nor a future supervisor has to infer it.
 
 ```markdown
 # SOUL
