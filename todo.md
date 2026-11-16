@@ -58,43 +58,34 @@ port 22 connected.
   `spark-handoff.md`, both gone. It is the record of a finished port and
   was left as written.
 
-**Stage 6 — acceptance. In progress; paused 2026-11-14 when the
-laptop closed.** Pick up here.
+**Stage 6 — acceptance. The base build passed on 2026-11-16.**
 
-Where it stands, on `agents-test` (checkout `~/code/bootstrap-test`,
-always `AGENTS_VM=agents-test`), bots `@Cheetah_cec_bot` (OpenClaw) and
-`@Puma_cec_bot` (Hermes):
+On `agents-test` (checkout `~/code/bootstrap-test`, always
+`AGENTS_VM=agents-test`), bots `@Cheetah_cec_bot` (OpenClaw) and
+`@Puma_cec_bot` (Hermes), built from nothing on this branch:
 
-- `bootstrap.sh` from nothing: passed, incl. the Telegram token check.
-- Pi built both agents from the edited spec in 38 min, on
-  `argo:claude-5-opus`. Two push-backs to reach `plaintext=0`: it had
-  re-run `openclaw onboard` eight times, each leaving a plaintext auth
-  profile, and could not find `openclaw models auth logout <profileId>
-  --yes`. **Add that command to the spec.**
-- `finish-build.sh` locked the VM: **59 passed, 4 failed, 2 skipped.**
-  Every sandbox check passes with real agents in it; OpenClaw completes
-  and fetches a page.
-- A third push-back was sent for the four failures and **was still
-  running** when work stopped (`logs/pi-say3.out`, then
-  `./scripts/pi-session.sh summary`): Hermes completion returning "Your
-  request was not processed"; `OPENCLAW_GATEWAY_TOKEN` conflicting with
-  `gateway.auth.token` in openclaw doctor; OpenClaw `userTimezone`
-  unset; hermes doctor "Skills Hub directory not initialized".
+- `verify.sh --models` under `finish-build.sh`: **63 passed, 0 failed,
+  2 skipped**, idempotence passing first. `verify.sh --reboot`: **62
+  passed, 0 failed, 3 skipped**, coming back `sudo=locked`. Both agents
+  on `argo:claude-5-opus`; OpenClaw 2026.11.3, Hermes v0.23.1, Pi 1.5.2.
+- It took **five push-backs to Pi**, none caused by the hardening:
+  plaintext auth profiles from eight `openclaw onboard` runs; a second
+  name for the gateway token; OpenClaw's timezone unset; Hermes with no
+  `model.provider`, then with the model name shortened to hide it;
+  `openclaw.json` left world-readable. Four of those are now sentences
+  in the spec. **Those sentences have not been through a build.**
+- One of those turns ran with sudo closed and fixed four things, which
+  is the evidence that a locked VM can still be repaired by Pi.
 
-Next, in order:
+Still open:
 
-- [ ] read Pi's summary for that turn against `./verify/verify.sh --models`
-- [ ] add "Chromium not installed" to `DOCTOR_OK` in both verify
-      scripts — Hermes v0.23.1 reworded the no-browser warning, and no
-      browser is a recorded decision (item 2)
-- [ ] `./verify/verify.sh --models --reboot`
 - [ ] the owner messages both test bots and has each fetch a web page
 - [ ] Google add-on on the test VM. **Not authorised yet**: the owner
       has not said whether the existing Google credentials may be copied
       into the test checkout. Ask.
-- [ ] check idempotence once more (`install-config.sh --reopen`,
-      `verify.sh --idempotence`, `finish-build.sh`) — Pi ran `setup.sh`
-      25 times getting here
+- [ ] `bootstrap.sh`'s `sg kvm` re-exec is still unexercised (the Spark
+      user is already in the group), and so is changing a value in
+      `agents.env` on a finished VM
 
 **Stage 7 — the real VM.** Prove an in-place upgrade on a throwaway VM
 built from `main` first, then apply to `agents` (one stop/start), then

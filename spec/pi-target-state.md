@@ -179,6 +179,18 @@ with a token gateway and a daemon, running as a systemd **user** service.
   plaintext. Migrate both to env SecretRefs (`openclaw secrets apply`).
   `openclaw secrets audit --check` must report `plaintext=0` **and
   `unresolved=0`** from a clean login shell. Quote that line.
+- **Onboard once.** Every extra `openclaw onboard` leaves another
+  inactive `argo-gateway:setup-*` auth profile holding the key in
+  plaintext, and the audit counts each one. Guard on the agent existing.
+  If any are there, `openclaw models auth list` shows them and
+  `openclaw models auth logout <profileId> --yes` removes one without a
+  TTY — `secrets configure` is interactive and is not the way.
+- Reference the gateway token as an env SecretRef to
+  `OPENCLAW_GATEWAY_TOKEN`, the name `agents.env` already carries. A
+  second name for the same token makes `openclaw doctor` report a
+  conflict.
+- `openclaw.json` stays mode 600. A `jq ... > tmp && mv` rewrite resets
+  it to the umask, and doctor flags the result.
 
 **Undo what the onboarding wizard guessed.** Three of its defaults are
 wrong here and none of them fail loudly:
@@ -254,6 +266,12 @@ choose it while the gateway offers embeddings.
 
 Install from `https://hermes-agent.nousresearch.com/install.sh`. Configure
 the same gateway on its OpenAI-compatible path.
+
+Set **`model.provider`** to the gateway's provider as well as
+`model.default`. With only the model set, Hermes sends the request to
+its default provider and the user sees *"Your request was not
+processed"*. Keep `model.default` exactly `AGENT_MODEL`, `argo:` prefix
+included — do not shorten it to make a completion pass.
 
 Hermes resolves credentials from `~/.hermes/.env` **in preference to the
 environment**, so exporting a variable is not enough — the value has to be
