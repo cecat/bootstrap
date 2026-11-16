@@ -88,7 +88,7 @@ this one — `UPSTREAM_BASE_URL` is a host-side address that is nothing from
 here), `CREDENTIAL`, and model names.
 
 **Both agents run the model named in `AGENT_MODEL`**, in
-`~/.config/agent-sandbox/agents.env` — `argo:claude-5-opus` unless the
+`~/.config/agent-sandbox/agents.env` — `argo:claude-5.5-opus` unless the
 user chose another, and that same default if the variable is absent. Not
 the installer's default, not whatever an onboarding flag suggests, and
 not a model you saw in an example. The whole point of this build is that
@@ -100,7 +100,7 @@ configure:
 
 Read it from the file in `setup.sh` rather than writing the name into
 the script, so that a changed value and a re-run are all it takes.
-`AGENT_AUX_MODEL` (default `argo:gemini-3.8-flash`) is the cheap model
+`AGENT_AUX_MODEL` (default `argo:claude-5.5-haiku`) is the cheap model
 for mechanical work, used below wherever this file says so.
 
 `model-access.env` carries `MODEL_OPUS`, `MODEL_SONNET` and `MODEL_HAIKU`
@@ -315,10 +315,6 @@ substituting another.
 **Point the other auxiliary work at the same cheap model.** Compression
 was not the only mechanical task defaulting to Opus:
 
-    auxiliary.background_review.model      the post-turn fork that
-                                           extracts memories and skills;
-                                           replays the conversation
-    auxiliary.background_review.max_input_tokens: 48000
     auxiliary.title_generation.model       a 64-token session title
     auxiliary.approval.model               classifies every flagged
                                            shell command
@@ -327,6 +323,25 @@ was not the only mechanical task defaulting to Opus:
 None of these fail visibly. They are slow and expensive, and the approval
 classifier timing out silently falls through on a path that exists to
 gate shell commands.
+
+**The memory review is not one of them. Leave it on the main model.**
+`auxiliary.background_review` is the fork that saves a memory or a skill
+without being asked, and it is a tool-using conversation, not a
+mechanical one. Do not give it a model: unset, it runs on the agent's
+own model with the conversation's cache warm, which is the vendor's
+default. Give it `provider: argo-gateway` like the rest and nothing
+else. A build once moved it to a cheap model that this gateway could
+only half-support — one tool call, then `Invalid thought signature` on
+the next step — and the agent stopped learning with every setting
+reading enabled.
+
+Set `memory.nudge_interval: 2`. The review fires after that many user
+prompts in one live session; the default is 10, the gateway drops an
+idle session's count after an hour, and a cron run never counts. An
+agent that gets a few messages a day reached ten twice in a week.
+
+One thing no setting changes, so say it in your summary rather than
+trying to fix it: a new message cancels a review that is still running.
 
 **Give each of those tasks an explicit `provider` as well as a model** —
 `auxiliary.<task>.provider: argo-gateway`, the name under `providers:`.

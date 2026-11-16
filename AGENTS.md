@@ -87,7 +87,7 @@ section's failure mode with the direction reversed.)
 ## Tell the user which models their agents run
 
 **Name the models when you report a build.** Not the endpoint, the
-models — "Hermes and OpenClaw are both on `argo:claude-5-opus`". It is
+models — "Hermes and OpenClaw are both on `argo:claude-5.5-opus`". It is
 one line and it closes a hole that cost a user weeks: both agents were
 silently built on `argo:gpt-4o`, an installer default nobody chose, and
 nothing in the build ever said so. The suite was green the whole time,
@@ -97,7 +97,7 @@ because it only asked whether a completion succeeded.
 report rather than assuming they read it.
 
 **The user may change a model, and should be told they can.**
-`config/agents.env` names `argo:claude-5-opus` as `AGENT_MODEL`; the
+`config/agents.env` names `argo:claude-5.5-opus` as `AGENT_MODEL`; the
 gateway offers more (its `/v1/models` lists them). When they ask for a
 different one, that value is the one place it lives — the spec and
 `verify.sh` both read it — so: they edit it, you re-run `./bootstrap.sh`,

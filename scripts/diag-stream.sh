@@ -69,7 +69,7 @@ limactl shell "$INSTANCE" -- bash -lc "
       http://$gw/v1/messages \
       -H 'Content-Type: application/json' -H 'anthropic-version: 2023-06-01' \
       -H \"x-api-key: \$key\" \
-      -d '{\"model\":\"argo:claude-4.5-sonnet\",\"messages\":[{\"role\":\"user\",\"content\":\"say OK\"}],\"max_tokens\":16,\"stream\":true}'
+      -d '{\"model\":\"argo:claude-5.5-opus\",\"messages\":[{\"role\":\"user\",\"content\":\"say OK\"}],\"max_tokens\":16,\"stream\":true}'
     printf 'exit=%s %s\n' \"\$?\" \"\$(grep -oiE 'argoauthwarning|not registered|error' /tmp/diag-auth.txt | head -1)\"
   done"
 
@@ -78,7 +78,7 @@ limactl shell "$INSTANCE" -- bash -lc "
   python3 -c \"
 import json,sys
 pad = 'The quick brown fox jumps over the lazy dog. ' * 2000
-json.dump({'model':'argo:claude-4.5-sonnet','max_tokens':64,'stream':True,
+json.dump({'model':'argo:claude-5.5-opus','max_tokens':64,'stream':True,
            'messages':[{'role':'user','content':pad + ' Reply with exactly: BIG_OK'}]}, sys.stdout)
 \" > /tmp/diag-big.json
   printf '    request bytes: %s\n' \"\$(wc -c </tmp/diag-big.json)\"
@@ -94,6 +94,6 @@ say "Pi itself, smallest possible prompt, fresh session"
 limactl shell "$INSTANCE" -- bash -lc '
   cd ~/agent-bootstrap 2>/dev/null || cd ~
   timeout 120 pi -p --session-id diag-probe --provider argo \
-    --model argo:claude-4.5-sonnet -- "Reply with exactly: PI_OK" 2>&1 | tail -5'
+    --model argo:claude-5.5-opus -- "Reply with exactly: PI_OK" 2>&1 | tail -5'
 
 say "done"

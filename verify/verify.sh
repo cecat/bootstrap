@@ -149,8 +149,8 @@ esac
 # The model is named once, as AGENT_MODEL in config/agents.env, and both
 # the spec and this check read it from there. It used to live in two
 # files that had to be edited together.
-WANT_MODEL="$( set -a; . "$REPO_DIR/config/agents.env" 2>/dev/null; set +a; printf %s "${AGENT_MODEL:-argo:claude-5-opus}" )"
-PI_MODEL_ID="$( set -a; . "$REPO_DIR/config/agents.env" 2>/dev/null; set +a; printf %s "${PI_MODEL:-argo:claude-4.5-sonnet}" )"
+WANT_MODEL="$( set -a; . "$REPO_DIR/config/agents.env" 2>/dev/null; set +a; printf %s "${AGENT_MODEL:-argo:claude-5.5-opus}" )"
+PI_MODEL_ID="$( set -a; . "$REPO_DIR/config/agents.env" 2>/dev/null; set +a; printf %s "${PI_MODEL:-argo:claude-5.5-opus}" )"
 
 he_model="$(g 'hermes config get model.default 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-zA-Z0-9.:_/-')"
 case "$he_model" in
@@ -196,7 +196,7 @@ cmod="$(g 'hermes config get auxiliary.compression.model 2>/dev/null | tr -d "\r
 case "$cmod" in
   "")      fail "compression runs on a cheap fast model" \
                 "auxiliary.compression.model is empty, so compression runs on the main model" ;;
-  *flash*|*mini*|*nano*|*lite*) pass "compression runs on a cheap fast model" "$cmod" ;;
+  *haiku*|*flash*|*mini*|*nano*|*lite*) pass "compression runs on a cheap fast model" "$cmod" ;;
   *)       fail "compression runs on a cheap fast model" "$cmod" ;;
 esac
 
@@ -253,7 +253,7 @@ esac
 # mode warns the user even when notifyUser is false.
 oc_cmod="$(g 'jq -r ".agents.defaults.compaction.model // empty" $HOME/.openclaw/openclaw.json 2>/dev/null' | tr -dc 'a-zA-Z0-9.:_/-')"
 case "$oc_cmod" in
-  *flash*|*mini*|*nano*|*lite*) pass "OpenClaw compacts on a cheap fast model" "$oc_cmod" ;;
+  *haiku*|*flash*|*mini*|*nano*|*lite*) pass "OpenClaw compacts on a cheap fast model" "$oc_cmod" ;;
   "") fail "OpenClaw compacts on a cheap fast model" \
            "compaction.model is unset, so compaction runs on the session model (Opus)" ;;
   *)  fail "OpenClaw compacts on a cheap fast model" "$oc_cmod" ;;

@@ -29,10 +29,12 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTANCE="${AGENTS_VM:-agents}"
 WORKDIR="agent-bootstrap"
 SESSION_ID="${PI_SESSION_ID:-agent-bootstrap-build}"
-# The environment wins, then config/agents.env, then the model every build
-# so far has used.
+# The environment wins, then config/agents.env, then the default. Pi ran
+# on a smaller model than the agents it builds until 2026-11-16; a build
+# that day needed five push-backs, and the supervisor's time costs more
+# than the difference.
 MODEL="${PI_MODEL:-$( set -a; . "$REPO/config/agents.env" 2>/dev/null; set +a; printf %s "${PI_MODEL:-}" )}"
-MODEL="${MODEL:-argo:claude-4.5-sonnet}"
+MODEL="${MODEL:-argo:claude-5.5-opus}"
 PROVIDER="${PI_PROVIDER:-argo}"
 LOGDIR="$REPO/logs"
 LAST="$LOGDIR/pi-last.log"

@@ -62,8 +62,8 @@ esac
 # The model Pi itself runs on, and the one the gates below call. From
 # agents.env so there is one place to change it; the default is what every
 # build so far has used.
-PI_MODEL="$( set -a; . "$CFG/agents.env" 2>/dev/null; set +a; printf %s "${PI_MODEL:-argo:claude-4.5-sonnet}" )"
-AGENT_MODEL="$( set -a; . "$CFG/agents.env" 2>/dev/null; set +a; printf %s "${AGENT_MODEL:-argo:claude-5-opus}" )"
+PI_MODEL="$( set -a; . "$CFG/agents.env" 2>/dev/null; set +a; printf %s "${PI_MODEL:-argo:claude-5.5-opus}" )"
+AGENT_MODEL="$( set -a; . "$CFG/agents.env" 2>/dev/null; set +a; printf %s "${AGENT_MODEL:-argo:claude-5.5-opus}" )"
 case "$PI_MODEL$AGENT_MODEL" in *[!A-Za-z0-9.:_/-]*) fail "PI_MODEL or AGENT_MODEL in config/agents.env has characters outside [A-Za-z0-9.:_/-]." ;; esac
 
 # A host-side tunnel must actually be up, or everything downstream fails
@@ -98,6 +98,12 @@ done
 # argo-proxy runs with username-passthrough: the API key IS the ANL username.
 # A placeholder fails with "the username is not registered in ARGO". The key
 # is an env reference, so the value is never written into this file.
+# One row per distinct model: PI_MODEL and AGENT_MODEL are the same by
+# default, and a catalogue naming one id twice is not something to find
+# out about from Pi.
+PI_MODELS_JSON="        { \"id\": \"$PI_MODEL\" }"
+[ "$AGENT_MODEL" = "$PI_MODEL" ] || PI_MODELS_JSON="$PI_MODELS_JSON,
+        { \"id\": \"$AGENT_MODEL\" }"
 cat > "$CFG/pi-models.json" <<JSON
 {
   "\$schema": "https://pi.dev/schemas/models.schema.json",
@@ -107,8 +113,7 @@ cat > "$CFG/pi-models.json" <<JSON
       "api": "anthropic-messages",
       "apiKey": "\$ARGO_CREDENTIAL",
       "models": [
-        { "id": "$PI_MODEL" },
-        { "id": "$AGENT_MODEL" }
+$PI_MODELS_JSON
       ]
     }
   }

@@ -96,7 +96,7 @@ address, on that one port and no other.
 quiet with no error on Telegram. And your host must be on whatever
 network Argo needs; the VM inherits your host's networking.
 
-Both agents are built on **`argo:claude-5-opus`**, named as `AGENT_MODEL`
+Both agents are built on **`argo:claude-5.5-opus`**, named as `AGENT_MODEL`
 in `config/agents.env` and asserted by `verify.sh`, which prints what
 they are actually running in its summary. Check that line: a build once
 put both agents on an obsolete model for weeks, because the choice was
