@@ -179,6 +179,21 @@ if [ -r "$A" ]; then
     c=$(grep "^$d" "$A" | grep -i "Background review complete" | grep -cvE "calls=0( |$)")
     printf "  %-12s %6s %8s %14s\n" "$d" "$t" "$r" "$c"
   done
+  echo "  turns by platform, last 9 days (cron turns never start a review):"
+  grep -iE "conversation turn" "$A" | grep -oE "platform=[A-Za-z_-]+" | sort | uniq -c | sed "s/^/   /"
+  echo "  gateway starts per day (each start forgets how many turns have passed):"
+  grep -iE "check_vision_requirements returned" "$A" | grep -oE "^20[0-9]{2}-[0-9]{2}-[0-9]{2}" | sort | uniq -c | tail -9 | sed "s/^/   /"
+  echo "  longest run of telegram turns with no gap over an hour, per day:"
+  grep -iE "conversation turn: platform=telegram" "$A" | cut -c1-19 | python3 -c "
+import sys, datetime, collections
+best = collections.Counter(); run = 0; prev = None
+for line in sys.stdin:
+    try: t = datetime.datetime.strptime(line.strip(), \"%Y-%m-%d %H:%M:%S\")
+    except Exception: continue
+    run = run + 1 if prev and (t - prev).total_seconds() <= 3600 and t.date() == prev.date() else 1
+    best[t.date().isoformat()] = max(best[t.date().isoformat()], run); prev = t
+for d in sorted(best)[-9:]: print(\"    %s  %d\" % (d, best[d]))
+"
   echo "  last review line (text after the logger name, digits kept):"
   grep -i "Background review" "$A" | tail -2 | sed -E "s/^([0-9-]+ [0-9:]+)[^ ]* [A-Z]+ [^:]*: /\1  /" | cut -c1-200 | sed "s/^/    /"
   echo "  auxiliary providers still on auto: $(hermes config show 2>/dev/null | grep -A40 "^auxiliary" | grep -ciE "provider: *.?auto")"

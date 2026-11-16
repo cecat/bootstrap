@@ -150,20 +150,27 @@ both answer. `hardening` was merged to `main` and pushed on 2026-11-16.
       run it since, deliberately. Before anyone does: reopen, run
       `verify.sh --idempotence`, and treat any change it makes as a
       revert
-- [ ] **Gandalf almost never saves a memory unasked, and why is not yet
-      known.** Measured 2026-11-16 from `~/.hermes/logs/agent.log`
-      (`scripts/diag-memory.sh`): 88 conversation turns over eight days
-      and two background reviews, both on 2026-11-10, both `calls=0
-      result=none`. `MEMORY.md` last written 2026-11-11; no `USER.md`.
-      Every setting reads enabled. Ruled out: the auxiliary provider —
-      the ~2,500 "nous requested" warnings were the vision slot at
-      gateway start, and reviews were as rare before the auxiliary model
-      was set as after. Not ruled out: `memory.nudge_interval: 10`, if
-      it counts turns within a session that Gandalf's short sessions
-      never reach. The trigger is not in the vendor pages read so far;
-      `llms-full.txt` is the place to look next. Pi set an explicit
-      provider on all 19 auxiliary tasks on `agents` that day; the suite
-      read 64 passed, 0 failed afterwards
+- [ ] **Gandalf almost never saves a memory unasked — explained, not
+      yet changed.** The vendor (`llms-full.txt`): "Every 10 user
+      prompts → a forked review agent looks at the conversation and
+      decides whether anything should be saved to memory." The count is
+      `memory.nudge_interval` (10 here), it lives in the gateway's
+      per-session agent, a cron run never starts a review, and the
+      gateway evicts an agent idle for an hour (`idle_ttl_secs: 3600`).
+      Measured 2026-11-16 (`scripts/diag-memory.sh`): 89 turns in eight
+      days, of which 43 cron, 20 cli and **26 Telegram** — about three
+      real prompts a day, across 5 to 72 gateway starts a day. Ten in a
+      row inside one live agent has happened twice. So this is the
+      default cadence meeting a light, bursty user, not a broken
+      provider (that theory is ruled out: the "nous requested" warnings
+      were the vision slot, and Pi's explicit providers on all 19
+      auxiliary tasks changed nothing here).
+      **Still unexplained:** both reviews that did run logged `calls=0
+      in=0 out=0 result=none` — no model call at all. Lowering the
+      interval is the obvious change and may only produce more of
+      those. Test before believing: set `memory.nudge_interval` low,
+      send a few Telegram messages with something worth remembering,
+      then read the review line and `MEMORY.md`
 - [ ] LuoJi has no `MEMORY.md` and that is expected: deep-phase
       promotion needs score 0.75, 3 recalls and 3 distinct queries, and
       nothing has reached it (118 short-term entries, 0 promoted).
