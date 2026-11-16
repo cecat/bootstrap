@@ -77,15 +77,31 @@ On `agents-test` (checkout `~/code/bootstrap-test`, always
 - One of those turns ran with sudo closed and fixed four things, which
   is the evidence that a locked VM can still be repaired by Pi.
 
+**The Google add-on passed on the rewritten flow, 2026-11-16**, with a
+fresh consent as a separate test account: `verify --live --base` read
+**31 passed, 0 failed**, base suite 60 passed, 0 failed underneath it.
+The coding agent ran `auth`, opened the tunnel from the laptop itself
+and relayed one link; the owner clicked. One push-back: PySocks had gone
+into one of Hermes' two environments and the agent's commands run in
+the other, so `--check-live` passed while the agent got `Errno 113`.
+The spec now says every environment and `verify.sh` checks every one.
+
+Found on the way, **accepted not fixed**: Hermes snapshots its shell
+environment to `~/.hermes/cache/scratch/hermes-snap-*.sh` while running
+a command, and that environment holds both agents' bot tokens, because
+`install-config.sh` exports them for the openclaw CLI. So Hermes can
+read OpenClaw's token. Same exposure as item 4; closing it belongs with
+the second-user work.
+
 Still open:
 
-- [ ] the owner messages both test bots and has each fetch a web page
-- [ ] Google add-on on the test VM. **Not authorised yet**: the owner
-      has not said whether the existing Google credentials may be copied
-      into the test checkout. Ask.
+- [ ] the owner messages both test bots: a web page from each, and
+      "what is on my calendar" to Puma
+- [ ] Pi's `setup-google.sh` restarts the gateway on every run; it calls
+      that idempotent and it is not quite
 - [ ] `bootstrap.sh`'s `sg kvm` re-exec is still unexercised (the Spark
-      user is already in the group), and so is changing a value in
-      `agents.env` on a finished VM
+      user is already in the group), and so are `remove` and changing a
+      value in `agents.env` on a finished VM
 
 **Stage 7 — the real VM.** Prove an in-place upgrade on a throwaway VM
 built from `main` first, then apply to `agents` (one stop/start), then

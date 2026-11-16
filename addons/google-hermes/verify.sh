@@ -242,6 +242,23 @@ if [ -z "$HPY" ]; then
   HPY="$(g 'pid="$(systemctl --user show hermes-gateway.service -p MainPID --value 2>/dev/null)"; [ -n "$pid" ] && [ "$pid" != 0 ] && readlink -f "/proc/$pid/exe" 2>/dev/null' | tr -d '[:space:]')"
 fi
 case "$HPY" in */python*) ;; *) HPY="" ;; esac
+# The gateway's interpreter is not the only one. Hermes keeps several
+# environments side by side, and on 2026-11-16 PySocks was in the one the
+# gateway runs and missing from the one the agent's terminal commands
+# use: the check below passed and every Google call the agent made died
+# with Errno 113. Ask all of them.
+nosocks="$(g 'for py in $HOME/.hermes/installs/*/environments/*/venv/bin/python; do [ -x "$py" ] || continue; "$py" -c "import socks" 2>/dev/null || printf "%s " "$py"; done' | tr -d '\r')"
+nvenv="$(g 'ls -d $HOME/.hermes/installs/*/environments/*/venv 2>/dev/null | wc -l' | tr -dc '0-9')"
+if [ "${nvenv:-0}" = "0" ]; then
+  skip "PySocks is in every Hermes environment" "found no environments under ~/.hermes/installs"
+elif [ -z "$(printf '%s' "$nosocks" | tr -d '[:space:]')" ]; then
+  pass "PySocks is in every Hermes environment" "$nvenv environment(s)"
+else
+  fail "PySocks is in every Hermes environment" \
+       "missing from: $nosocks-- whichever of these the agent's commands run in
+        will bypass the proxy and hang at the lockdown. Re-run the build"
+fi
+
 if [ -z "$HPY" ]; then
   skip "PySocks is installed where Hermes will load it" "could not find the gateway interpreter"
 else

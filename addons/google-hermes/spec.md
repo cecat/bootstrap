@@ -85,8 +85,12 @@ Place it.
 
 This is a deliberate exception to the usual "do not install into Hermes'
 own venv" rule: the skill runs *inside* Hermes, so there is no separate
-environment to use. Find the interpreter the Hermes gateway actually runs
-and install `PySocks` into it.
+environment to use. Install `PySocks` into **every** environment Hermes
+has — `~/.hermes/installs/*/environments/*/venv/` — not the first one you
+find. There is normally more than one, the gateway runs one and the
+agent's terminal commands run another, and a build that covered only the
+first passed `--check-live` while the agent itself got `Errno 113` on
+every Google call. These venvs have no `pip`; use `uv pip install`.
 
 Without it every Google API call silently bypasses squid. The skill uses
 `google-api-python-client`, which builds a bare `httplib2.Http`. httplib2
@@ -97,8 +101,8 @@ iptables that connection is refused or hangs. There is no proxy error
 message, because httplib2 never believed it had a proxy.
 
 PySocks is not a declared Hermes dependency, so nothing else will install
-it. Verify with an `import socks` from the gateway's interpreter, not from
-`python3` on `$PATH`.
+it. Verify with an `import socks` from each of those interpreters, not
+from `python3` on `$PATH`.
 
 ### 3. Let the skill's subprocesses see the proxy
 
@@ -232,6 +236,11 @@ the shape, a count, or one entry with the values blanked.
 - the output says `AUTHENTICATED`, and **not** `AUTHENTICATED (partial)`.
   Partial means the token is missing scopes the skill wants, which is a
   host-side consent problem — report it, do not try to fix it here;
+- **the agent itself can use the skill**, which `--check-live` does not
+  show, because you run that and the agent runs something else:
+  `hermes -z "Use the google-workspace skill to read my calendar. Reply
+  with exactly CAL_OK if the tool returned, or CAL_FAIL and the error."`
+  must answer `CAL_OK`;
 - both credential files exist at 0600 in the home the **gateway** resolves;
 - `hermes cron doctor` reports no findings about a blocked job.
 
