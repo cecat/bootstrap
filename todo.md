@@ -150,10 +150,26 @@ both answer. `hardening` was merged to `main` and pushed on 2026-11-16.
       run it since, deliberately. Before anyone does: reopen, run
       `verify.sh --idempotence`, and treat any change it makes as a
       revert
-- [ ] observed, not investigated: LuoJi has no `MEMORY.md` and dreaming
-      has promoted nothing (`promotedTotal: 0`, 118 short-term entries);
-      Gandalf's `memories/MEMORY.md` was last written 2026-11-11. Both
-      predate this work
+- [ ] **Gandalf almost never saves a memory unasked, and why is not yet
+      known.** Measured 2026-11-16 from `~/.hermes/logs/agent.log`
+      (`scripts/diag-memory.sh`): 88 conversation turns over eight days
+      and two background reviews, both on 2026-11-10, both `calls=0
+      result=none`. `MEMORY.md` last written 2026-11-11; no `USER.md`.
+      Every setting reads enabled. Ruled out: the auxiliary provider —
+      the ~2,500 "nous requested" warnings were the vision slot at
+      gateway start, and reviews were as rare before the auxiliary model
+      was set as after. Not ruled out: `memory.nudge_interval: 10`, if
+      it counts turns within a session that Gandalf's short sessions
+      never reach. The trigger is not in the vendor pages read so far;
+      `llms-full.txt` is the place to look next. Pi set an explicit
+      provider on all 19 auxiliary tasks on `agents` that day; the suite
+      read 64 passed, 0 failed afterwards
+- [ ] LuoJi has no `MEMORY.md` and that is expected: deep-phase
+      promotion needs score 0.75, 3 recalls and 3 distinct queries, and
+      nothing has reached it (118 short-term entries, 0 promoted).
+      Worth a second look only if it is still empty in a few weeks.
+      Its newest memory file is from 2026-11-11; the hook that writes
+      them fires on a session reset
 - [ ] `addons/google-openclaw/install.sh` and `addons/signal/install.sh`
       still run `sudo` inside the guest (installing `gog`, apt for
       signal-cli). On a locked VM that fails; they need `vm_root` or

@@ -328,6 +328,14 @@ None of these fail visibly. They are slow and expensive, and the approval
 classifier timing out silently falls through on a path that exists to
 gate shell commands.
 
+**Give each of those tasks an explicit `provider` as well as a model** —
+`auxiliary.<task>.provider: argo-gateway`, the name under `providers:`.
+The default is `auto`, and a model name with no provider beside it is
+the same mistake as `model.default` without `model.provider`. Set
+`auxiliary.vision.provider` too, even though no vision model is chosen:
+left on `auto` it asks for Nous Portal at every gateway start and logs
+two warnings each time.
+
 **Prune ended sessions.** Set `sessions.auto_prune: true` with
 `sessions.retention_days: 90`. The vendor is blunt about the default:
 *"Without pruning, `state.db` grows without bound — multi-GB files within

@@ -167,12 +167,24 @@ echo
 echo "== Hermes: memory status =="
 hermes memory status 2>&1 | head -14 | cut -c1-150 | sed "s/^/  /"
 echo
-echo "== Hermes: is it being used, and does the background review run? (counts and error lines only) =="
-printf "  state.db modified: %s\n" "$(stat -c %y ~/.hermes/state.db 2>/dev/null | cut -c1-16)"
-J="journalctl --user -u hermes-gateway.service --no-pager --since -6days"
-printf "  journal lines, last 6 days: %s\n" "$($J 2>/dev/null | wc -l)"
-printf "  mentioning background review: %s\n" "$($J 2>/dev/null | grep -ciE "background.?review")"
-printf "  mentioning the memory tool:   %s\n" "$($J 2>/dev/null | grep -ciE "memory (tool|saved|updated|write)|memory\.(add|replace|remove)")"
-echo "  error or warning lines about either (last 6, cut):"
-$J 2>/dev/null | grep -iE "background.?review|memory" | grep -iE "error|fail|warn|timeout|exceed|refus" | tail -6 | cut -c1-190 | sed "s/^/    /"
+echo "== Hermes: turns against background reviews, per day (from ~/.hermes/logs/agent.log) =="
+echo "   The review is what saves a memory unasked. It logs one line when it"
+echo "   finishes; days with turns and no reviews are the thing to look for."
+A=~/.hermes/logs/agent.log
+if [ -r "$A" ]; then
+  printf "  %-12s %6s %8s %14s\n" day turns reviews "reviews,calls>0"
+  for d in $(grep -oE "^20[0-9]{2}-[0-9]{2}-[0-9]{2}" "$A" | sort -u | tail -9); do
+    t=$(grep "^$d" "$A" | grep -ciE "conversation turn")
+    r=$(grep "^$d" "$A" | grep -ci "Background review complete")
+    c=$(grep "^$d" "$A" | grep -i "Background review complete" | grep -cvE "calls=0( |$)")
+    printf "  %-12s %6s %8s %14s\n" "$d" "$t" "$r" "$c"
+  done
+  echo "  last review line (text after the logger name, digits kept):"
+  grep -i "Background review" "$A" | tail -2 | sed -E "s/^([0-9-]+ [0-9:]+)[^ ]* [A-Z]+ [^:]*: /\1  /" | cut -c1-200 | sed "s/^/    /"
+  echo "  auxiliary providers still on auto: $(hermes config show 2>/dev/null | grep -A40 "^auxiliary" | grep -ciE "provider: *.?auto")"
+  echo "  WARNING/ERROR lines naming review or auxiliary, today (cut):"
+  grep "^$(date +%F)" "$A" | grep -E "WARNING|ERROR" | grep -iE "review|auxiliary" | tail -5 | cut -c1-200 | sed "s/^/    /"
+else
+  echo "  (no agent.log)"
+fi
 '
