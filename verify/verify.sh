@@ -278,6 +278,58 @@ case "$oc_mem" in
   *) pass "OpenClaw memory search has a provider that exists" "$oc_mem" ;;
 esac
 
+# The check above reads a SETTING, and OpenClaw's memory has a long record
+# of settings that look right over an index that is not working. On
+# 2026-11-16 an old setup.sh put the provider back to 'none' on a VM that
+# had been fixed in place; this suite caught it only because the setting
+# itself changed. So ask the product, two ways, neither of which reads
+# configuration:
+#
+#   the gateway's own probe   doctor.memory.status with probe:true makes a
+#                             real embedding call ("check the live
+#                             embedding provider", per the vendor)
+#   a nonsense query          keyword search cannot match a word that is
+#                             in no file, so any hit with a vectorScore
+#                             came from embeddings
+#
+# Not `openclaw memory status --deep`: it refuses to run while the gateway
+# holds the store ("requires exclusive offline state ownership").
+strip_log() { python3 -c '
+import json, re, sys
+raw = sys.stdin.read()
+for m in re.finditer(r"(?m)^[\[{]", raw):
+    if raw[m.start():m.start()+7] == "[proxy]": continue
+    try: d = json.loads(raw[m.start():])
+    except Exception: continue
+    print(json.dumps(d)); break
+'; }
+mem_probe="$(g "openclaw gateway call doctor.memory.status --params '{\"probe\":true}' --json 2>&1" | strip_log)"
+mem_ok="$(printf '%s' "$mem_probe" | jq -r 'if .embedding.ok == true and .embedding.checked == true then "ok" else ((.embedding.error // .embedding | tostring) | .[0:160]) end' 2>/dev/null)"
+case "$mem_ok" in
+  ok) pass "OpenClaw's embedding provider answers a live probe" "$(printf '%s' "$mem_probe" | jq -r '.provider // "?"')" ;;
+  "") skip "OpenClaw's embedding provider answers a live probe" "could not read doctor.memory.status from the gateway" ;;
+  *)  fail "OpenClaw's embedding provider answers a live probe" \
+           "the gateway's own probe says: $mem_ok -- memory is configured but
+        embeddings are not reachable, which is how it has failed silently before" ;;
+esac
+
+oc_agent="$(g 'openclaw agents list --json 2>/dev/null | jq -r ".[0].id // empty"' | tr -dc 'A-Za-z0-9._-')"
+mem_q="$(g "openclaw memory search --json --max-results 3 --agent '${oc_agent:-main}' --query 'zzqx-no-such-word-9173' 2>&1" | strip_log)"
+mem_n="$(printf '%s' "$mem_q" | jq -r '(.results // []) | length' 2>/dev/null)"
+mem_v="$(printf '%s' "$mem_q" | jq -r '[(.results // [])[] | select((.vectorScore // 0) > 0)] | length' 2>/dev/null)"
+mem_stale="$(printf '%s' "$mem_q" | jq -r '.stale // false' 2>/dev/null)"
+if [ -z "$mem_n" ]; then
+  skip "OpenClaw memory search uses embeddings" "could not run openclaw memory search"
+elif [ "$mem_stale" = "true" ]; then
+  fail "OpenClaw memory search uses embeddings" "the search reports its index is stale: $(printf '%s' "$mem_q" | jq -r '.warning // ""' | cut -c1-140)"
+elif [ "${mem_v:-0}" -ge 1 ]; then
+  pass "OpenClaw memory search uses embeddings" "a word in no file still found $mem_v nearest match(es) by vector"
+elif [ "$mem_n" = "0" ]; then
+  skip "OpenClaw memory search uses embeddings" "the index returned nothing at all -- empty, or not built. Run: openclaw memory index --force"
+else
+  fail "OpenClaw memory search uses embeddings" "$mem_n result(s) for a nonsense word and none carries a vector score -- keyword search only"
+fi
+
 # Dreaming is memory-core's 03:00 consolidation sweep, promoting short-term
 # entries into MEMORY.md. It auto-manages its own cron job, so it exists
 # whether or not anyone configured it, and its delivery is "not requested"

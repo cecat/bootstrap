@@ -37,45 +37,57 @@ echo
 echo "== configured (openclaw.json) =="
 g 'jq -c "{provider: .memory.search.provider, model: (.memory.search.remote.model // .memory.search.model // null), baseUrl: (.memory.search.remote.baseUrl // null), apiKeyIsRef: ((.memory.search.remote.apiKey|type) == \"object\")}" ~/.openclaw/openclaw.json'
 
-echo
-echo "== openclaw memory status --deep --json (strings over 120 chars cut) =="
-g "openclaw memory status --deep --json --agent '$id' 2>&1" | python3 -c '
-import json, sys
+# Shared: pull the JSON out of output that starts with log lines such as
+# "[proxy] routing process HTTP traffic ...", cut long strings, print it.
+show_json() {
+  python3 -c '
+import json, re, sys
 raw = sys.stdin.read()
-start = min([i for i in (raw.find("["), raw.find("{")) if i >= 0] or [-1])
-if start < 0:
-    print("(not JSON) " + raw.strip()[:600]); sys.exit(0)
+m = re.search(r"(?m)^[\[{]", raw)
+while m and raw[m.start():m.start()+7] == "[proxy]":
+    m = re.compile(r"(?m)^[\[{]").search(raw, m.end())
+if not m:
+    print("(not JSON) " + raw.strip()[:500]); sys.exit(0)
 try:
-    d = json.loads(raw[start:])
+    d = json.loads(raw[m.start():])
 except Exception as e:
-    print("(could not parse: %s) %s" % (e, raw.strip()[:600])); sys.exit(0)
+    print("(could not parse: %s) %s" % (e, raw[m.start():].strip()[:500])); sys.exit(0)
+mode = sys.argv[1] if len(sys.argv) > 1 else "full"
+# Anything that carries what the agent remembers is reduced to a count.
+# The gateway probe returns its short-term entries WITH snippets, and the
+# first version of this script printed them.
+PRIVATE = ("snippet", "text", "content")
 def cut(x):
-    if isinstance(x, dict):  return {k: cut(v) for k, v in x.items()}
-    if isinstance(x, list):  return [cut(v) for v in x[:5]] + (["... %d more" % (len(x) - 5)] if len(x) > 5 else [])
+    if isinstance(x, dict):
+        return {k: ("<%d entries, not shown>" % len(v) if isinstance(v, list) and k.lower().endswith("entries") else cut(v))
+                for k, v in x.items() if k not in PRIVATE}
+    if isinstance(x, list):  return [cut(v) for v in x[:4]] + (["... %d more" % (len(x) - 4)] if len(x) > 4 else [])
     if isinstance(x, str) and len(x) > 120: return x[:120] + "..."
     return x
-print(json.dumps(cut(d), indent=2))
-'
+if mode == "search":
+    res = d.get("results", []) if isinstance(d, dict) else d
+    flags = {k: d[k] for k in d if k != "results"} if isinstance(d, dict) else {}
+    print("  results=%d  other_fields=%s" % (len(res), json.dumps(cut(flags))))
+    for r in res[:5]:
+        # where the hit is and how strong -- never the text itself
+        print("    %s lines %s-%s score=%.3f keys=%s" % (r.get("path"), r.get("startLine"), r.get("endLine"), r.get("score", 0), sorted(k for k in r if k not in ("snippet","text","content"))))
+else:
+    print(json.dumps(cut(d), indent=2))
+' "$@"
+}
 
 echo
-echo "== openclaw memory search --json (counts and flags only) =="
-for q in "the" "meeting"; do
-  g "openclaw memory search --json --max-results 5 --agent '$id' --query '$q' 2>&1" | python3 -c '
-import json, sys
-q = sys.argv[1]
-raw = sys.stdin.read()
-start = min([i for i in (raw.find("["), raw.find("{")) if i >= 0] or [-1])
-try:
-    d = json.loads(raw[start:]) if start >= 0 else None
-except Exception:
-    d = None
-if d is None:
-    print("  %-10s (not JSON) %s" % (q, raw.strip()[:200])); sys.exit(0)
-res = d.get("results", d) if isinstance(d, dict) else d
-n = len(res) if isinstance(res, list) else "?"
-flags = {k: d.get(k) for k in ("stale", "warning", "action", "mode", "provider") if isinstance(d, dict) and k in d}
-keys = sorted(res[0].keys()) if isinstance(res, list) and res and isinstance(res[0], dict) else []
-scores = [round(r.get("score", 0), 3) for r in res[:5]] if keys and "score" in keys else []
-print("  %-10s results=%s flags=%s result_keys=%s scores=%s" % (q, n, flags, keys, scores))
-' "$q"
+echo "== openclaw memory status --json (no --deep: that needs the gateway stopped) =="
+g "openclaw memory status --json --agent '$id' 2>&1" | show_json
+
+echo
+echo "== gateway probe: doctor.memory.status with probe:true =="
+echo "   (the documented way to check the live embedding provider)"
+g "openclaw gateway call doctor.memory.status --params '{\"probe\":true}' --json 2>&1" | show_json
+
+echo
+echo "== openclaw memory search --json (where the hits are and their scores, never the text) =="
+for q in "the" "what does the user prefer" "zzqx-no-such-word-9173"; do
+  echo "  query: $q"
+  g "openclaw memory search --json --max-results 5 --agent '$id' --query '$q' 2>&1" | show_json search
 done
