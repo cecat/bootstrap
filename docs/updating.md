@@ -5,6 +5,28 @@ agent user has no `sudo`. Everything here works on a locked VM unless it
 says otherwise. Each of these ends the same way — `./verify/verify.sh`,
 and a message to the bot.
 
+## Bringing an older VM up to the current sandbox
+
+A VM built before 2026-11-14 lets its agents reach every loopback
+service on the host through squid, has no IPv6 lockdown, and leaves the
+agent user with passwordless `sudo` (`docs/gotchas.md`). Rebuilding
+fixes that and destroys the agents. This does not:
+
+```sh
+git pull                           # in the checkout the VM was built from
+./scripts/upgrade-vm.sh            # asks first: it stops and starts the VM
+```
+
+The agents are off Telegram for a few minutes. Nothing under `~/.hermes`
+or `~/.openclaw` is touched; the VM's old definition is kept beside the
+new one, and the script prints how to go back. Afterwards, message each
+bot, and re-run each add-on's `verify`.
+
+Proven on 2026-11-16 on a VM built from the old definition with no
+agents in it: six sandbox checks failing before, none after, and still
+locked after a reboot. What that did not show is agents coming back
+answering — watch for anything of theirs that relied on `sudo`.
+
 ## Changing a value in `config/agents.env`
 
 A bot token, an agent's name, the timezone, a model.

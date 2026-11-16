@@ -103,10 +103,26 @@ Still open:
       user is already in the group), and so are `remove` and changing a
       value in `agents.env` on a finished VM
 
-**Stage 7 — the real VM.** Prove an in-place upgrade on a throwaway VM
-built from `main` first, then apply to `agents` (one stop/start), then
-merge and push. vLLM (`vllm-qwen3-coder-next`) was stopped on
-2026-11-14 to free memory for the test VM: `docker start` it after.
+**Stage 7 — the real VM. The upgrade path is proven; applying it waits
+on the owner.**
+
+`scripts/upgrade-vm.sh` was run on `agents-old`, a VM provisioned from
+`main`'s definition (checkout `~/code/bootstrap-old`) and put in the
+`runtime` phase with no agents in it. Before: six sandbox checks failed
+(host off the model port, private IPv6, port 53, IPv6 bypass, sudo, admin
+helper). After: all fifteen pass, and a reboot comes back
+`phase=runtime lockdown=active sudo=locked`.
+
+- [ ] apply it to `agents`: fast-forward `~/code/bootstrap` to
+      `hardening`, then `./scripts/upgrade-vm.sh`. One stop/start
+- [ ] afterwards: `verify.sh --models`, both Google add-ons' `verify`,
+      and the owner messages LuoJi and Gandalf. Unknown until then:
+      whether anything those two agents do relied on `sudo`
+- [ ] delete `agents-test` and `agents-old` and their checkouts; revoke
+      the test account's consent and delete the two test bots
+- [ ] `docker start vllm-qwen3-coder-next` (stopped 2026-11-14 for
+      memory)
+- [ ] merge `hardening` to `main` and push
 
 ## 1. macOS: built from scratch and merged
 
