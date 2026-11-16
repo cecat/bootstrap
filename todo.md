@@ -150,27 +150,35 @@ both answer. `hardening` was merged to `main` and pushed on 2026-11-16.
       run it since, deliberately. Before anyone does: reopen, run
       `verify.sh --idempotence`, and treat any change it makes as a
       revert
-- [ ] **Gandalf almost never saves a memory unasked — explained, not
-      yet changed.** The vendor (`llms-full.txt`): "Every 10 user
-      prompts → a forked review agent looks at the conversation and
-      decides whether anything should be saved to memory." The count is
-      `memory.nudge_interval` (10 here), it lives in the gateway's
-      per-session agent, a cron run never starts a review, and the
-      gateway evicts an agent idle for an hour (`idle_ttl_secs: 3600`).
-      Measured 2026-11-16 (`scripts/diag-memory.sh`): 89 turns in eight
-      days, of which 43 cron, 20 cli and **26 Telegram** — about three
-      real prompts a day, across 5 to 72 gateway starts a day. Ten in a
-      row inside one live agent has happened twice. So this is the
-      default cadence meeting a light, bursty user, not a broken
-      provider (that theory is ruled out: the "nous requested" warnings
-      were the vision slot, and Pi's explicit providers on all 19
-      auxiliary tasks changed nothing here).
-      **Still unexplained:** both reviews that did run logged `calls=0
-      in=0 out=0 result=none` — no model call at all. Lowering the
-      interval is the obvious change and may only produce more of
-      those. Test before believing: set `memory.nudge_interval` low,
-      send a few Telegram messages with something worth remembering,
-      then read the review line and `MEMORY.md`
+**Models upgraded on `agents`, 2026-11-16.** Both agents and Pi are on
+`argo:claude-5.5-opus`; the mechanical jobs are on
+`argo:claude-5.5-haiku`; Gandalf's memory review is back on the agent's
+own model at `memory.nudge_interval: 2`. `verify.sh --models`: **64
+passed, 0 failed, 2 skipped.** Why: `argo:gemini-3.8-flash`, the
+auxiliary model since 2026-11-09, fails every tool conversation after
+its first step through this gateway (`Invalid thought signature`) and
+its Anthropic-shaped stream too — reproduced from the host with no
+Hermes involved. `/refine` did save a memory on it (`USER.md`, the first
+write since 2026-11-11) and then died on its next step.
+
+Pi's first turn on 5.5 Opus applied all of that in 17 tool calls with no
+push-back, and reported three things nobody had asked about:
+
+- [ ] **Hermes `model.provider` is `auto`, with `base_url` naming
+      OpenRouter.** Completions reach the gateway anyway, through
+      `OPENAI_BASE_URL` in `~/.hermes/.env`. The spec requires
+      `argo-gateway`. Probable consequence: `stale_timeout_seconds: 90`
+      sits under `providers.argo-gateway` and is not applied — the log
+      shows the watchdog at 900s — so "Hermes fails fast on a wedged
+      upstream" passes on a setting that is not in force
+- [ ] Hermes warns on every start: `providers.argo-gateway: unknown
+      config keys ignored: type`
+- [ ] older parts of `setup.sh` on `agents` still act unconditionally;
+      it remains unsafe to re-run (see above)
+- [ ] the owner sends Gandalf two messages a minute apart; then a
+      review should complete with no error and may save. A message sent
+      while a review runs cancels it — the vendor's design, not fixable
+      by a setting
 - [ ] LuoJi has no `MEMORY.md` and that is expected: deep-phase
       promotion needs score 0.75, 3 recalls and 3 distinct queries, and
       nothing has reached it (118 short-term entries, 0 promoted).
