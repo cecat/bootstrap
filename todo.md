@@ -118,6 +118,10 @@ helper). After: all fifteen pass, and a reboot comes back
 - [ ] afterwards: `verify.sh --models`, both Google add-ons' `verify`,
       and the owner messages LuoJi and Gandalf. Unknown until then:
       whether anything those two agents do relied on `sudo`
+- [ ] `addons/google-openclaw/install.sh` and `addons/signal/install.sh`
+      still run `sudo` inside the guest (installing `gog`, apt for
+      signal-cli). On a locked VM that fails; they need `vm_root` or
+      `install-config.sh --reopen`. Their `verify.sh` is already fixed
 - [ ] delete `agents-test` and `agents-old` and their checkouts; revoke
       the test account's consent and delete the two test bots
 - [ ] `docker start vllm-qwen3-coder-next` (stopped 2026-11-14 for

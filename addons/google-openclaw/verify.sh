@@ -48,7 +48,11 @@ fail() { FAIL=$((FAIL+1)); printf '  %sFAIL%s  %s\n' "$R" "$Z" "$1"; [ $# -gt 1 
 skip() { SKIP=$((SKIP+1)); printf '  %sSKIP%s  %s\n' "$Y" "$Z" "$1"; [ $# -gt 1 ] && printf '        %s\n' "$2"; return 0; }
 
 g()     { limactl shell "$VM" -- bash -lc "$1" 2>&1; }
-groot() { limactl shell "$VM" -- sudo bash -c "$1" 2>&1; }
+# Root in the guest, via the admin helper once the VM is locked: a bare
+# sudo stopped working for the agent user on 2026-11-14. See lib-vm.sh.
+# shellcheck source=scripts/lib-vm.sh
+. "$REPO/scripts/lib-vm.sh"
+groot() { vm_root "$VM" "$1" 2>&1; }
 
 # gog needs its keyring environment on every invocation; the MCP server
 # re-opens the keyring per call rather than unlocking once, so this prefix
