@@ -11,7 +11,8 @@
     "ask": [
       "Bash(./bootstrap.sh*--rebuild*)",
       "Bash(./verify/verify.sh*--reboot*)",
-      "Bash(./verify/verify.sh*--all*)"
+      "Bash(./verify/verify.sh*--all*)",
+      "Bash(./scripts/upgrade-vm.sh*)"
     ],
     "deny": [
       "Bash(limactl delete*)",

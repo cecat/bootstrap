@@ -261,7 +261,9 @@ Allow unattended: `./bootstrap.sh`, `./scripts/*.sh`, `./verify/verify.sh`,
 
 Ask first: `./bootstrap.sh --rebuild`, which destroys the VM, both agents
 and `config/agents.env`, and `./verify/verify.sh --reboot` (or `--all`),
-which stops and restarts a VM someone may be talking to. Both used to run
+which stops and restarts a VM someone may be talking to, and
+`./scripts/upgrade-vm.sh`, which does the same to bring an older VM up to
+the current sandbox without rebuilding it. The first two used to run
 unattended under the patterns above while `limactl delete` and `limactl
 stop` were denied — the same two actions, one command further in.
 
