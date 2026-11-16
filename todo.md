@@ -95,8 +95,9 @@ the second-user work.
 
 Still open:
 
-- [ ] the owner messages both test bots: a web page from each, and
-      "what is on my calendar" to Puma
+The owner messaged both test bots afterwards and reports both answered
+(their words were not recorded).
+
 - [ ] Pi's `setup-google.sh` restarts the gateway on every run; it calls
       that idempotent and it is not quite
 - [ ] `bootstrap.sh`'s `sg kvm` re-exec is still unexercised (the Spark
@@ -141,9 +142,9 @@ of it Pi's word:
 
 Still open on `agents`:
 
-- [ ] the owner messages LuoJi and Gandalf again — both gateways were
-      restarted by Pi after the last time they were tried, and the
-      polling probe has read "no bot is being polled" on every run since
+The owner messaged LuoJi and Gandalf after the last restart and reports
+both answer. `hardening` was merged to `main` and pushed on 2026-11-16.
+
 - [ ] **`~/agent-bootstrap/setup.sh` on `agents` is not trusted.** Pi
       says it corrected the memory and `SOUL.md` sections; nobody has
       run it since, deliberately. Before anyone does: reopen, run
