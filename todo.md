@@ -61,8 +61,8 @@ port 22 connected.
 **Stage 6 — acceptance. The base build passed on 2026-11-16.**
 
 On `agents-test` (checkout `~/code/bootstrap-test`, always
-`AGENTS_VM=agents-test`), bots `@Cheetah_cec_bot` (OpenClaw) and
-`@Puma_cec_bot` (Hermes), built from nothing on this branch:
+`AGENTS_VM=agents-test`), with two throwaway bots, built from nothing
+on this branch:
 
 - `verify.sh --models` under `finish-build.sh`: **63 passed, 0 failed,
   2 skipped**, idempotence passing first. `verify.sh --reboot`: **62
@@ -157,11 +157,8 @@ Still open on `agents`:
       still run `sudo` inside the guest (installing `gog`, apt for
       signal-cli). On a locked VM that fails; they need `vm_root` or
       `install-config.sh --reopen`. Their `verify.sh` is already fixed
-- [ ] delete `agents-test` and `agents-old` and their checkouts; revoke
-      the test account's consent and delete the two test bots
-- [ ] `docker start vllm-qwen3-coder-next` (stopped 2026-11-14 for
-      memory)
-- [ ] merge `hardening` to `main` and push
+- [ ] the owner revokes the test Google account's consent and deletes
+      the two test bots (both test VMs and their checkouts are gone)
 
 ## 1. macOS: built from scratch and merged
 
