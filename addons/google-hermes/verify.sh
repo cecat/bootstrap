@@ -96,10 +96,12 @@ exposed="$( { git ls-files -- config/
 # sanctioned home and is excluded; node_modules and lock files are excluded
 # because "1//" followed by base64-ish characters occurs in minified JS and
 # integrity hashes, which was a false alarm rather than a leak.
+# ~/.hermes/cache/pnpm/ is the same thing by another path: Hermes v0.23.1
+# keeps its package store there, and it matched on 2026-11-16.
 if ! g "test -f $HHOME/google_token.json" >/dev/null 2>&1; then
   skip "the refresh token lives in one file only" "no credentials installed in the VM yet"
 else
-  dup="$(g "grep -rlE '1//[A-Za-z0-9_-]{20,}' $HHOME/ \$HOME/.config/agent-sandbox/ \$HOME/.openclaw/ \$HOME/google-skill-push/ 2>/dev/null | grep -vE '/google_token\.json$|/node_modules/|package-lock\.json$' | tr '\n' ' '")"
+  dup="$(g "grep -rlE '1//[A-Za-z0-9_-]{20,}' $HHOME/ \$HOME/.config/agent-sandbox/ \$HOME/.openclaw/ \$HOME/google-skill-push/ 2>/dev/null | grep -vE '/google_token\.json$|/node_modules/|package-lock\.json$|/\.hermes/cache/pnpm/' | tr '\n' ' '")"
   [ -z "$(printf '%s' "$dup" | tr -d '[:space:]')" ] \
     && pass "the refresh token lives in one file only" \
     || fail "the refresh token lives in one file only" "also in: $dup"

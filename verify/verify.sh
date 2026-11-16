@@ -755,6 +755,16 @@ fi
 #   agent-sandbox/agents.env  the sanctioned copy, 0600
 #   .hermes/.env              where the spec *requires* Hermes' credentials
 #   hermes-agent/tests/       vendor test fixtures carrying dummy tokens
+#   .hermes/cache/scratch/hermes-snap-*   Hermes' own snapshot of the shell
+#                             environment it runs a terminal command in.
+#                             It holds the tokens because the environment
+#                             does: install-config.sh exports them so the
+#                             openclaw CLI can resolve its SecretRefs. A
+#                             real copy, written by the vendor, that this
+#                             build cannot prevent without breaking that --
+#                             so it is named here rather than hidden. It
+#                             also means Hermes can read OpenClaw's token,
+#                             which todo.md item 4 already accepts.
 # OpenClaw's state DB is excluded by searching text files only: it stores
 # channel config as a matter of course and is not a copy anyone wrote.
 tokdup="$(g 'grep -rlE "[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}" \
@@ -762,6 +772,7 @@ tokdup="$(g 'grep -rlE "[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}" \
   | grep -v "/agent-sandbox/agents.env$" \
   | grep -v "/\.hermes/\.env$" \
   | grep -v "/hermes-agent/tests/" \
+  | grep -v "/\.hermes/cache/scratch/hermes-snap-" \
   | while read -r f; do [ -f "$f" ] && file -b "$f" | grep -qi text && printf "%s " "$f"; done')"
 if [ -z "$(printf '%s' "$tokdup" | tr -d '[:space:]')" ]; then
   pass "bot tokens live in one file only" "nothing beside agents.env carries a bot token"
