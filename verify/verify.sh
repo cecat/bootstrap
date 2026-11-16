@@ -292,6 +292,10 @@ esac
 #                             in no file, so any hit with a vectorScore
 #                             came from embeddings
 #
+# Only .embedding.ok is read. The probe also returns `checked` and
+# `cached`, but a cached answer omits `checked`, and requiring it failed a
+# working system the first time this ran.
+#
 # Not `openclaw memory status --deep`: it refuses to run while the gateway
 # holds the store ("requires exclusive offline state ownership").
 strip_log() { python3 -c '
@@ -304,7 +308,7 @@ for m in re.finditer(r"(?m)^[\[{]", raw):
     print(json.dumps(d)); break
 '; }
 mem_probe="$(g "openclaw gateway call doctor.memory.status --params '{\"probe\":true}' --json 2>&1" | strip_log)"
-mem_ok="$(printf '%s' "$mem_probe" | jq -r 'if .embedding.ok == true and .embedding.checked == true then "ok" else ((.embedding.error // .embedding | tostring) | .[0:160]) end' 2>/dev/null)"
+mem_ok="$(printf '%s' "$mem_probe" | jq -r 'if .embedding.ok == true then "ok" else ((.embedding.error // .embedding | tostring) | .[0:160]) end' 2>/dev/null)"
 case "$mem_ok" in
   ok) pass "OpenClaw's embedding provider answers a live probe" "$(printf '%s' "$mem_probe" | jq -r '.provider // "?"')" ;;
   "") skip "OpenClaw's embedding provider answers a live probe" "could not read doctor.memory.status from the gateway" ;;
