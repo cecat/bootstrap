@@ -282,16 +282,12 @@ esac
 # of settings that look right over an index that is not working. On
 # 2026-11-16 an old setup.sh put the provider back to 'none' on a VM that
 # had been fixed in place; this suite caught it only because the setting
-# itself changed. So ask the product, two ways, neither of which reads
+# itself changed. So ask the product, in a way that does not read
 # configuration:
 #
 #   the gateway's own probe   doctor.memory.status with probe:true makes a
 #                             real embedding call ("check the live
 #                             embedding provider", per the vendor)
-#   a nonsense query          keyword search cannot match a word that is
-#                             in no file, so any hit with a vectorScore
-#                             came from embeddings
-#
 # Only .embedding.ok is read. The probe also returns `checked` and
 # `cached`, but a cached answer omits `checked`, and requiring it failed a
 # working system the first time this ran.
@@ -317,22 +313,15 @@ case "$mem_ok" in
         embeddings are not reachable, which is how it has failed silently before" ;;
 esac
 
-oc_agent="$(g 'openclaw agents list --json 2>/dev/null | jq -r ".[0].id // empty"' | tr -dc 'A-Za-z0-9._-')"
-mem_q="$(g "openclaw memory search --json --max-results 3 --agent '${oc_agent:-main}' --query 'zzqx-no-such-word-9173' 2>&1" | strip_log)"
-mem_n="$(printf '%s' "$mem_q" | jq -r '(.results // []) | length' 2>/dev/null)"
-mem_v="$(printf '%s' "$mem_q" | jq -r '[(.results // [])[] | select((.vectorScore // 0) > 0)] | length' 2>/dev/null)"
-mem_stale="$(printf '%s' "$mem_q" | jq -r '.stale // false' 2>/dev/null)"
-if [ -z "$mem_n" ]; then
-  skip "OpenClaw memory search uses embeddings" "could not run openclaw memory search"
-elif [ "$mem_stale" = "true" ]; then
-  fail "OpenClaw memory search uses embeddings" "the search reports its index is stale: $(printf '%s' "$mem_q" | jq -r '.warning // ""' | cut -c1-140)"
-elif [ "${mem_v:-0}" -ge 1 ]; then
-  pass "OpenClaw memory search uses embeddings" "a word in no file still found $mem_v nearest match(es) by vector"
-elif [ "$mem_n" = "0" ]; then
-  skip "OpenClaw memory search uses embeddings" "the index returned nothing at all -- empty, or not built. Run: openclaw memory index --force"
-else
-  fail "OpenClaw memory search uses embeddings" "$mem_n result(s) for a nonsense word and none carries a vector score -- keyword search only"
-fi
+# There was a second check here for one afternoon: a search for a nonsense
+# word, which only vectors can answer. It was the better proof and it is
+# gone from this file, because it is not read-only. Every search is
+# recorded as a recall against whatever it returns, and recall counts are
+# what the nightly sweep promotes on -- so a suite run several times a day
+# was steadily voting three arbitrary entries toward MEMORY.md. Measured
+# 2026-11-16: recall signals went 8 -> 30 across a few runs. This file
+# promises that nothing but --reboot mutates the VM. The query lives in
+# scripts/diag-memory.sh, to be run on purpose.
 
 # Dreaming is memory-core's 03:00 consolidation sweep, promoting short-term
 # entries into MEMORY.md. It auto-manages its own cron job, so it exists
