@@ -62,6 +62,33 @@ What differs now is sudo: open in `bootstrap` so the vendors' installers
 work, closed in `runtime`. `install-config.sh` no longer drops a
 finished VM back to `bootstrap`; that takes `--reopen`.
 
+## A script that was right on build day is a time capsule
+
+**Do not tell Pi to "put it in setup.sh and run it" on a VM that has
+been fixed in place.** (2026-11-16) That sentence is the project's
+standing instruction and it is correct for a fresh build. On a VM built
+2026-11-09 and corrected since, it re-ran a week-old script, which set
+OpenClaw's `memory.search.provider` back to `none` and wrote a `SOUL.md`
+under `~/.openclaw/agents/<id>/` — the two defects this file already
+records as found and fixed on 2026-11-12 and 2026-11-11. The owner had
+every reason to believe both were closed, and in the repo they were.
+
+What was actually true: the spec was fixed, a fresh build from it was
+clean, and the one VM that mattered still carried a script nobody had
+re-read. "Fix the spec, not the VM" keeps the repo honest; it does
+nothing for a script living inside a VM that outlives several specs.
+
+Three things follow:
+
+- On an existing VM, ask for the specific change and say **do not run
+  setup.sh**. `docs/updating.md` has the wording.
+- A setting restored is not a feature working. `verify.sh` read
+  `memory.search.provider` and would have passed the moment the value
+  was put back. It now asks the gateway to probe its embedding provider
+  and runs a query only vectors can answer.
+- When someone says "we already fixed that", believe them and find out
+  which copy was fixed.
+
 ## Supervising Pi
 
 **Pi over-claims. Read `verify.sh`, not the summary.** (2026-10-29) It

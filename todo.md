@@ -121,20 +121,38 @@ check passing, both agents completing, OpenClaw fetching a page, both on
 `argo:claude-5-opus`. google-openclaw `verify`: 23 passed, 0 failed.
 google-hermes `verify --live`: 30 passed, 1 failed.
 
-- [ ] the owner messages LuoJi and Gandalf
-- [ ] **`openclaw doctor`: `OPENCLAW_GATEWAY_TOKEN conflicts with
-      gateway.auth.token`.** Not there before the upgrade. The same
-      warning was fought on 2026-11-09 and settled inside the VM with
-      `UnsetEnvironment=` on the gateway unit; the restart or the config
-      re-push brought it back. Nothing is visibly impaired. Needs a Pi
-      turn on `agents`, and whatever it finds belongs in the spec — the
-      fresh build on `agents-test` hit the same warning and Pi solved it
-      differently there
-- [ ] **PySocks is missing from two of Hermes' environments on
-      `agents`.** The agent reaches Google today, so those are not the
-      ones in use — but which one is in use is Hermes' choice, and a
-      Hermes update is exactly when it changes. `addon-google-hermes.sh
-      build` would put it in all of them
+**Then two regressions, caused by this work and repaired the same day.**
+Telling Pi to "put the fix in setup.sh and run it" on `agents` re-ran a
+script from 2026-11-09, which set OpenClaw's memory provider back to
+`none` and wrote a stray `SOUL.md` (`docs/gotchas.md`). Pi restored
+both directly, without re-running the script. Evidence afterwards, none
+of it Pi's word:
+
+- `verify.sh`: **61 passed, 0 failed, 5 skipped**, including two new
+  behavioural memory checks — the gateway's own embedding probe answers
+  `ok`, and a nonsense word still finds matches by vector
+- `diag-workspace.sh`: LuoJi's `SOUL.md` last modified 2026-11-11
+  23:16, matching the workspace's own last git commit; no uncommitted
+  change to any identity file; Gandalf's `SOUL.md` last modified
+  2026-11-11 13:52; the only other `SOUL.md` is in the Trash
+- the gateway-token doctor warning is gone and stayed gone across a
+  config re-push; PySocks is in all three Hermes environments;
+  google-hermes `verify --live` 31/0, google-openclaw `verify` 23/0
+
+Still open on `agents`:
+
+- [ ] the owner messages LuoJi and Gandalf again — both gateways were
+      restarted by Pi after the last time they were tried, and the
+      polling probe has read "no bot is being polled" on every run since
+- [ ] **`~/agent-bootstrap/setup.sh` on `agents` is not trusted.** Pi
+      says it corrected the memory and `SOUL.md` sections; nobody has
+      run it since, deliberately. Before anyone does: reopen, run
+      `verify.sh --idempotence`, and treat any change it makes as a
+      revert
+- [ ] observed, not investigated: LuoJi has no `MEMORY.md` and dreaming
+      has promoted nothing (`promotedTotal: 0`, 118 short-term entries);
+      Gandalf's `memories/MEMORY.md` was last written 2026-11-11. Both
+      predate this work
 - [ ] `addons/google-openclaw/install.sh` and `addons/signal/install.sh`
       still run `sudo` inside the guest (installing `gog`, apt for
       signal-cli). On a locked VM that fails; they need `vm_root` or

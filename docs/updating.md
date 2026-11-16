@@ -5,6 +5,30 @@ agent user has no `sudo`. Everything here works on a locked VM unless it
 says otherwise. Each of these ends the same way — `./verify/verify.sh`,
 and a message to the bot.
 
+## First: do not re-run Pi's `setup.sh` on a VM with history
+
+`~/agent-bootstrap/setup.sh` is written by Pi at build time and is the
+build's deliverable. On a **fresh** VM, running it is how anything gets
+applied. On a VM that has since been corrected in place it is a record
+of how things were on build day, and running it puts them back.
+
+That is not hypothetical. On 2026-11-16 Pi was told to "put the fix in
+setup.sh and run it" on a VM built a week earlier. The script reset
+OpenClaw's memory provider to `none` and wrote a `SOUL.md` into a
+directory nothing loads — two defects that had each been found, fixed
+in the spec and fixed in that VM days before. `verify.sh` caught both
+on the next run; nothing else would have.
+
+So on an existing VM, ask Pi for **the specific change**, tell it not to
+run `setup.sh` as a whole, and have it bring the script's matching
+section up to date without executing it. Then `./verify/verify.sh`, and
+for anything touching memory or identity:
+
+```sh
+./scripts/diag-memory.sh           # does memory work, not merely look configured
+./scripts/diag-workspace.sh        # what changed in the identity files, and when
+```
+
 ## Bringing an older VM up to the current sandbox
 
 A VM built before 2026-11-14 lets its agents reach every loopback
@@ -34,16 +58,15 @@ A bot token, an agent's name, the timezone, a model.
 ```sh
 $EDITOR config/agents.env          # the user does this; never in a chat
 ./bootstrap.sh                     # validates it and re-pushes; the VM stays locked
-./scripts/pi-session.sh say "config/agents.env changed. Re-apply it with setup.sh and say what changed."
+./scripts/pi-session.sh say "config/agents.env changed: <which value>. Apply that one change directly, update the matching part of setup.sh without running the script, and say what you changed."
 ./verify/verify.sh --models
 ```
 
 Pushing the file is not enough by itself. The agents hold their own
 copies — Hermes in `~/.hermes/.env`, OpenClaw in `openclaw.json` — and
-Pi's `setup.sh` is what carries a new value into them. **This path has
-not been exercised end to end**: `setup.sh` guards on what it finds, so a
-guard may decide nothing needs doing. Read `pi-session.sh steps`, and
-trust `verify.sh` over Pi's summary.
+Pi has to carry a new value into them. **This path has not been
+exercised end to end.** Read `pi-session.sh steps`, and trust
+`verify.sh` over Pi's summary.
 
 A changed **model** is the case most worth checking: `verify.sh` prints
 what both agents actually run, every time.
@@ -56,7 +79,7 @@ one:
 
 ```sh
 ./verify/verify.sh                 # note the Versions lines first
-./scripts/pi-session.sh say "Update Hermes to the current release with its own updater, then re-run setup.sh and report both versions."
+./scripts/pi-session.sh say "Update Hermes to the current release with its own updater and report both versions. Do not run setup.sh."
 ./verify/verify.sh --models
 ```
 
