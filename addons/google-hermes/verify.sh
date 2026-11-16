@@ -449,7 +449,7 @@ esac
 # absent, and this deployment deliberately has several), so parse the
 # output. The exclusion list is the base suite's and nothing more: an
 # add-on needing its own exclusion has probably broken something.
-DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
+DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|Chromium not installed|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
 doc_out="$(g 'hermes doctor 2>&1')"
 if [ -z "$(printf '%s' "$doc_out" | tr -d '[:space:]')" ]; then
   skip "hermes doctor is still clean after the add-on" "could not run hermes doctor"

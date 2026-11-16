@@ -569,7 +569,10 @@ section "The vendors' own health checks"
 #
 # KNOWN-OPTIONAL, deliberately not used here. Shrink this list, never grow
 # it without a reason written beside it.
-DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
+#   Chromium not installed -- added 2026-11-16. No browser in the VM is a
+#     recorded decision (todo.md); Hermes v0.23.1 reworded the warning that
+#     'system dependency not met' used to cover.
+DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|Chromium not installed|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
 
 doc_out="$(g 'hermes doctor 2>&1')"
 if [ -z "$(printf '%s' "$doc_out" | tr -d '[:space:]')" ]; then
