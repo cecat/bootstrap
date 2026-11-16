@@ -113,11 +113,28 @@ on the owner.**
 helper). After: all fifteen pass, and a reboot comes back
 `phase=runtime lockdown=active sudo=locked`.
 
-- [ ] apply it to `agents`: fast-forward `~/code/bootstrap` to
-      `hardening`, then `./scripts/upgrade-vm.sh`. One stop/start
-- [ ] afterwards: `verify.sh --models`, both Google add-ons' `verify`,
-      and the owner messages LuoJi and Gandalf. Unknown until then:
-      whether anything those two agents do relied on `sudo`
+**Applied to `agents` on 2026-11-16.** `~/code/bootstrap` is on
+`hardening`; the old definition is at
+`~/.lima/agents/lima.yaml.before-upgrade-20261116T161537Z`. Afterwards:
+`verify.sh --models` **62 passed, 1 failed, 2 skipped** — every sandbox
+check passing, both agents completing, OpenClaw fetching a page, both on
+`argo:claude-5-opus`. google-openclaw `verify`: 23 passed, 0 failed.
+google-hermes `verify --live`: 30 passed, 1 failed.
+
+- [ ] the owner messages LuoJi and Gandalf
+- [ ] **`openclaw doctor`: `OPENCLAW_GATEWAY_TOKEN conflicts with
+      gateway.auth.token`.** Not there before the upgrade. The same
+      warning was fought on 2026-11-09 and settled inside the VM with
+      `UnsetEnvironment=` on the gateway unit; the restart or the config
+      re-push brought it back. Nothing is visibly impaired. Needs a Pi
+      turn on `agents`, and whatever it finds belongs in the spec — the
+      fresh build on `agents-test` hit the same warning and Pi solved it
+      differently there
+- [ ] **PySocks is missing from two of Hermes' environments on
+      `agents`.** The agent reaches Google today, so those are not the
+      ones in use — but which one is in use is Hermes' choice, and a
+      Hermes update is exactly when it changes. `addon-google-hermes.sh
+      build` would put it in all of them
 - [ ] `addons/google-openclaw/install.sh` and `addons/signal/install.sh`
       still run `sudo` inside the guest (installing `gog`, apt for
       signal-cli). On a locked VM that fails; they need `vm_root` or
