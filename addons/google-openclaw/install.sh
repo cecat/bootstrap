@@ -9,11 +9,12 @@
 # inside the VM and hands you a URL, rather than waiting on a loopback
 # port the way the Hermes add-on does.
 #
-# The user does the first two, because they need a browser and an account:
+# The coding agent runs all of these. The user's part is a Google account,
+# a Cloud Console, a browser and one message to the agent at the end --
+# the scripts stop and say so when they need it.
+#
 #   ./scripts/addon-google-openclaw.sh auth      one-time consent
 #   ./scripts/addon-google-openclaw.sh install   preconditions, push, stage
-#
-# Then their coding agent takes over, because supervising Pi is its job:
 #   ./scripts/addon-google-openclaw.sh build     drive Pi
 #   ./scripts/addon-google-openclaw.sh verify    the evidence
 #   ./scripts/addon-google-openclaw.sh remove    undo it
@@ -28,6 +29,12 @@ REPO="$(cd "$ADDON/../.." && pwd)"
 cd "$REPO"
 INSTANCE="${AGENTS_VM:-agents}"
 ENVFILE="config/openclaw-google.env"
+
+# How this script acts as root in the guest. A plain `sudo` works only
+# while the build phase is open; on a finished VM the agent user has none,
+# which is the sandbox. verify.sh has used vm_root since 2026-11-14.
+# shellcheck source=scripts/lib-vm.sh
+. "$REPO/scripts/lib-vm.sh"
 
 # Pinned deliberately, with the digest the vendor publishes. gog is young
 # and moves fast -- v0.48.0 was released the day before this was written --
@@ -231,6 +238,20 @@ install_gog() {
   step "Installing gog $GOG_VERSION into $INSTANCE"
   printf '      %sdownloads ~13 MB%s\n' "$Y" "$Z"
 
+  local stage_out; stage_out="$(mktemp -t ocg-gog-stage.XXXXXX)"
+
+  # Two halves, and the split is deliberate. The download runs as the agent
+  # user so it goes through squid and is subject to the egress allowlist;
+  # root is exempt from the uid rule, so fetching as root would quietly
+  # bypass the sandbox. Only the final install needs privilege, and it goes
+  # through vm_root -- the agent user has no sudo once a build is locked.
+  #
+  # Splitting them opens a gap the single sudo did not have: the file is
+  # verified by one process and installed by another, so root must not
+  # trust what the first one left behind. The staging directory therefore
+  # keeps mktemp's unpredictable name, and the digest is checked AGAIN
+  # under vm_root, immediately before the install.
+  #
   # Architecture follows the guest, which follows the host. The digest
   # below is the arm64 one, measured on this machine; amd64 is verified
   # against the vendor's own checksums.txt instead of a value pinned here,
@@ -248,7 +269,7 @@ install_gog() {
     esac
 
     tmp="$(mktemp -d)"
-    trap "rm -rf $tmp" EXIT
+    chmod 0700 "$tmp"
     cd "$tmp"
 
     curl -fsSL --max-time 300 -o "$asset" "$base/$asset"
@@ -264,9 +285,38 @@ install_gog() {
       || { echo "SHA256 not found in the published checksums.txt" >&2; exit 1; }
 
     tar xzf "$asset"
-    sudo install -m 0755 gog /usr/local/bin/gog
-  ' _ "$GOG_VERSION" "$GOG_SHA256_ARM64" "$GOG_URL_BASE" \
-    || fail "could not install gog in the VM."
+    test -f gog
+    # The staged path and the digest root must re-check, on stdout.
+    printf "%s %s\n" "$tmp/gog" "$(sha256sum gog | cut -d" " -f1)"
+  ' _ "$GOG_VERSION" "$GOG_SHA256_ARM64" "$GOG_URL_BASE" > "$stage_out" \
+    || fail "could not download and verify gog in the VM."
+
+  # Both values are interpolated into a shell string below, so neither is
+  # taken on shape alone: the path must be exactly what mktemp -d produces
+  # and the digest exactly 64 hex characters. A quote or a space in either
+  # would otherwise run as code under vm_root -- as root.
+  local staged binsum
+  staged="$(awk 'END{print $1}' "$stage_out")"
+  binsum="$(awk 'END{print $2}' "$stage_out")"
+  rm -f "$stage_out"
+  case "$staged" in
+    /tmp/tmp.[A-Za-z0-9]*/gog)
+      case "${staged#/tmp/tmp.}" in *[!A-Za-z0-9/]*|*/*/*) fail "unexpected staging path from the VM" ;; esac ;;
+    *) fail "unexpected staging path from the VM: ${staged:-<empty>}" ;;
+  esac
+  [ "${#binsum}" -eq 64 ] || fail "no usable digest returned for the staged gog binary"
+  case "$binsum" in *[!a-f0-9]*) fail "bad digest from the VM" ;; esac
+
+  # Re-check under root before installing. A different process verified
+  # the download, so root takes nothing on trust from it -- without this
+  # the split would be a TOCTOU window the single sudo never had.
+  vm_root "$INSTANCE" "
+    set -eu
+    got=\"\$(sha256sum '$staged' | cut -d' ' -f1)\"
+    [ \"\$got\" = '$binsum' ] || { echo 'staged gog changed after verification' >&2; exit 1; }
+    install -m 0755 -o root -g root '$staged' /usr/local/bin/gog
+    rm -rf '$(dirname "$staged")'
+  " || fail "could not install gog into /usr/local/bin in the VM."
 
   # Running it is the only thing that proves the binary matches the
   # architecture: a wrong build fails here rather than much later, in the
@@ -589,21 +639,20 @@ Fix the channel allowlist first, or leave this add-on uninstalled."
     || fail "could not copy the add-on spec into the VM."
   ok "spec placed at ~/agent-bootstrap/OPENCLAW-GOOGLE-ADDON.md"
 
-  step "Your part is done -- hand over to your coding agent"
+  step "Staged -- next is the build"
   cat <<EOF
 
   gog is installed and authenticated, and Pi has its spec. What remains is
   a build and a review of it: roughly 5-15 minutes of Pi working, then
   reading what it claims against what the checks measure.
 
-  ${B}Tell your coding agent:${Z}
+      ./scripts/addon-google-openclaw.sh build
+      ./scripts/addon-google-openclaw.sh verify --live --base
 
-      Install the OpenClaw Google add-on: run
-      ./scripts/addon-google-openclaw.sh build, then supervise Pi and
-      verify it as addons/google-openclaw/README.md describes.
-
-  It will come back to you once, at the end, with the one check no script
-  can do: ask the agent to read something from Google and watch it answer.
+  Nothing there needs a human, so this does not stop. The one check that
+  does is the last one: ask the OpenClaw agent to read something from
+  Google and watch it answer. ${B}verify.sh cannot do that one${Z} -- an agent
+  has picked an unrelated tool with every configuration check green.
 
 EOF
 }

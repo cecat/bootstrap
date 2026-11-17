@@ -3,11 +3,12 @@
 # Signal chat channel for the agents. OPTIONAL -- the base build neither
 # needs nor knows about this, and Telegram is untouched by it.
 #
-# The user does the first two, because they need a phone and a camera:
+# The coding agent runs all of these. The user's part is a phone, a
+# camera for the QR scan, a number typed into a file, and one message to
+# the agent at the end -- the scripts stop and say so when they need it.
+#
 #   ./scripts/addon-signal.sh link      one-time QR scan, inside the VM
 #   ./scripts/addon-signal.sh install   preconditions, push, stage
-#
-# Then their coding agent takes over, because supervising Pi is its job:
 #   ./scripts/addon-signal.sh build     drive Pi
 #   ./scripts/addon-signal.sh verify    the evidence
 #   ./scripts/addon-signal.sh remove    undo it
@@ -25,6 +26,12 @@ REPO="$(cd "$ADDON/../.." && pwd)"
 cd "$REPO"
 INSTANCE="${AGENTS_VM:-agents}"
 ENVFILE="config/signal.env"
+
+# How this script acts as root in the guest. A plain `sudo` works only
+# while the build phase is open; on a finished VM the agent user has none,
+# which is the sandbox. verify.sh has used vm_root since 2026-11-14.
+# shellcheck source=scripts/lib-vm.sh
+. "$REPO/scripts/lib-vm.sh"
 
 # The daemon's loopback port inside the VM. Overridable only because 8080
 # is a popular port; nothing outside the VM can reach it either way.
@@ -263,18 +270,32 @@ EOF
   if ! limactl shell "$INSTANCE" -- bash -lc 'command -v signal-cli >/dev/null 2>&1'; then
     step "Installing signal-cli first (3-8 minutes)"
     printf '      %sdownloads ~190 MB and prints little while it works%s\n\n' "$Y" "$Z"
-    # Documented in spec.md too, because Pi re-applies it idempotently in
-    # setup-signal.sh. Doing it here as well is what makes `link` work on a
-    # VM Pi has not touched yet.
-    limactl shell "$INSTANCE" -- bash -eo pipefail -c '
-      set -u
-      sudo curl -fsSL --max-time 120 -o /etc/apt/trusted.gpg.d/morph027-signal-cli.asc \
+    # This is the ONLY place signal-cli gets installed. spec.md used to
+    # tell Pi to do it too, which cannot work: Pi has no root on a locked
+    # VM. The spec now only checks the binary is there.
+    #
+    # Through vm_root, not a bare sudo: the agent user has no sudo once a
+    # build is locked, and this add-on is installed onto a finished VM far
+    # more often than onto a half-built one.
+    #
+    # Two package facts, both the opposite of what the obvious guess
+    # gives. Java 25, not the "Java 17+" Hermes' own docs claim --
+    # signal-cli 0.14 hard-depends on 25 and 17 fails with a
+    # class-file-version error; and `openjdk-25-jre-headless` lives in
+    # noble-updates, not base noble. The signed third-party repo is used
+    # because it is the only source of a working aarch64 build: upstream
+    # publishes none, and its bundled native library is x86-64 only.
+    # Full account in README.md.
+    vm_root "$INSTANCE" '
+      set -eu
+      export DEBIAN_FRONTEND=noninteractive
+      curl -fsSL --max-time 120 -o /etc/apt/trusted.gpg.d/morph027-signal-cli.asc \
         https://packaging.gitlab.io/signal-cli/gpg.key
       echo "deb https://packaging.gitlab.io/signal-cli signalcli main" \
-        | sudo tee /etc/apt/sources.list.d/morph027-signal-cli.list >/dev/null
-      sudo apt-get update -qq
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openjdk-25-jre-headless
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq signal-cli-jre
+        > /etc/apt/sources.list.d/morph027-signal-cli.list
+      apt-get update -qq
+      apt-get install -y -qq openjdk-25-jre-headless
+      apt-get install -y -qq signal-cli-jre
     ' || fail "could not install signal-cli in the VM.
 
 If openjdk-25-jre-headless was not found, the noble-updates pocket is
@@ -465,24 +486,20 @@ it is the only control, so this cannot be left open."
     || fail "could not copy the add-on spec into the VM."
   ok "spec placed at ~/agent-bootstrap/SIGNAL-ADDON.md"
 
-  # Stop here, deliberately. Everything above needed a phone, a camera, or
-  # a file only the user can edit. Everything below is supervising Pi,
-  # which is a coding agent's job.
-  step "Your part is done -- hand over to your coding agent"
+  step "Staged -- next is the build"
   cat <<EOF
 
   signal-cli is linked and Pi has its spec. What remains is a build and a
   review of it: roughly 5-15 minutes of Pi working, then reading what it
   claims against what the checks measure.
 
-  ${B}Tell your coding agent:${Z}
+      ./scripts/addon-signal.sh build
+      ./scripts/addon-signal.sh verify
 
-      Install the Signal add-on: run ./scripts/addon-signal.sh build,
-      then supervise Pi and verify it as addons/signal/README.md
-      describes.
-
-  It will come back to you once, at the end, with the one check no script
-  can do: message the agent on Signal and watch it answer.
+  Nothing there needs a human, so this does not stop. The one check that
+  does is the last one: message the agent on Signal and watch it answer.
+  ${B}verify.sh cannot do that one${Z} -- every automated check in this repo has
+  passed at some point while an agent sat mute.
 
 EOF
 }

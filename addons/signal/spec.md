@@ -39,6 +39,10 @@ idempotent script. Put every change in it and run the script.
    there. If you believe otherwise, show the failing request first. Never
    run `agent-egress unlock`.
 7. **Guard every step before acting**, so a second run changes nothing.
+8. **You have no `sudo` here.** The base build is locked, and nothing
+   below needs root — signal-cli and its JRE were installed by the host
+   installer before you were started. If a step seems to need root, stop
+   and say which — do not look for another way to become root.
 
 ## What you have been given
 
@@ -56,42 +60,20 @@ Read values from it; never echo them.
 
 ## What to build
 
-### 1. Install signal-cli and a JRE
+### 1. Check signal-cli is there — do not install it
 
-**Java 25, not 17.** signal-cli 0.14 requires JRE 25 and the package
-depends on it explicitly. Anything older fails with a class-file-version
-error. Hermes' own documentation says "Java 17+" and is wrong; trust the
-package.
-
-`openjdk-25-jre-headless` is in **`noble-updates`**, not base `noble`.
-
-signal-cli is not in Ubuntu's archive. Use the signed apt repository, which
-is the only route that supplies a working **aarch64** build — upstream
-publishes no arm64 release, and its bundled native library is x86-64 only:
-
-```sh
-curl -sL -o /etc/apt/trusted.gpg.d/morph027-signal-cli.asc \
-  https://packaging.gitlab.io/signal-cli/gpg.key
-echo "deb https://packaging.gitlab.io/signal-cli signalcli main" \
-  > /etc/apt/sources.list.d/morph027-signal-cli.list
-apt-get update && apt-get install -y signal-cli-jre
-```
-
-Fetch the key **to a file** and record its SHA256 in your summary — the
-repo's rule is download-then-verify, never pipe. A signed apt repo with
-per-package SHA256 satisfies that rule; piping a key into `apt-key` would
-not.
-
-Then prove the install actually works:
+The host installer put signal-cli and its JRE in before it linked the
+account, because linking needs the binary. Installing packages needs root
+and you have none, so this step is a **guard, not an action**:
 
 ```sh
 signal-cli --version
 ```
 
 That single command is the real test. It loads the native library, so it
-fails with `UnsatisfiedLinkError` if the architecture is wrong — which is
-exactly the failure this repo would otherwise discover much later. Quote
-its output.
+fails with `UnsatisfiedLinkError` if the architecture is wrong. Quote its
+output. If the command is missing or fails, **stop and say so** — the
+host side has not run, and nothing you can do from here fixes it.
 
 ### 2. Give the JVM the proxy — the step that silently breaks everything
 
