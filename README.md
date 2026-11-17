@@ -394,7 +394,7 @@ for the parts only you can do.
 | | |
 |---|---|
 | `addons/google-hermes/` | Gmail, Calendar, Drive, Docs, Sheets and Contacts for the **Hermes** agent, through Hermes' own bundled skill. Built and in use. |
-| `addons/google-openclaw/` | Google for the **OpenClaw** agent, on an account of its own, through `gog`. Read its README for its state. |
+| `addons/google-openclaw/` | Google for the **OpenClaw** agent, on an account of its own, through `gog`. Built and in use; adds Forms, which the Hermes path cannot do. |
 | `addons/signal/` | Signal as a second chat channel. Planned, not built. |
 
 ## Credit

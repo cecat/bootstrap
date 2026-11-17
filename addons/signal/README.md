@@ -71,21 +71,26 @@ with. So two agents on Signal means two numbers. Hermes' own
 troubleshooting guide says the same thing: *"Duplicate messages — ensure
 only one signal-cli instance is listening on your phone number."*
 
-## Your part, then your agent's
+## The steps
 
-Steps 1–3 are yours, because they need a phone, a camera and a number that
-only you can supply. Step 3 ends by handing over. Step 5 is the one check
-at the end that no script can do. Everything in between — Pi building, and
-the reading of what it claims against what the checks measure — belongs to
-your coding agent.
+**The coding agent runs every command below.** Open it in this directory
+and tell it:
 
-Budget about ten minutes, nearly all of it on the linking step, and that
-step is a one-off.
+> Add the Signal add-on, as `addons/signal/README.md` describes.
+
+It will stop and come to you three times, for the three things no script
+can do: a number and two decisions typed into a file (step 1), the QR
+scan, which needs your phone (step 2), and messaging the agent at the end
+(step 5). Everything else — Pi building, and the reading of what it
+claims against what the checks measure — is the agent's.
+
+Budget about ten minutes of your attention, nearly all of it on the
+linking step, and that step is a one-off.
 
 ### 1. Decide, and fill in `config/signal.env`
 
-Run this once; it creates the file, tells you what it wants, and stops with
-exit 2 — the same handshake `bootstrap.sh` uses:
+Your coding agent runs this once; it creates the file, says what it
+wants, and stops with exit 2 — the same handshake `bootstrap.sh` uses:
 
 ```sh
 ./scripts/addon-signal.sh install
@@ -143,7 +148,9 @@ A few things worth knowing:
 - **Five linked devices maximum** per Signal account, shared with Signal
   Desktop and iPad. If you are at the limit, remove an old one first.
 
-### 3. Run `install`, then hand over
+### 3. Nothing for you: the agent installs and builds
+
+Your coding agent runs:
 
 ```sh
 ./scripts/addon-signal.sh install
@@ -151,16 +158,7 @@ A few things worth knowing:
 
 This checks the base build is healthy, checks you are linked, and stages
 the spec Pi will work from. It takes 3–6 minutes, almost all of it
-re-running the base `verify.sh`, and it prints a log path you can `tail -f`
-while you wait.
-
-**It stops at the hand-over rather than running on into the build**, and
-says so. What remains is Pi building and someone reading its claims against
-the evidence, and that is a coding agent's job. Open your coding agent in
-this directory and tell it:
-
-> Install the Signal add-on: run `./scripts/addon-signal.sh build`, then
-> supervise Pi and verify it as `addons/signal/README.md` describes.
+re-running the base `verify.sh`, and it prints a log path to `tail -f`.
 
 ### 4. Wait
 
@@ -185,10 +183,11 @@ around a block is a finding, not a pass.
 
 # Installing it — for the coding agent
 
-The human has done steps 1–3: `config/signal.env` is filled in, signal-cli
-is linked, and the spec is staged at `~/agent-bootstrap/SIGNAL-ADDON.md`.
-They stopped at the hand-over on purpose. Your job is the build and the
-reading of it.
+**You run all of these.** The user's part is a number typed into
+`config/signal.env`, a QR code scanned with their phone, and a Signal
+message at the end — nothing else, and no script. By the time you reach
+`build`, `signal-cli` is linked and the spec is staged at
+`~/agent-bootstrap/SIGNAL-ADDON.md`.
 
 ```sh
 ./scripts/addon-signal.sh build            # drive Pi (5-15 min)

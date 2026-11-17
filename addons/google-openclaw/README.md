@@ -6,15 +6,36 @@ about it, and is not modified by it. The Hermes agent is untouched.
 It gives the **OpenClaw agent only** access to one Google account's Gmail,
 Calendar, Drive, Docs, Sheets and **Forms**, on an account of its own.
 
-> **NOT YET BUILT.** This directory is a plan and its scaffolding. No part
-> of it has been run and the VM has not been touched. Read `PLAN.md` first
-> — it records what was measured, what came from vendor documentation, and
-> what is still unknown. This file is written as if the add-on works,
-> which it has never been observed to do.
+> **Built and verifying.** Installed on a live VM and checked there;
+> `verify.sh --live` makes a real Google read through `gog`. `PLAN.md`
+> records what was measured and what was decided along the way, and is
+> worth reading if you want to know *why* it is shaped like this.
+>
+> One thing it has never done is `remove`. That path is written and
+> unexercised.
 
 > **Build the base system first.** Follow the repo's top-level `README.md`
 > and come back when `./verify/verify.sh` reports no failures. If the base
 > is not finished and verifying, `install` below refuses to run.
+
+## Start here
+
+Open your coding agent in this directory and tell it:
+
+> Add the Google add-on for OpenClaw, as
+> `addons/google-openclaw/README.md` describes.
+
+**The coding agent runs every command below.** It will stop and come to
+you three times, for the three things no script can do:
+
+1. make a Google account and an OAuth client, and put the client's JSON
+   in `secrets/` — steps 1 and 2;
+2. open a consent URL in a browser and save the URL it fails on back into
+   a file — step 4;
+3. ask the OpenClaw agent to read something from Google — step 6.
+
+Everything else — pushing config, Pi building, and the reading of what Pi
+claims against what the checks measure — is the agent's.
 
 ## This is not the Hermes add-on with a switch
 
@@ -80,14 +101,14 @@ back. Nothing listens, so there is nothing to tunnel to.
 The cost of that simplicity is the copy-paste step: two long strings move
 through files in `config/` rather than over a socket.
 
-## Your part, then your agent's
+## The steps
 
-Steps 1–4 are yours, because they need a browser, an account and a
-decision only you can make. Step 4 ends by handing over. Step 6 is the one
-check at the end that no script can do.
+Steps 1, 2 and the browser half of 4 are yours, because they need an
+account and a browser. Step 6 is the one check at the end that no script
+can do. The commands in between are your coding agent's.
 
-Budget about twenty minutes, nearly all of it in the Google Cloud Console.
-It is one-off.
+Budget about twenty minutes of your attention, nearly all of it in the
+Google Cloud Console. It is one-off.
 
 ### 1. Make the agent a Google account
 
@@ -203,12 +224,14 @@ account**, not yours:
 
 ### 3. Fill in the config
 
+Your coding agent runs:
+
 ```sh
 ./scripts/addon-google-openclaw.sh auth
 ```
 
-The first run creates `config/openclaw-google.env`, tells you what it
-wants, and stops. Fill in:
+The first run creates `config/openclaw-google.env`, says what it wants,
+and stops. That file is yours to edit — fill in:
 
 | Setting | What |
 |---|---|
@@ -226,16 +249,16 @@ cannot be unsent, and the model will be confidently wrong occasionally.
 for Forms grants a scope that can **edit** your forms, not merely read
 their responses. Unavoidable, and better known now.
 
-### 4. Consent, then hand over
+### 4. Consent
 
-Run the same command again:
+Your coding agent runs the same command again:
 
 ```sh
 ./scripts/addon-google-openclaw.sh auth
 ```
 
 It installs `gog` into the VM (a few minutes, ~13 MB), then starts a
-two-part handshake:
+two-part handshake. **The browser half is yours:**
 
 1. It writes the consent URL to
    `config/.openclaw-google-consent-url.txt`. Open that file, copy the URL
@@ -244,8 +267,8 @@ two-part handshake:
    is expected**; nothing is listening there. What matters is the URL in
    the address bar.
 3. Save that whole failed URL into
-   `config/.openclaw-google-redirect-url.txt`, then run the command once
-   more.
+   `config/.openclaw-google-redirect-url.txt`. Tell your coding agent it
+   is there, and it runs the command once more to finish.
 
 The URLs go through files rather than the terminal because they are
 several hundred characters long and nobody should be retyping them.

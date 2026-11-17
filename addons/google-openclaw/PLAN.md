@@ -1,12 +1,15 @@
 # Google for the OpenClaw agent — the plan
 
-**Status: planned, not built. Nothing in this directory has run, and the VM
-was not touched.** Written 2026-11-11 from vendor documentation, a grilling
-session with the repo owner, and the host-side measurements below.
+**Status: built, and verifying on a live VM.** Written 2026-11-11 from
+vendor documentation, a grilling session with the repo owner, and the
+host-side measurements below — then built and checked against a real
+Google account. `verify.sh --live` makes an actual API read.
 
-Read this before `README.md`. The README is written as if the add-on works;
-this file is why it should, what was decided and why, and where it could go
-wrong.
+This file is kept as the reasoning behind the design: why `gog` and not a
+plugin, why MCP and not a shell command, what the keyring costs. Read
+`README.md` for how to install it. Where this file still says something
+is unknown or recommended, check it against the README, which records
+what was decided.
 
 ## If you read only this box
 
@@ -390,12 +393,20 @@ assertion, since the two accounts are meant to be distinct.
 - **Contacts** — `gog` supports it; no stated need.
 - **Real isolation between the two agents** — `todo.md`, not here.
 
-## Open questions
+## Open questions — all three settled by building it
 
-1. **How should the consent hand-off work?** Options above; I recommend
-   writing both URLs to files.
-2. **Confirm the scope list**, particularly that Gmail starts without
-   `send`.
-3. **Is a third-party binary from an OpenClaw-org repo acceptable?** MIT,
-   statically linked, digest-pinned, verified by hand. I would take it;
-   there is no alternative that reaches Forms.
+1. **How should the consent hand-off work?** Both URLs go through files in
+   `config/`, as recommended. It works, and it is still the clumsiest part
+   of the add-on.
+2. **Confirm the scope list.** Done, and it turned up something the plan
+   had wrong: there is no draft-but-cannot-send scope. Creating a draft
+   needs `gmail.modify`, and anything with modify can also send. So
+   `GOOGLE_ALLOW_SEND=no` narrows to `readonly` — the agent cannot draft
+   either. The restraint on an agent that *can* send is an instruction in
+   its `SOUL.md`, not a boundary the grant enforces.
+3. **Is a third-party binary from an OpenClaw-org repo acceptable?**
+   Taken. Downloaded, digest-checked against both the pin and the
+   vendor's `checksums.txt`, and installed as root while the download
+   itself runs as the agent user, through squid.
+
+**Still unexercised:** `remove`. It is written and has never been run.

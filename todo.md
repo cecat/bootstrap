@@ -52,18 +52,28 @@ only what is true now and what is still owed.
    `finish-build.sh`, and treat any change as a revert) or accept that
    this VM's script is a record, not a tool. `docs/updating.md` says how
    to work in the meantime.
-3. **Two add-on installers break on a locked VM.**
-   `addons/google-openclaw/install.sh` and `addons/signal/install.sh`
-   run `sudo` in the guest. They need `vm_root` from
-   `scripts/lib-vm.sh`, or `install-config.sh --reopen` around them.
-   Their `verify.sh` already uses `vm_root`.
-4. **`addons/google-openclaw/README.md` and `PLAN.md` still say "NOT
-   YET BUILT".** It is built and verifying on `agents` (23 passed, 0
-   failed). Say so, and bring its flow in line with the Hermes one: the
-   coding agent runs the scripts, the user keeps the console and the
-   browser.
+3. ~~**Two add-on installers break on a locked VM.**~~ Fixed
+   2026-11-17: both now source `scripts/lib-vm.sh` and go through
+   `vm_root`. In `google-openclaw` the download deliberately stays as
+   the agent user — root is exempt from the uid rule, so fetching as
+   root would bypass squid — and only the `install` into
+   `/usr/local/bin` is privileged. `addons/signal/spec.md` also told Pi
+   to `apt-get install`, which Pi cannot do on a locked VM; that step
+   is now a guard, because the host installer puts signal-cli in
+   before linking. **Neither is exercised** — google-openclaw's path
+   only runs when gog is absent, and Signal has never been built.
+4. ~~**`addons/google-openclaw` still said "NOT YET BUILT".**~~ Fixed
+   2026-11-17, against a live `verify.sh --live` run on `agents`: 23
+   passed, with a real Google read returning. Its flow now matches the
+   Hermes one, and PLAN.md's three open questions are closed with what
+   building it taught. `remove` is still unexercised and says so.
+   That run also caught a drift: its `DOCTOR_OK` had never received
+   `Chromium not installed`, added to the other two suites on
+   2026-11-16. All three lists are now identical and say to copy
+   rather than extend.
 5. **`README.md`'s Status section is a week stale** — check counts,
    dates, models. Rewrite it from item 1's result rather than patching.
+   The add-on table row is already current.
 
 ### Never exercised — say so rather than assume
 
@@ -102,6 +112,21 @@ only what is true now and what is still owed.
   nothing here uses it any more. *Listed in `/v1/models` is not
   working*: test a candidate model with a two-step tool call before
   giving it a job.
+- **`hermes doctor` warns about Hermes' own npm dependencies.** Two so
+  far, found 2026-11-17: "Root npm package deps (0 critical, 4 high, 8
+  moderate)" and "web workspace deps (0 critical, 7 high, 3 moderate)".
+  The second appeared only once the first was excluded — it is a family,
+  so the exclusion matches their shared remediation phrase rather than
+  the workspace names. They are about Hermes' bundled npm trees, not
+  anything this repo installs, and each says its fix is an upstream
+  lockfile bump that a local change would not survive. Nous' own
+  threshold agrees: `hermes security audit` defaults to `--fail-on
+  critical` and these are 0 critical.
+  **The exclusion keeps `0 critical` in the pattern**, so a genuinely
+  critical advisory still turns the suite red rather than being
+  swallowed. That does mean it matches on the vendor's wording and will
+  break if Nous rewords the line — deliberately, since breaking fails
+  loud rather than silently open. Worth reporting to Nous.
 - **Hermes v0.23 looks a named provider's timeout up under `custom`.**
   The spec sets both keys. Worth reporting to Nous; when it is fixed,
   `providers.custom` can go.
