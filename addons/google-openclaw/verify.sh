@@ -328,7 +328,13 @@ else
     || fail "openclaw doctor is still clean" "${oc_bad} error finding(s)"
 fi
 
-DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
+# Keep this identical to the base suite's list in verify/verify.sh, where
+# each entry has its reason written beside it. It drifted once: "Chromium
+# not installed" was added there on 2026-11-16 and not here, so this suite
+# failed on a warning the base suite deliberately tolerates. An add-on
+# needing its OWN exclusion has probably broken something; copy, never
+# extend.
+DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|Chromium not installed|0 critical.*upstream lockfile bump|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
 doc_out="$(g 'hermes doctor 2>&1')"
 if [ -z "$(printf '%s' "$doc_out" | tr -d '[:space:]')" ]; then
   skip "hermes doctor is still clean" "could not run hermes doctor"

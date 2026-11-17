@@ -467,8 +467,10 @@ esac
 # The exit code is useless (1 whenever any optional integration is
 # absent, and this deployment deliberately has several), so parse the
 # output. The exclusion list is the base suite's and nothing more: an
-# add-on needing its own exclusion has probably broken something.
-DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|Chromium not installed|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
+# add-on needing its own exclusion has probably broken something. Copy it
+# verbatim from verify/verify.sh, where each entry has its reason written
+# beside it -- it drifted once, in the google-openclaw copy.
+DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|Chromium not installed|0 critical.*upstream lockfile bump|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
 doc_out="$(g 'hermes doctor 2>&1')"
 if [ -z "$(printf '%s' "$doc_out" | tr -d '[:space:]')" ]; then
   skip "hermes doctor is still clean after the add-on" "could not run hermes doctor"

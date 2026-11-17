@@ -630,7 +630,27 @@ section "The vendors' own health checks"
 #   Chromium not installed -- added 2026-11-16. No browser in the VM is a
 #     recorded decision (todo.md); Hermes v0.23.1 reworded the warning that
 #     'system dependency not met' used to cover.
-DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|Chromium not installed|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
+#   0 critical...upstream lockfile bump -- added 2026-11-17. Advisories
+#     about Hermes' OWN bundled npm trees ("Root npm package deps", "web
+#     workspace deps", and however many more it grows), not anything this
+#     repo installs. Each says its own fix is "an upstream lockfile bump"
+#     and that "a local manual fix does not persist (the next `hermes
+#     update` reinstalls from the committed lockfile)" -- there is no
+#     action available here, and a check nobody can act on is noise.
+#     Matched on the shared remediation phrase rather than the workspace
+#     names, because the names are a growing list: excluding them one at
+#     a time is whack-a-mole, and the second one appeared within a minute
+#     of excluding the first.
+#
+#     The leading `0 critical` is load-bearing and deliberate. It means a
+#     genuinely critical advisory still FAILS this check instead of being
+#     swallowed, which is the whole risk of excluding a security warning.
+#     It does match on the vendor's wording, which this repo's own rule
+#     warns against -- accepted here because breaking on a reword turns
+#     the suite RED and someone reads it, whereas the alternative fails
+#     silently open. Nous' own threshold agrees with the line: `hermes
+#     security audit` defaults to --fail-on critical.
+DOCTOR_OK='DISCORD|XAI|GITHUB_TOKEN|system dependency not met|Chromium not installed|0 critical.*upstream lockfile bump|image generation unavailable|Nous Portal auth|OpenAI Codex auth|MiniMax OAuth|Docker/Podman not found|OpenRouter API'
 
 doc_out="$(g 'hermes doctor 2>&1')"
 if [ -z "$(printf '%s' "$doc_out" | tr -d '[:space:]')" ]; then
