@@ -175,10 +175,19 @@ push-back, and reported three things nobody had asked about:
       config keys ignored: type`
 - [ ] older parts of `setup.sh` on `agents` still act unconditionally;
       it remains unsafe to re-run (see above)
-- [ ] the owner sends Gandalf two messages a minute apart; then a
-      review should complete with no error and may save. A message sent
-      while a review runs cancels it — the vendor's design, not fixable
-      by a setting
+- [ ] **Gandalf's review now runs cleanly; whether it saves unasked is
+      not yet seen.** After the upgrade, one review ran on
+      `argo:claude-5.5-opus` at 21:32 on 2026-11-16: `calls=1 in=0
+      out=124 cache_read=80380 result=none`, no error. So the trigger,
+      the model, the warm cache and the tool path all work — and the
+      model judged that turn held nothing to save. The message with the
+      thing worth remembering may have been the second, which does not
+      trigger a review until the count reaches 2 again. Look at
+      `./scripts/diag-memory.sh` after a few days of ordinary use: the
+      reviews column should track Telegram turns at about one in two,
+      and `USER.md` / `MEMORY.md` should have moved. `/refine` in the
+      chat forces a review at any time. A message sent while a review
+      runs cancels it — the vendor's design, not fixable by a setting
 - [ ] LuoJi has no `MEMORY.md` and that is expected: deep-phase
       promotion needs score 0.75, 3 recalls and 3 distinct queries, and
       nothing has reached it (118 short-term entries, 0 promoted).
