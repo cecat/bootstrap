@@ -358,13 +358,26 @@ esac
 # timeouts (socket read 120s -> 1800s). Meant for a slow local GPU; ours
 # is a shim in front of a remote service, so a wedged upstream would hang
 # a Telegram turn for half an hour. An explicit value is honoured anyway.
+#
+# TWO keys, and the second is the one that counts. Hermes v0.23 resolves a
+# named provider to the runtime name `custom` and looks its timeout up
+# under THAT name, so `providers.argo-gateway.stale_timeout_seconds` --
+# the documented key, which this check read alone until 2026-11-16 -- was
+# found by nothing, and the agent ran on the 900s local-endpoint ceiling
+# while this line said PASS. Pi found it by calling the lookup itself.
+# Require both: `custom` is what this version reads, `argo-gateway` is
+# what the documentation says and what a fixed version would read.
 hs="$(g 'hermes config get providers.argo-gateway.stale_timeout_seconds 2>/dev/null | tr -d "\r" | tail -1' | tr -dc '0-9')"
-if [ -n "$hs" ] && [ "$hs" -le 300 ]; then
-  pass "Hermes fails fast on a wedged upstream" "stale_timeout_seconds=$hs"
+hsc="$(g 'hermes config get providers.custom.stale_timeout_seconds 2>/dev/null | tr -d "\r" | tail -1' | tr -dc '0-9')"
+hprov="$(g 'hermes config get model.provider 2>/dev/null | tr -d "\r" | tail -1' | tr -dc 'a-zA-Z0-9_-')"
+if [ -n "$hs" ] && [ "$hs" -le 300 ] && [ -n "$hsc" ] && [ "$hsc" -le 300 ] && [ "$hprov" = "argo-gateway" ]; then
+  pass "Hermes fails fast on a wedged upstream" "stale_timeout_seconds=$hsc under providers.custom (the name looked up) and $hs under argo-gateway"
 else
   fail "Hermes fails fast on a wedged upstream" \
-       "stale_timeout_seconds is '${hs:-unset}' -- our LAN-address endpoint gets the
-        relaxed local-endpoint timeouts, so a silent upstream hangs a turn for ~30min"
+       "model.provider='${hprov:-unset}', stale_timeout_seconds: argo-gateway='${hs:-unset}' custom='${hsc:-unset}'.
+        All three matter: the main model must use the named provider, and this
+        Hermes looks the timeout up under 'custom'. Without it a silent upstream
+        hangs a turn for up to 15 minutes"
 fi
 
 # After any suspend or restart, every missed slot fires on return, each

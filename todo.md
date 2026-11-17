@@ -6,200 +6,125 @@ Open items only. Things that went wrong once and were fixed live in
 
 ---
 
-## 0. Hardening pass — in progress on branch `hardening`
+## 0. Hand-off — where this stands on 2026-11-16, and what is left
 
-Started 2026-11-14 from a review of the base build and the Hermes Google
-add-on. Audience assumed: Argonne people with Argo. Delete each line as
-it lands; delete this section when stage 7 is done.
+Written at the end of a three-day hardening pass, for whoever picks
+this up next. The detail of how each thing was found is in
+`docs/gotchas.md` and in git history (`git log e59cb32..`); this is
+only what is true now and what is still owed.
 
-**The standing rule: the running `agents` VM is not touched until stage
-7, and only on the owner's say-so.** Tests run on a throwaway VM,
-`agents-test`, from a separate checkout (`~/code/bootstrap-test` on the
-Spark) with `AGENTS_VM=agents-test` on every command.
+### What is true now
 
-**Stages 1–5 are written and committed** (2026-11-14). What that does
-and does not mean:
+- **The repo builds a working system from nothing** on Linux arm64
+  (DGX Spark, Lima 2.2.1, QEMU+KVM). On 2026-11-16 a fresh VM built by
+  Pi reached `verify.sh --models` 63 passed, 0 failed and came back from
+  a reboot still locked; the Hermes Google add-on on top of it read 31
+  passed, 0 failed with a fresh consent. Both test VMs are gone.
+- **The owner's VM (`agents`) was upgraded in place** with
+  `scripts/upgrade-vm.sh` and reads `verify.sh --models` 64 passed, 0
+  failed. Both agents and Pi run `argo:claude-5.5-opus`; mechanical jobs
+  run `argo:claude-5.5-haiku`. Both bots answer.
+- **The sandbox is what the README says it is**, which it was not
+  before: one host, one port; IPv6 locked; port 53 to the resolvers
+  only; no `sudo` for the agents once a build is locked. The host's way
+  to root is `config/admin-secret` — back it up; losing it means a
+  rebuild.
+- `main` is on GitHub, this Mac and the Spark at the same commit.
 
-*Proven on `agents-test`* — a VM provisioned from this branch, with no
-agents built in it: every new sandbox check passes in both phases; the
-lock survives a reboot; `limactl stop`/`start` works with sudo closed;
-the admin helper runs root scripts for the host and refuses a wrong
-secret; `install-config.sh` re-pushes onto a locked VM and leaves it
-locked. Against the live `agents` VM the same checks failed four ways,
-which is the evidence the findings were real: through squid the host's
-port 22 connected.
+### Owed before this can be called finished — in order
 
-*Written but not yet run* — stage 6 is where these are first exercised:
+1. **One more from-scratch build.** The acceptance build ran *before*
+   a dozen sentences went into the spec: onboard once, one name for the
+   gateway token, `openclaw.json` at 600, Hermes `model.provider`,
+   explicit auxiliary providers, the memory review on the main model,
+   `memory.nudge_interval: 2`, both stale-timeout keys, the 5.5 models,
+   and Pi itself on Opus. Each was proven on a live VM by a targeted
+   change; none has been through a build. The spec is a prompt, and
+   this is the only test that counts. Needs two throwaway Telegram
+   bots, about an hour, and 8 GiB the Spark only has with vLLM stopped.
+   Expect it to go better than the last one: Pi's first turns on Opus
+   needed no push-back at all.
+2. **`~/agent-bootstrap/setup.sh` inside `agents` is not trusted.** It
+   was written on 2026-11-09 and patched section by section since. Re-
+   running it on 2026-11-16 undid two fixes. Pi says the current copy
+   would change nothing; nobody has run it to find out. Either prove it
+   (`install-config.sh --reopen`, `verify.sh --idempotence`,
+   `finish-build.sh`, and treat any change as a revert) or accept that
+   this VM's script is a record, not a tool. `docs/updating.md` says how
+   to work in the meantime.
+3. **Two add-on installers break on a locked VM.**
+   `addons/google-openclaw/install.sh` and `addons/signal/install.sh`
+   run `sudo` in the guest. They need `vm_root` from
+   `scripts/lib-vm.sh`, or `install-config.sh --reopen` around them.
+   Their `verify.sh` already uses `vm_root`.
+4. **`addons/google-openclaw/README.md` and `PLAN.md` still say "NOT
+   YET BUILT".** It is built and verifying on `agents` (23 passed, 0
+   failed). Say so, and bring its flow in line with the Hermes one: the
+   coding agent runs the scripts, the user keeps the console and the
+   browser.
+5. **`README.md`'s Status section is a week stale** — check counts,
+   dates, models. Rewrite it from item 1's result rather than patching.
 
-- [ ] a Pi build from the edited spec (sudo rule, `AGENT_MODEL` read
-      from `agents.env`). The spec is a prompt; a reword can change what
-      gets built
-- [ ] `finish-build.sh` locking a VM that has real agents in it, and the
-      gateways working with no sudo
-- [ ] `bootstrap.sh`'s Telegram token check against real tokens, and its
-      `sg kvm` re-exec (the Spark user is already in the group)
-- [ ] `verify.sh`'s Versions lines, and `AGENT_MODEL` matching
-- [ ] the whole Google add-on flow as rewritten: agent-run `auth` and
-      `install`, its own Pi session, one host copy of the token, the
-      fuller `remove`
-- [ ] changing a value in `agents.env` on a finished VM
-      (`docs/updating.md` says this path is unexercised)
+### Never exercised — say so rather than assume
 
-*Decided against, so nobody re-proposes them:*
+- `bootstrap.sh` re-running itself under `sg kvm` (the Spark user is
+  already in the group)
+- changing a value in `config/agents.env` on a finished VM
+  (`docs/updating.md` describes it; nobody has done it)
+- the Hermes Google add-on's `remove`
+- any of this on **macOS** since the hardening: `ip6tables`, the sudoers
+  lock and `upgrade-vm.sh` have only run on Linux. `MACOS-TEST.md` still
+  names two files that no longer exist
+- an **x86_64** host, ever
 
-- **Removing the two egress phases.** They now differ in something real
-  — sudo — so the phase is kept and `--reopen` is the way back.
-- **A table generating both the spec's settings and their checks.** More
-  machinery than the duplication costs.
-- **Shrinking the spec much.** History came out and the sudo and model
-  paragraphs went in; it is 563 lines, not shorter. Every further cut is
-  a change to a prompt that has to be paid for with a build.
-- `MACOS-TEST.md` still mentions `check-frozen.sh` and
-  `spark-handoff.md`, both gone. It is the record of a finished port and
-  was left as written.
+### Watch, do not fix yet
 
-**Stage 6 — acceptance. The base build passed on 2026-11-16.**
+- **Does Gandalf now save memories unasked?** The review runs cleanly
+  on the main model (one clean run, which chose to save nothing). Run
+  `./scripts/diag-memory.sh` after a few days of ordinary use: reviews
+  should track Telegram turns at about one in two, and `USER.md` /
+  `MEMORY.md` should have moved. A message sent while a review is
+  running cancels it — Hermes' design, and no setting changes it.
+  `/refine` in the chat forces one.
+- **LuoJi has no `MEMORY.md`, and that is expected**: OpenClaw's deep
+  phase promotes only at score 0.75, 3 recalls and 3 distinct queries,
+  and nothing has got there (118 short-term entries, 0 promoted). Look
+  again only if it is still empty in a few weeks. Its newest memory
+  file is from 2026-11-11; the hook that writes them fires on a session
+  reset. Its embedding probe and vector search both work.
 
-On `agents-test` (checkout `~/code/bootstrap-test`, always
-`AGENTS_VM=agents-test`), with two throwaway bots, built from nothing
-on this branch:
+### Known, accepted, or somebody else's to fix
 
-- `verify.sh --models` under `finish-build.sh`: **63 passed, 0 failed,
-  2 skipped**, idempotence passing first. `verify.sh --reboot`: **62
-  passed, 0 failed, 3 skipped**, coming back `sudo=locked`. Both agents
-  on `argo:claude-5-opus`; OpenClaw 2026.11.3, Hermes v0.23.1, Pi 1.5.2.
-- It took **five push-backs to Pi**, none caused by the hardening:
-  plaintext auth profiles from eight `openclaw onboard` runs; a second
-  name for the gateway token; OpenClaw's timezone unset; Hermes with no
-  `model.provider`, then with the model name shortened to hide it;
-  `openclaw.json` left world-readable. Four of those are now sentences
-  in the spec. **Those sentences have not been through a build.**
-- One of those turns ran with sudo closed and fixed four things, which
-  is the evidence that a locked VM can still be repaired by Pi.
+- **`argo:gemini-3.8-flash` cannot hold a tool conversation through
+  this gateway** — one tool call, then `400 Invalid thought signature`
+  — and its Anthropic-shaped stream fails too. Reproducible from the
+  host in ten lines. Worth reporting to whoever runs the Argo gateway;
+  nothing here uses it any more. *Listed in `/v1/models` is not
+  working*: test a candidate model with a two-step tool call before
+  giving it a job.
+- **Hermes v0.23 looks a named provider's timeout up under `custom`.**
+  The spec sets both keys. Worth reporting to Nous; when it is fixed,
+  `providers.custom` can go.
+- **Both wire formats stop at 4,096 output tokens when the client sends
+  no limit** (measured 2026-11-16 on 5.5 Opus). Hermes sends none.
+- **Hermes writes a snapshot of its shell environment** under
+  `~/.hermes/cache/scratch/`, and that environment holds both agents'
+  bot tokens. So Hermes can read OpenClaw's. Same exposure as item 4
+  below; closing it belongs with the second-user work.
+- **`verify.sh`'s Telegram polling probe takes the poll it measures**
+  and has read "no bot is being polled" over two answering bots. It is
+  informational and should probably go, by this repo's own rule.
+- Two context windows are guesses: OpenClaw's model row says 128,000
+  and Hermes logs "defaulting to 256,000 tokens". Nobody has confirmed
+  either for 5.5 Opus through this gateway.
 
-**The Google add-on passed on the rewritten flow, 2026-11-16**, with a
-fresh consent as a separate test account: `verify --live --base` read
-**31 passed, 0 failed**, base suite 60 passed, 0 failed underneath it.
-The coding agent ran `auth`, opened the tunnel from the laptop itself
-and relayed one link; the owner clicked. One push-back: PySocks had gone
-into one of Hermes' two environments and the agent's commands run in
-the other, so `--check-live` passed while the agent got `Errno 113`.
-The spec now says every environment and `verify.sh` checks every one.
+### Only the owner can do
 
-Found on the way, **accepted not fixed**: Hermes snapshots its shell
-environment to `~/.hermes/cache/scratch/hermes-snap-*.sh` while running
-a command, and that environment holds both agents' bot tokens, because
-`install-config.sh` exports them for the openclaw CLI. So Hermes can
-read OpenClaw's token. Same exposure as item 4; closing it belongs with
-the second-user work.
-
-Still open:
-
-The owner messaged both test bots afterwards and reports both answered
-(their words were not recorded).
-
-- [ ] Pi's `setup-google.sh` restarts the gateway on every run; it calls
-      that idempotent and it is not quite
-- [ ] `bootstrap.sh`'s `sg kvm` re-exec is still unexercised (the Spark
-      user is already in the group), and so are `remove` and changing a
-      value in `agents.env` on a finished VM
-
-**Stage 7 — the real VM. The upgrade path is proven; applying it waits
-on the owner.**
-
-`scripts/upgrade-vm.sh` was run on `agents-old`, a VM provisioned from
-`main`'s definition (checkout `~/code/bootstrap-old`) and put in the
-`runtime` phase with no agents in it. Before: six sandbox checks failed
-(host off the model port, private IPv6, port 53, IPv6 bypass, sudo, admin
-helper). After: all fifteen pass, and a reboot comes back
-`phase=runtime lockdown=active sudo=locked`.
-
-**Applied to `agents` on 2026-11-16.** `~/code/bootstrap` is on
-`hardening`; the old definition is at
-`~/.lima/agents/lima.yaml.before-upgrade-20261116T161537Z`. Afterwards:
-`verify.sh --models` **62 passed, 1 failed, 2 skipped** — every sandbox
-check passing, both agents completing, OpenClaw fetching a page, both on
-`argo:claude-5-opus`. google-openclaw `verify`: 23 passed, 0 failed.
-google-hermes `verify --live`: 30 passed, 1 failed.
-
-**Then two regressions, caused by this work and repaired the same day.**
-Telling Pi to "put the fix in setup.sh and run it" on `agents` re-ran a
-script from 2026-11-09, which set OpenClaw's memory provider back to
-`none` and wrote a stray `SOUL.md` (`docs/gotchas.md`). Pi restored
-both directly, without re-running the script. Evidence afterwards, none
-of it Pi's word:
-
-- `verify.sh`: **61 passed, 0 failed, 5 skipped**, including two new
-  behavioural memory checks — the gateway's own embedding probe answers
-  `ok`, and a nonsense word still finds matches by vector
-- `diag-workspace.sh`: LuoJi's `SOUL.md` last modified 2026-11-11
-  23:16, matching the workspace's own last git commit; no uncommitted
-  change to any identity file; Gandalf's `SOUL.md` last modified
-  2026-11-11 13:52; the only other `SOUL.md` is in the Trash
-- the gateway-token doctor warning is gone and stayed gone across a
-  config re-push; PySocks is in all three Hermes environments;
-  google-hermes `verify --live` 31/0, google-openclaw `verify` 23/0
-
-Still open on `agents`:
-
-The owner messaged LuoJi and Gandalf after the last restart and reports
-both answer. `hardening` was merged to `main` and pushed on 2026-11-16.
-
-- [ ] **`~/agent-bootstrap/setup.sh` on `agents` is not trusted.** Pi
-      says it corrected the memory and `SOUL.md` sections; nobody has
-      run it since, deliberately. Before anyone does: reopen, run
-      `verify.sh --idempotence`, and treat any change it makes as a
-      revert
-**Models upgraded on `agents`, 2026-11-16.** Both agents and Pi are on
-`argo:claude-5.5-opus`; the mechanical jobs are on
-`argo:claude-5.5-haiku`; Gandalf's memory review is back on the agent's
-own model at `memory.nudge_interval: 2`. `verify.sh --models`: **64
-passed, 0 failed, 2 skipped.** Why: `argo:gemini-3.8-flash`, the
-auxiliary model since 2026-11-09, fails every tool conversation after
-its first step through this gateway (`Invalid thought signature`) and
-its Anthropic-shaped stream too — reproduced from the host with no
-Hermes involved. `/refine` did save a memory on it (`USER.md`, the first
-write since 2026-11-11) and then died on its next step.
-
-Pi's first turn on 5.5 Opus applied all of that in 17 tool calls with no
-push-back, and reported three things nobody had asked about:
-
-- [ ] **Hermes `model.provider` is `auto`, with `base_url` naming
-      OpenRouter.** Completions reach the gateway anyway, through
-      `OPENAI_BASE_URL` in `~/.hermes/.env`. The spec requires
-      `argo-gateway`. Probable consequence: `stale_timeout_seconds: 90`
-      sits under `providers.argo-gateway` and is not applied — the log
-      shows the watchdog at 900s — so "Hermes fails fast on a wedged
-      upstream" passes on a setting that is not in force
-- [ ] Hermes warns on every start: `providers.argo-gateway: unknown
-      config keys ignored: type`
-- [ ] older parts of `setup.sh` on `agents` still act unconditionally;
-      it remains unsafe to re-run (see above)
-- [ ] **Gandalf's review now runs cleanly; whether it saves unasked is
-      not yet seen.** After the upgrade, one review ran on
-      `argo:claude-5.5-opus` at 21:32 on 2026-11-16: `calls=1 in=0
-      out=124 cache_read=80380 result=none`, no error. So the trigger,
-      the model, the warm cache and the tool path all work — and the
-      model judged that turn held nothing to save. The message with the
-      thing worth remembering may have been the second, which does not
-      trigger a review until the count reaches 2 again. Look at
-      `./scripts/diag-memory.sh` after a few days of ordinary use: the
-      reviews column should track Telegram turns at about one in two,
-      and `USER.md` / `MEMORY.md` should have moved. `/refine` in the
-      chat forces a review at any time. A message sent while a review
-      runs cancels it — the vendor's design, not fixable by a setting
-- [ ] LuoJi has no `MEMORY.md` and that is expected: deep-phase
-      promotion needs score 0.75, 3 recalls and 3 distinct queries, and
-      nothing has reached it (118 short-term entries, 0 promoted).
-      Worth a second look only if it is still empty in a few weeks.
-      Its newest memory file is from 2026-11-11; the hook that writes
-      them fires on a session reset
-- [ ] `addons/google-openclaw/install.sh` and `addons/signal/install.sh`
-      still run `sudo` inside the guest (installing `gog`, apt for
-      signal-cli). On a locked VM that fails; they need `vm_root` or
-      `install-config.sh --reopen`. Their `verify.sh` is already fixed
-- [ ] the owner revokes the test Google account's consent and deletes
-      the two test bots (both test VMs and their checkouts are gone)
+- delete the two test bots in @BotFather, and revoke the test Google
+  account's consent at myaccount.google.com/permissions
+- `git fetch` in `~/code/bootstrap` on the Spark from a shell with a
+  GitHub key — its files are current, its `origin/main` ref is not
+- back up `config/admin-secret`
 
 ## 1. macOS: built from scratch and merged
 

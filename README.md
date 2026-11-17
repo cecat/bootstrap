@@ -338,6 +338,15 @@ todo.md                 what is unfinished
 
 ## Status
 
+**As of 2026-11-16** — the paragraphs below this one predate a
+hardening pass and are kept for the history; `todo.md` section 0 is the
+current account. In short: a from-scratch build on Linux arm64 reached
+63 passed, 0 failed with real completions and stayed locked through a
+reboot; the sandbox now denies the host on every port but the model
+gateway's, over IPv4 and IPv6, and the agents have no `sudo` once a
+build is locked; both agents and Pi run `argo:claude-5.5-opus`. One
+more from-scratch build is owed before that is the last word.
+
 Verified end to end on **Linux arm64** (DGX Spark, Lima with QEMU+KVM): the
 VM and every generated config deleted, then rebuilt from nothing by a
 coding agent with no prior context. Pi installed both agents from the

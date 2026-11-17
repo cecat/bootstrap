@@ -360,8 +360,14 @@ live Telegram threads are untouched. Left alone, the first thing the user
 sees is the bot spontaneously asking about disk pruning over Telegram,
 which reads as a malfunction rather than a disk warning.
 
-**Pin an explicit stale timeout.** Set
-`providers.argo-gateway.stale_timeout_seconds: 90`.
+**Pin an explicit stale timeout — under two names.** Set
+`providers.argo-gateway.stale_timeout_seconds: 90` **and**
+`providers.custom.stale_timeout_seconds: 90`. Hermes v0.23 resolves a
+named provider to the runtime name `custom` and looks the timeout up
+under that, so the documented key alone is read by nothing. The `custom`
+block holds only this value; it does not define a provider. Prove it
+with the lookup, not the config: resolve the runtime provider and ask
+the timeout function what it returns for that name.
 
 Hermes auto-detects localhost and **LAN** endpoints and relaxes its
 streaming timeouts: socket read 120s → 1800s, stale-stream detection
